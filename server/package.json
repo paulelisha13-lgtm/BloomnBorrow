@@ -1,0 +1,30 @@
+{
+  "name": "bloom-and-borrow-server",
+  "version": "1.2.4",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node server.js",
+    "seed": "node seed.js",
+    "migrate": "node migrate.js",
+    "bootstrap-admin": "node bootstrap-admin.js",
+    "security:check": "node security-check.js",
+    "start:production": "node production-start.js",
+    "preflight": "node production-preflight.js",
+    "release:check": "node release-check.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.14.1",
+    "compression": "^1.8.1",
+    "cookie-parser": "^1.4.7",
+    "express-rate-limit": "^8.1.0",
+    "zod": "^4.1.5"
+  }
+}

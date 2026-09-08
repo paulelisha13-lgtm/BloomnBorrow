@@ -1,0 +1,22 @@
+{
+  "name": "bloom-and-borrow-client",
+  "private": true,
+  "version": "1.2.5",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "dev:server": "npm --prefix server run dev",
+    "server": "npm --prefix server start"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.0.7",
+    "typescript": "~5.7.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.1.5"
+  },
+  "devDependencies": {}
+}
