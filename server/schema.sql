@@ -240,3 +240,48 @@ CREATE TABLE IF NOT EXISTS customer_saved_addresses (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_saved_address_account FOREIGN KEY (customer_account_id) REFERENCES customer_accounts(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS item_conditions (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  rental_item_id INT UNSIGNED NOT NULL,
+  booking_id BIGINT UNSIGNED NULL,
+  condition_status ENUM('excellent','good','fair','poor','damaged','lost') NOT NULL DEFAULT 'good',
+  condition_type ENUM('before_rental','after_return','damage_report','maintenance') NOT NULL DEFAULT 'after_return',
+  notes TEXT NULL,
+  recorded_by_user_id INT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_item_conditions_item (rental_item_id),
+  INDEX idx_item_conditions_booking (booking_id),
+  CONSTRAINT fk_condition_item FOREIGN KEY (rental_item_id) REFERENCES rental_items(id) ON DELETE CASCADE,
+  CONSTRAINT fk_condition_booking FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE SET NULL,
+  CONSTRAINT fk_condition_user FOREIGN KEY (recorded_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS incidents (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  incident_no VARCHAR(30) NOT NULL UNIQUE,
+  rental_item_id INT UNSIGNED NOT NULL,
+  booking_id BIGINT UNSIGNED NULL,
+  customer_id BIGINT UNSIGNED NULL,
+  incident_type ENUM('lost','damaged_minor','damaged_major','partially_missing','other') NOT NULL DEFAULT 'damaged_minor',
+  status ENUM('reported','investigating','resolved_charged','resolved_insurance','written_off','dismissed') NOT NULL DEFAULT 'reported',
+  description TEXT NOT NULL,
+  replacement_cost DECIMAL(12,2) NULL DEFAULT 0,
+  charge_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+  insurance_claim_amount DECIMAL(12,2) NULL DEFAULT 0,
+  resolution_notes TEXT NULL,
+  reported_by_user_id INT UNSIGNED NULL,
+  resolved_by_user_id INT UNSIGNED NULL,
+  reported_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  resolved_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_incidents_item (rental_item_id),
+  INDEX idx_incidents_booking (booking_id),
+  INDEX idx_incidents_customer (customer_id),
+  INDEX idx_incidents_status (status),
+  CONSTRAINT fk_incident_item FOREIGN KEY (rental_item_id) REFERENCES rental_items(id) ON DELETE CASCADE,
+  CONSTRAINT fk_incident_booking FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE SET NULL,
+  CONSTRAINT fk_incident_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL,
+  CONSTRAINT fk_incident_reported_by FOREIGN KEY (reported_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_incident_resolved_by FOREIGN KEY (resolved_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);

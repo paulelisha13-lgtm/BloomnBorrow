@@ -50,7 +50,7 @@ function ProductCard({ item, onAdd }) {
       <div className="product-body">
         <div>
           <h3><Link to={`/rentals/${item.id}`}>{item.name}</Link></h3>
-          <p className="muted">Available today · {item.stock} in stock</p>
+          <p className="muted">{item.stock>0?`${item.stock} in stock`:"Out of stock"}</p>
         </div>
         <div className="product-price-row">
           <div><strong>{peso(item.price)}</strong><span>/day</span></div>
@@ -165,7 +165,7 @@ function Browse({ onAdd }) {
     api("/rentals").then(data=>{
       if(data.items?.length) setCatalog(data.items.map((x,i)=>({
         id:x.id,name:x.name,category:x.category,price:Number(x.daily_price),deposit:Number(x.security_deposit),
-        stock:Number(x.total_quantity),popularity:100-i,isNew:false,image:x.image_url || items[i%items.length].image,
+        stock:Math.max(0,Number(x.total_quantity)-Number(x.reserved||0)),popularity:100-i,isNew:false,image:x.image_url || items[i%items.length].image,
         description:x.description || "",addOns:[]
       })));
     }).catch(()=>setCatalog([]));
@@ -210,7 +210,7 @@ function ProductDetails({ onAdd }) {
   React.useEffect(()=>{
     api("/rentals").then(data=>{
       const x=(data.items||[]).find(r=>Number(r.id)===Number(id));
-      if(x) setItem({id:x.id,name:x.name,category:x.category,price:Number(x.daily_price),deposit:Number(x.security_deposit),stock:Number(x.total_quantity),image:x.image_url||fallback.image,images:x.images||[],description:x.description||"",addOns:[],features:x.features||[]});
+      if(x) setItem({id:x.id,name:x.name,category:x.category,price:Number(x.daily_price),deposit:Number(x.security_deposit),stock:Math.max(0,Number(x.total_quantity)-Number(x.reserved||0)),image:x.image_url||fallback.image,images:x.images||[],description:x.description||"",addOns:[],features:x.features||[]});
     }).catch(()=>{});
   },[id]);
 
@@ -273,8 +273,9 @@ function Cart({ cart, updateQty, removeItem }) {
                 <div className="qty-controls">
                   <button onClick={()=>updateQty(x.id,-1)}>−</button>
                   <span>{x.qty}</span>
-                  <button onClick={()=>updateQty(x.id,1)}>+</button>
+                  <button onClick={()=>updateQty(x.id,1)} disabled={x.qty >= (x.stock||Infinity)}>+</button>
                 </div>
+                <span className="stock-hint">Available: {x.stock ?? "—"}</span>
                 <button className="remove-button" onClick={()=>removeItem(x.id)}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                   Remove
@@ -377,24 +378,7 @@ function Checkout({ cart, clearCart }) {
     finally { setSubmitting(false); }
   };
 
-  if(done) return (
-    <main className="page container narrow-page">
-      <div className="success-card">
-        <div className="success-icon">✓</div>
-        <span className="eyebrow">Booking submitted</span>
-        <h1>Thank you for your booking!</h1>
-        <p>Your booking number is <strong>{done.booking_no}</strong>. Save this number together with your email so you can track the booking.</p>
-        <div className="status-track"><b>Pending</b><span>→</span><span>Confirmed</span><span>→</span><span>Ready</span><span>→</span><span>Rented</span></div>
-        <div className="price-breakdown booking-success-total">
-          <span>Rental <b>{peso(done.rental_subtotal)}</b></span>
-          <span>Deposit <b>{peso(done.deposit_total)}</b></span>
-          <span>Delivery <b>{peso(done.delivery_fee)}</b></span>
-          <span className="grand-total">Total <b>{peso(done.grand_total)}</b></span>
-        </div>
-        <Link className="primary-button" to="/track">Track booking</Link>
-      </div>
-    </main>
-  );
+  if(done) return <Track booking={done}/>;
 
   return (
     <main className="page container">
@@ -671,28 +655,58 @@ function Checkout({ cart, clearCart }) {
   )
 }
 
-function Track() {
-  const [code,setCode] = useState("");
-  const [email,setEmail] = useState("");
-  const [result,setResult] = useState(null);
-  const [error,setError] = useState("");
-  const [loading,setLoading] = useState(false);
-  const states = ["pending","confirmed","ready","rented","returned","completed"];
-
-  const track = async () => {
-    setLoading(true); setError(""); setResult(null);
-    try { setResult((await api(`/bookings/track?booking_no=${encodeURIComponent(code)}&email=${encodeURIComponent(email)}`)).booking); }
-    catch(e) { setError(e.message); }
-    finally { setLoading(false); }
-  };
-
-  const activeIndex = result ? Math.max(0,states.indexOf(result.status)) : -1;
+function Track({ booking: bookingProp }) {
   return <main className="page container narrow-page"><div className="track-card">
-    <span className="eyebrow">Booking tracking</span><h1>Track your rental</h1><p>For privacy, enter both your booking number and the email used at checkout.</p>
-    <div className="track-form"><label>Booking number<input value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder="e.g. RF-000001"/></label><label>Email<input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com"/></label><button className="primary-button" disabled={!code || !email || loading} onClick={track}>{loading?"Checking...":"Track booking"}</button></div>
-    {error && <div className="login-error">{error}</div>}
-    {result && <div className="tracking-result"><div className="tracking-head"><div><small>Booking number</small><strong>{result.booking_no}</strong></div><span className={`status-pill ${result.status==="pending"?"pending":"confirmed"}`}>{result.status}</span></div><div className="timeline">{states.map((s,i)=><div className={`timeline-step ${i<=activeIndex?"active":""}`} key={s}><span>{i<=activeIndex?"✓":i+1}</span><strong>{s[0].toUpperCase()+s.slice(1)}</strong></div>)}</div><div className="tracking-items">{result.items?.map((x,i)=><span key={i}>{x.item_name} × {x.quantity}</span>)}</div><div className="tracking-meta"><span><small>Rental dates</small><b>{String(result.start_date).slice(0,10)} → {String(result.end_date).slice(0,10)}</b></span><span><small>Fulfillment</small><b>{result.fulfillment}</b></span><span><small>Payment</small><b>{result.payment_status}</b></span></div></div>}
-  </div></main>
+    <div className="greeting-card">
+      <div className="greeting-header">
+        <span className="greeting-icon">🎉</span>
+        <h1>Thank You for Choosing Our Business Rental!</h1>
+        <p>We're happy to have you! Your booking request has been successfully submitted.</p>
+      </div>
+
+      {bookingProp&&<div className="greeting-booking-summary">
+        <div className="greeting-booking-row"><span>Booking number</span><strong>{bookingProp.booking_no}</strong></div>
+        <div className="greeting-booking-row"><span>Rental dates</span><strong>{String(bookingProp.start_date).slice(0,10)} → {String(bookingProp.end_date).slice(0,10)}</strong></div>
+        <div className="greeting-booking-row"><span>Total amount</span><strong>{peso(Number(bookingProp.grand_total))}</strong></div>
+        <div className="greeting-booking-row"><span>Payment method</span><strong className="capitalize">{bookingProp.payment_method||"Cash"}</strong></div>
+      </div>}
+
+      <div className="greeting-status">
+        <h2>Booking Status</h2>
+        <div className="greeting-status-badge">
+          <span className="status-pending-icon">⏳</span>
+          <div>
+            <strong>Waiting for Admin Approval</strong>
+            <p>Your booking is currently being reviewed by our Admin. Please wait for an official confirmation through Gmail or SMS.</p>
+          </div>
+        </div>
+        <div className="greeting-warning">
+          <strong>Important:</strong> Your booking is not yet fully confirmed until you receive an approval message from our Admin.
+        </div>
+      </div>
+
+      {bookingProp?.payment_method==="gcash"&&<div className="greeting-section">
+        <h2>💳 If You Paid via GCash</h2>
+        <p>If you selected GCash as your payment method, please:</p>
+        <ol>
+          <li>Wait for the Admin's message with payment instructions.</li>
+          <li>Send your GCash Proof of Payment as instructed by the Admin.</li>
+          <li>Make sure your proof of payment is clear and shows the transaction details.</li>
+          <li>Wait for the Admin to verify your payment and confirm your booking.</li>
+        </ol>
+      </div>}
+
+      <div className="greeting-section">
+        <h2>📩 What Happens Next?</h2>
+        <p>Once your booking and payment have been verified, you will receive an official Booking Confirmation through Gmail or SMS.</p>
+      </div>
+
+      <div className="greeting-footer">
+        <p>Thank you for your patience and for choosing our Business Rental! We look forward to serving you.</p>
+        <Link to="/rentals" className="primary-button">Browse More Rentals</Link>
+      </div>
+    </div>
+  </div></main>;
 }
 
 function Account() {
@@ -895,6 +909,7 @@ const adminNav = [
   ["▣","Bookings","/admin/bookings"],
   ["♟","Customers","/admin/customers"],
   ["₱","Payments","/admin/payments"],
+  ["⚠","Incidents","/admin/incidents"],
   ["▥","Reports","/admin/reports"],
   ["🔧","Maintenance","/admin/maintenance"],
   ["♟","Access","/admin/access"],
@@ -968,10 +983,14 @@ function NotificationBell() {
   const loadNotifications = async () => {
     setLoading(true);
     try {
-      const bookingsData = await api("/admin/bookings");
+      const [bookingsData, inventoryData, escalationsData] = await Promise.all([
+        api("/admin/bookings").catch(()=>({bookings:[]})),
+        api("/admin/inventory").catch(()=>({items:[]})),
+        api("/admin/escalations").catch(()=>({escalated:[]}))
+      ]);
       const bookings = (bookingsData.bookings || []).slice(0, 10);
       const notifs = bookings.map(b => ({
-        id: b.id,
+        id: `b-${b.id}`,
         type: b.status === "pending" ? "booking_new" : b.status === "overdue" ? "booking_overdue" : "booking_update",
         title: b.status === "pending" ? "New Booking" : b.status === "overdue" ? "Overdue Rental" : "Booking Updated",
         message: `${b.customer_name} — ${b.items || "No items"}`,
@@ -980,7 +999,32 @@ function NotificationBell() {
         time: b.created_at,
         read: false
       }));
-      setNotifications(notifs);
+      const lowStockItems = (inventoryData.items || []).filter(x => x.status === "active" && Number(x.total_quantity) < 5);
+      lowStockItems.forEach((item, i) => {
+        notifs.push({
+          id: `lowstock-${item.id}`,
+          type: "low_stock",
+          title: "Low Stock Alert",
+          message: `${item.name} — only ${item.total_quantity} unit(s) left`,
+          detail: `SKU: ${item.sku || "N/A"} · Restock recommended`,
+          time: new Date().toISOString(),
+          read: false
+        });
+      });
+      (escalationsData.escalated||[]).slice(0,5).forEach(e => {
+        notifs.push({
+          id: `esc-${e.id}`,
+          type: "escalation",
+          title: e.level==="final"?"Final Notice Due":e.level==="formal"?"Formal Demand Due":"Follow-up Needed",
+          message: `${e.customer_name} — ${e.daysText}`,
+          detail: `${e.booking_no} · Late fee: ${peso(e.lateFee)}`,
+          status: e.level,
+          time: new Date().toISOString(),
+          read: false
+        });
+      });
+      notifs.sort((a, b) => new Date(b.time) - new Date(a.time));
+      setNotifications(notifs.slice(0, 20));
     } catch (e) {}
     finally { setLoading(false); }
   };
@@ -1006,12 +1050,14 @@ function NotificationBell() {
   const getIcon = (type) => {
     if (type === "booking_new") return "📋";
     if (type === "booking_overdue") return "⚠";
+    if (type === "low_stock") return "🔴";
     return "🔄";
   };
 
   const getTypeClass = (type) => {
     if (type === "booking_new") return "notif-new";
     if (type === "booking_overdue") return "notif-overdue";
+    if (type === "low_stock") return "notif-lowstock";
     return "notif-update";
   };
 
@@ -1039,7 +1085,9 @@ function NotificationBell() {
         </div>)}
       </div>
       <div className="notification-footer">
-        <Link to="/admin/bookings" onClick={() => setOpen(false)}>View all bookings</Link>
+        {notifications.some(n=>n.type==="low_stock")?
+          <Link to="/admin/inventory" onClick={() => setOpen(false)}>View inventory →</Link>:
+          <Link to="/admin/bookings" onClick={() => setOpen(false)}>View all bookings</Link>}
       </div>
     </div>}
   </div>;
@@ -1225,11 +1273,10 @@ function AnimatedKpiValue({ value=0, format=(n)=>String(n), delay=0, duration=85
   return <>{format(display)}</>;
 }
 
-function Kpi({ label, value, detail, icon, index=0, currency=false, pulseIcon=false }) {
+function Kpi({ label, value, detail, index=0, currency=false }) {
   const delay=index*110;
   const numeric=Number(value)||0;
   return <article className="kpi-card kpi-card-animated" style={{"--kpi-delay":`${delay}ms`}}>
-    <div className={`kpi-icon ${pulseIcon?"kpi-icon-pulse":""}`} style={{"--kpi-delay":`${delay+180}ms`}}>{icon}</div>
     <div>
       <span>{label}</span>
       <strong className="kpi-animated-value"><AnimatedKpiValue value={numeric} delay={delay+80} format={currency?peso:(n)=>String(n)}/></strong>
@@ -1284,12 +1331,15 @@ function DashboardBookingAreaChart({ rows=[] }) {
 function AdminDashboard() {
   const [data,setData]=useState(null);
   const [updatedAt,setUpdatedAt]=useState(null);
+  const [escalations,setEscalations]=useState(null);
   const load=React.useCallback(()=>api("/admin/dashboard").then(d=>{setData(d);setUpdatedAt(new Date())}).catch(()=>{}),[]);
-  React.useEffect(()=>{load();const id=setInterval(load,60000);return()=>clearInterval(id)},[load]);
+  const loadEscalations=React.useCallback(()=>api("/admin/escalations").then(d=>setEscalations(d)).catch(()=>{}),[]);
+  React.useEffect(()=>{load();loadEscalations();const id=setInterval(()=>{load();loadEscalations()},60000);return()=>clearInterval(id)},[load,loadEscalations]);
   const s=data?.stats || {};
   const daily=data?.daily||[];
   const sevenDayRevenue=daily.reduce((sum,x)=>sum+Number(x.revenue||0),0);
   const sevenDayBookings=daily.reduce((sum,x)=>sum+Number(x.bookings||0),0);
+  const escStats=escalations?.stats||{};
 
   return <AdminShell title="Dashboard" subtitle="Live overview of your rental business.">
     <section className="kpi-grid">
@@ -1341,6 +1391,33 @@ function AdminDashboard() {
           </Link>
         </div></section>
       </div>
+
+      {escStats.total>0&&<div className="dashboard-escalation-row">
+        <section className="admin-card escalation-card">
+          <div className="card-heading"><div><span>⚠ Overdue Escalation</span><h2>Rentals requiring follow-up</h2></div><Link to="/admin/bookings">View all</Link></div>
+          <div className="escalation-stats">
+            <div className="escalation-stat gentle"><span className="esc-badge gentle">●</span><b>{escStats.gentle||0}</b><small>Gentle</small></div>
+            <div className="escalation-stat reminder"><span className="esc-badge reminder">●</span><b>{escStats.reminder||0}</b><small>Reminder</small></div>
+            <div className="escalation-stat formal"><span className="esc-badge formal">●</span><b>{escStats.formal||0}</b><small>Formal</small></div>
+            <div className="escalation-stat final"><span className="esc-badge final">●</span><b>{escStats.final||0}</b><small>Final Notice</small></div>
+          </div>
+          <div className="escalation-list">
+            {(escalations?.escalated||[]).slice(0,5).map(e=><div className="escalation-row" key={e.id}>
+              <div className="esc-row-main">
+                <span className={`esc-badge ${e.level}`}>{e.level}</span>
+                <div className="esc-row-info">
+                  <strong>{e.customer_name}</strong>
+                  <small>{e.booking_no} · {e.daysText}</small>
+                </div>
+              </div>
+              <div className="esc-row-actions">
+                <span className="esc-fee">{peso(e.lateFee)}</span>
+                <Link className="secondary-button" to="/admin/bookings">View</Link>
+              </div>
+            </div>)}
+          </div>
+        </section>
+      </div>}
     </div>
   </AdminShell>;
 }
@@ -1359,6 +1436,11 @@ function Inventory() {
   const [statusFilter,setStatusFilter]=useState("All");
   const [deleteModal,setDeleteModal]=useState(null);
   const [deleteLoading,setDeleteLoading]=useState(false);
+  const [conditionItem,setConditionItem]=useState(null);
+  const [conditions,setConditions]=useState([]);
+  const [conditionLoading,setConditionLoading]=useState(false);
+  const [addConditionModal,setAddConditionModal]=useState(false);
+  const [conditionForm,setConditionForm]=useState({condition_status:"good",condition_type:"after_return",notes:"",booking_id:""});
   const blank={sku:"",name:"",category:"Events",description:"",daily_price:"",security_deposit:"",total_quantity:1,status:"active",image_url:""};
   const [form,setForm]=useState(blank);
 
@@ -1369,6 +1451,26 @@ function Inventory() {
   const save=async(e)=>{e.preventDefault();setError("");try{await api(editing?`/admin/inventory/${editing.id}`:"/admin/inventory",{method:editing?"PATCH":"POST",body:JSON.stringify(form)});setModal(false);load()}catch(err){setError(err.message)}};
   const confirmDelete=(x)=>{setDeleteModal(x)};
   const remove=async()=>{if(!deleteModal)return;setDeleteLoading(true);try{await api(`/admin/inventory/${deleteModal.id}`,{method:"DELETE"});setDeleteModal(null);load()}catch(e){setError(e.message)}finally{setDeleteLoading(false)}};
+
+  const viewConditions=async(item)=>{
+    setConditionItem(item);
+    setConditionLoading(true);
+    try{
+      const data=await api(`/admin/items/${item.id}/conditions`);
+      setConditions(data.conditions||[]);
+    }catch(e){setError(e.message)}
+    finally{setConditionLoading(false)}
+  };
+
+  const addCondition=async()=>{
+    if(!conditionItem)return;
+    try{
+      await api(`/admin/items/${conditionItem.id}/conditions`,{method:"POST",body:JSON.stringify(conditionForm)});
+      setAddConditionModal(false);
+      setConditionForm({condition_status:"good",condition_type:"after_return",notes:"",booking_id:""});
+      viewConditions(conditionItem);
+    }catch(e){setError(e.message)}
+  };
 
   const categories=["All",...new Set(rows.map(x=>x.category))];
   const statuses=["All","active","inactive","maintenance"];
@@ -1383,7 +1485,8 @@ function Inventory() {
     total:rows.length,
     active:rows.filter(x=>x.status==="active").length,
     maintenance:rows.filter(x=>x.status==="maintenance").length,
-    totalStock:rows.reduce((s,x)=>s+Number(x.total_quantity||0),0)
+    totalStock:rows.reduce((s,x)=>s+Number(x.total_quantity||0),0),
+    totalReserved:rows.reduce((s,x)=>s+Number(x.reserved_all||0),0)
   };
 
   return <AdminShell title="Rental Inventory" subtitle="Manage your rental items, pricing, stock levels, and availability.">
@@ -1393,7 +1496,7 @@ function Inventory() {
       <Kpi index={0} icon="📦" label="Total items" value={stats.total} detail="All rental items"/>
       <Kpi index={1} icon="✓" label="Active" value={stats.active} detail="Available for rent"/>
       <Kpi index={2} icon="🔧" label="Maintenance" value={stats.maintenance} detail="Under maintenance"/>
-      <Kpi index={3} icon="📊" label="Total stock" value={stats.totalStock} detail="Combined units"/>
+      <Kpi index={3} icon="📊" label="Available" value={stats.totalStock-stats.totalReserved} detail={`${stats.totalReserved} reserved`}/>
     </section>
 
     <div className="admin-page-toolbar">
@@ -1434,11 +1537,12 @@ function Inventory() {
             <div className="inventory-card-stats">
               <div><span>Price</span><strong>{peso(Number(item.daily_price))}/day</strong></div>
               <div><span>Deposit</span><strong>{peso(Number(item.security_deposit))}</strong></div>
-              <div><span>Stock</span><strong>{item.total_quantity} units</strong></div>
-              <div><span>Reserved</span><strong>{item.reserved_today} today</strong></div>
+              <div className={Number(item.total_quantity)-Number(item.reserved_all||0)<5?"low-stock":""}><span>Available</span><strong>{Math.max(0,Number(item.total_quantity)-Number(item.reserved_all||0))} units</strong></div>
+              <div><span>Reserved</span><strong>{item.reserved_all||0} of {item.total_quantity}</strong></div>
             </div>
             <div className="inventory-card-actions">
               <button className="secondary-button" onClick={()=>openEdit(item)}>Edit</button>
+              <button className="secondary-button" onClick={()=>viewConditions(item)}>📋 History</button>
               <button className="danger-button" onClick={()=>confirmDelete(item)}>Delete</button>
             </div>
           </div>
@@ -1465,10 +1569,204 @@ function Inventory() {
       </div>
       <div className="modal-actions"><button className="secondary-button" onClick={()=>setDeleteModal(null)}>Cancel</button><button className="danger-button" onClick={remove} disabled={deleteLoading}>{deleteLoading?"Deleting...":"Delete item"}</button></div>
     </div></div>}
+
+    {conditionItem&&<div className="modal-backdrop" onClick={()=>{setConditionItem(null);setConditions([])}}><div className="modal condition-history-modal" onClick={e=>e.stopPropagation()}>
+      <div className="modal-head"><div><span className="eyebrow">Condition History</span><h2>{conditionItem.name}</h2><small>{conditionItem.sku}</small></div><button type="button" onClick={()=>{setConditionItem(null);setConditions([])}}>×</button></div>
+      <div className="condition-history-actions">
+        <button className="primary-button" onClick={()=>setAddConditionModal(true)}>+ Add Record</button>
+      </div>
+      {conditionLoading?<div className="inventory-empty"><p>Loading...</p></div>
+      :conditions.length===0?<div className="inventory-empty"><span>📋</span><h3>No condition records</h3><p>This item has no condition history yet.</p></div>
+      :<div className="condition-timeline">
+        {conditions.map(c=><div className="condition-record" key={c.id}>
+          <div className={`condition-badge condition-${c.condition_status}`}>{c.condition_status}</div>
+          <div className="condition-record-info">
+            <div className="condition-record-type">{c.condition_type.replace("_"," ")}</div>
+            {c.notes&&<div className="condition-record-notes">{c.notes}</div>}
+            <div className="condition-record-meta">
+              {c.booking_no&&<span>📦 {c.booking_no}</span>}
+              {c.recorded_by&&<span>👤 {c.recorded_by}</span>}
+              <span>📅 {new Date(c.created_at).toLocaleDateString("en-PH",{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</span>
+            </div>
+          </div>
+        </div>)}
+      </div>}
+    </div></div>}
+
+    {addConditionModal&&conditionItem&&<div className="modal-backdrop" onClick={()=>setAddConditionModal(false)}><div className="modal" onClick={e=>e.stopPropagation()}>
+      <div className="modal-head"><div><span className="eyebrow">Add Condition Record</span><h2>{conditionItem.name}</h2></div><button type="button" onClick={()=>setAddConditionModal(false)}>×</button></div>
+      <div className="form-grid">
+        <label>Condition
+          <select value={conditionForm.condition_status} onChange={e=>setConditionForm({...conditionForm,condition_status:e.target.value})}>
+            <option value="excellent">Excellent</option>
+            <option value="good">Good</option>
+            <option value="fair">Fair</option>
+            <option value="poor">Poor</option>
+            <option value="damaged">Damaged</option>
+            <option value="lost">Lost</option>
+          </select>
+        </label>
+        <label>Type
+          <select value={conditionForm.condition_type} onChange={e=>setConditionForm({...conditionForm,condition_type:e.target.value})}>
+            <option value="before_rental">Before Rental</option>
+            <option value="after_return">After Return</option>
+            <option value="damage_report">Damage Report</option>
+            <option value="maintenance">Maintenance</option>
+          </select>
+        </label>
+        <label className="span-2">Notes<textarea value={conditionForm.notes} onChange={e=>setConditionForm({...conditionForm,notes:e.target.value})} placeholder="Optional notes about the condition..."/></label>
+      </div>
+      <div className="modal-actions"><button className="secondary-button" onClick={()=>setAddConditionModal(false)}>Cancel</button><button className="primary-button" onClick={addCondition}>Save Record</button></div>
+    </div></div>}
+  </AdminShell>
+}
+
+function Incidents() {
+  const [incidents,setIncidents]=useState([]);
+  const [error,setError]=useState("");
+  const [search,setSearch]=useState("");
+  const [statusFilter,setStatusFilter]=useState("All");
+  const [typeFilter,setTypeFilter]=useState("All");
+  const [detail,setDetail]=useState(null);
+  const [showNew,setShowNew]=useState(false);
+  const [newForm,setNewForm]=useState({rental_item_id:"",booking_id:"",customer_id:"",incident_type:"damaged_minor",description:"",replacement_cost:"",charge_amount:"",insurance_claim_amount:""});
+  const [items,setItems]=useState([]);
+  const [customers,setCustomers]=useState([]);
+
+  const load=()=>{
+    api("/admin/incidents").then(d=>setIncidents(d.incidents||[])).catch(e=>setError(e.message));
+    api("/admin/inventory").then(d=>setItems(d.items||[])).catch(()=>{});
+    api("/admin/customers").then(d=>setCustomers(d.customers||[])).catch(()=>{});
+  };
+  React.useEffect(()=>{load()},[]);
+
+  const filtered=incidents.filter(i=>{
+    const matchSearch=(i.incident_no||"").toLowerCase().includes(search.toLowerCase())||(i.item_name||"").toLowerCase().includes(search.toLowerCase())||(i.customer_name||"").toLowerCase().includes(search.toLowerCase());
+    const matchStatus=statusFilter==="All"||i.status===statusFilter;
+    const matchType=typeFilter==="All"||i.incident_type===typeFilter;
+    return matchSearch&&matchStatus&&matchType;
+  });
+
+  const stats={
+    total:incidents.length,
+    open:incidents.filter(i=>["reported","investigating"].includes(i.status)).length,
+    resolved:incidents.filter(i=>i.status.startsWith("resolved_")).length,
+    totalCharged:incidents.reduce((s,i)=>s+Number(i.charge_amount||0),0)
+  };
+
+  const createIncident=async()=>{
+    if(!newForm.rental_item_id||!newForm.description)return;
+    try{
+      await api("/admin/incidents",{method:"POST",body:JSON.stringify(newForm)});
+      setShowNew(false);
+      setNewForm({rental_item_id:"",booking_id:"",customer_id:"",incident_type:"damaged_minor",description:"",replacement_cost:"",charge_amount:"",insurance_claim_amount:""});
+      load();
+    }catch(e){setError(e.message)}
+  };
+
+  const updateStatus=async(incident,status)=>{
+    try{
+      await api(`/admin/incidents/${incident.id}`,{method:"PATCH",body:JSON.stringify({status})});
+      load();
+      if(detail&&detail.id===incident.id)setDetail({...detail,status});
+    }catch(e){setError(e.message)}
+  };
+
+  const typeLabels={lost:"Lost",damaged_minor:"Minor Damage",damaged_major:"Major Damage",partially_missing:"Partially Missing",other:"Other"};
+  const statusLabels={reported:"Reported",investigating:"Investigating",resolved_charged:"Resolved (Charged)",resolved_insurance:"Resolved (Insurance)",written_off:"Written Off",dismissed:"Dismissed"};
+
+  return <AdminShell title="Incidents" subtitle="Track lost, damaged, and missing items across rentals.">
+    {error&&<div className="login-error">{error}</div>}
+
+    <section className="kpi-grid">
+      <Kpi index={0} icon="⚠" label="Total incidents" value={stats.total} detail="All time"/>
+      <Kpi index={1} icon="🔴" label="Open" value={stats.open} detail="Needs attention"/>
+      <Kpi index={2} icon="✓" label="Resolved" value={stats.resolved} detail="Handled cases"/>
+      <Kpi index={3} icon="💰" label="Total charged" value={peso(stats.totalCharged)} detail="Customer charges"/>
+    </section>
+
+    <div className="admin-page-toolbar">
+      <div className="admin-search">
+        <span>⌕</span>
+        <input placeholder="Search by incident #, item, or customer..." value={search} onChange={e=>setSearch(e.target.value)}/>
+      </div>
+      <div className="payment-filters">
+        <select className="booking-status-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+          <option value="All">All Status</option>
+          {Object.entries(statusLabels).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+        </select>
+        <select className="booking-status-select" value={typeFilter} onChange={e=>setTypeFilter(e.target.value)}>
+          <option value="All">All Types</option>
+          {Object.entries(typeLabels).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+        </select>
+        <button className="primary-button" onClick={()=>setShowNew(true)}>+ Report Incident</button>
+      </div>
+    </div>
+
+    <section className="admin-card">
+      {filtered.length===0?<div className="inventory-empty">
+        <span>⚠</span>
+        <h3>No incidents found</h3>
+        <p>{search||statusFilter!=="All"||typeFilter!=="All"?"Try adjusting your filters.":"No incidents reported yet."}</p>
+      </div>:<div className="table-wrap"><table><thead><tr><th>Incident</th><th>Item</th><th>Customer</th><th>Type</th><th>Charge</th><th>Status</th><th>Date</th><th></th></tr></thead><tbody>
+        {filtered.map(i=><tr key={i.id}>
+          <td><strong>{i.incident_no}</strong></td>
+          <td>{i.item_name||"—"}<br/><small>{i.item_sku||""}</small></td>
+          <td>{i.customer_name||"—"}</td>
+          <td><span className="status-pill">{typeLabels[i.incident_type]||i.incident_type}</span></td>
+          <td>{peso(Number(i.charge_amount||0))}</td>
+          <td><span className={`status-pill ${i.status.startsWith("resolved")?"confirmed":i.status==="dismissed"?"":"pending"}`}>{statusLabels[i.status]||i.status}</span></td>
+          <td><small>{new Date(i.reported_at).toLocaleDateString("en-PH",{month:"short",day:"numeric",year:"numeric"})}</small></td>
+          <td><button className="mini-button" onClick={()=>setDetail(i)}>View</button></td>
+        </tr>)}
+      </tbody></table></div>}
+    </section>
+
+    {detail&&<div className="modal-backdrop" onClick={()=>setDetail(null)}><div className="modal" onClick={e=>e.stopPropagation()}>
+      <button className="booking-modal-close" onClick={()=>setDetail(null)}>×</button>
+      <div className="modal-head"><div><span className="eyebrow">{detail.incident_no}</span><h2>{typeLabels[detail.incident_type]||detail.incident_type}</h2></div></div>
+      <div className="detail-grid" style={{gridTemplateColumns:"1fr 1fr",gap:"12px",marginBottom:"16px"}}>
+        <div><small>Item</small><strong>{detail.item_name} ({detail.item_sku})</strong></div>
+        <div><small>Customer</small><strong>{detail.customer_name||"—"}</strong></div>
+        <div><small>Booking</small><strong>{detail.booking_no||"—"}</strong></div>
+        <div><small>Reported by</small><strong>{detail.reported_by||"—"}</strong></div>
+        <div><small>Replacement cost</small><strong>{peso(Number(detail.replacement_cost||0))}</strong></div>
+        <div><small>Charge amount</small><strong>{peso(Number(detail.charge_amount||0))}</strong></div>
+        <div><small>Insurance claim</small><strong>{peso(Number(detail.insurance_claim_amount||0))}</strong></div>
+        <div><small>Status</small><strong>{statusLabels[detail.status]||detail.status}</strong></div>
+      </div>
+      <div style={{marginBottom:"16px"}}><small>Description</small><p style={{margin:"4px 0",fontSize:"13px",lineHeight:"1.5"}}>{detail.description}</p></div>
+      {detail.resolution_notes&&<div style={{marginBottom:"16px"}}><small>Resolution notes</small><p style={{margin:"4px 0",fontSize:"13px",lineHeight:"1.5"}}>{detail.resolution_notes}</p></div>}
+      <div className="booking-actions" style={{flexWrap:"wrap",gap:"8px"}}>
+        {detail.status==="reported"&&<button className="secondary-button" onClick={()=>updateStatus(detail,"investigating")}>🔍 Start Investigation</button>}
+        {["reported","investigating"].includes(detail.status)&&<>
+          <button className="primary-button" onClick={()=>updateStatus(detail,"resolved_charged")}>✓ Resolve (Charged)</button>
+          <button className="secondary-button" onClick={()=>updateStatus(detail,"resolved_insurance")}>✓ Resolve (Insurance)</button>
+          <button className="secondary-button" onClick={()=>updateStatus(detail,"written_off")}>📄 Write Off</button>
+          <button className="secondary-button danger" onClick={()=>updateStatus(detail,"dismissed")}>✕ Dismiss</button>
+        </>}
+      </div>
+    </div></div>}
+
+    {showNew&&<div className="modal-backdrop" onClick={()=>setShowNew(false)}><div className="modal" onClick={e=>e.stopPropagation()}>
+      <div className="modal-head"><div><span className="eyebrow">New Incident</span><h2>Report Incident</h2></div><button type="button" onClick={()=>setShowNew(false)}>×</button></div>
+      <div className="form-grid">
+        <label>Item<select required value={newForm.rental_item_id} onChange={e=>setNewForm({...newForm,rental_item_id:e.target.value})}><option value="">Select item...</option>{items.map(i=><option key={i.id} value={i.id}>{i.name} ({i.sku})</option>)}</select></label>
+        <label>Type<select value={newForm.incident_type} onChange={e=>setNewForm({...newForm,incident_type:e.target.value})}>{Object.entries(typeLabels).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>
+        <label>Booking ID (optional)<input type="number" value={newForm.booking_id} onChange={e=>setNewForm({...newForm,booking_id:e.target.value})} placeholder="Link to booking..."/></label>
+        <label>Customer (optional)<select value={newForm.customer_id} onChange={e=>setNewForm({...newForm,customer_id:e.target.value})}><option value="">Select customer...</option>{customers.map(c=><option key={c.id} value={c.id}>{c.full_name}</option>)}</select></label>
+        <label className="span-2">Description<textarea required value={newForm.description} onChange={e=>setNewForm({...newForm,description:e.target.value})} placeholder="Describe the incident..."/></label>
+        <label>Replacement cost<input type="number" min="0" value={newForm.replacement_cost} onChange={e=>setNewForm({...newForm,replacement_cost:e.target.value})}/></label>
+        <label>Charge to customer<input type="number" min="0" value={newForm.charge_amount} onChange={e=>setNewForm({...newForm,charge_amount:e.target.value})}/></label>
+        <label>Insurance claim<input type="number" min="0" value={newForm.insurance_claim_amount} onChange={e=>setNewForm({...newForm,insurance_claim_amount:e.target.value})}/></label>
+      </div>
+      <div className="modal-actions"><button className="secondary-button" onClick={()=>setShowNew(false)}>Cancel</button><button className="primary-button" onClick={createIncident}>Report Incident</button></div>
+    </div></div>}
   </AdminShell>
 }
 
 function Bookings() {
+  const navigate=useNavigate();
   const [rows,setRows]=useState([]);
   const [detail,setDetail]=useState(null);
   const [error,setError]=useState("");
@@ -1478,11 +1776,25 @@ function Bookings() {
   const [showPaymentModal,setShowPaymentModal]=useState(false);
   const [paymentForm,setPaymentForm]=useState({amount:"",method:"cash",payment_type:"rental",notes:""});
   const [paymentSubmitting,setPaymentSubmitting]=useState(false);
+  const [deleteBookingTarget,setDeleteBookingTarget]=useState(null);
+  const [deletingBooking,setDeletingBooking]=useState(false);
 
   const load=()=>api("/admin/bookings").then(d=>setRows(d.bookings||[])).catch(e=>setError(e.message));
   React.useEffect(()=>{load()},[]);
   const open=async(id)=>{setError("");try{setDetail((await api(`/admin/bookings/${id}`)).booking)}catch(e){setError(e.message)}};
   const act=async(path,body={})=>{setBusy(true);setError("");try{await api(path,{method:"PATCH",body:JSON.stringify(body)});if(detail)await open(detail.id);load()}catch(e){setError(e.message)}finally{setBusy(false)}};
+
+  const deleteBooking=async()=>{
+    if(!deleteBookingTarget)return;
+    setDeletingBooking(true);
+    try{
+      await api(`/admin/bookings/${deleteBookingTarget.id}`,{method:"DELETE"});
+      setDeleteBookingTarget(null);
+      setDetail(null);
+      load();
+    }catch(e){setError(e.message)}
+    finally{setDeletingBooking(false)}
+  };
 
   const openPaymentModal=()=>{
     const total=Number(detail?.grand_total||0);
@@ -1505,7 +1817,7 @@ function Bookings() {
   };
 
   const reschedule=async()=>{const start=window.prompt("New start date (YYYY-MM-DD):",String(detail.start_date).slice(0,10));if(!start)return;const end=window.prompt("New end date (YYYY-MM-DD):",String(detail.end_date).slice(0,10));if(!end)return;await act(`/admin/bookings/${detail.id}/reschedule`,{start_date:start,end_date:end})};
-  const inspect=async()=>{const condition=window.prompt("Condition after return:","Good");if(!condition)return;const damage=Number(window.prompt("Damage charge:","0")||0);const maintenance=window.confirm("Does this item require maintenance?");try{const r=await api(`/admin/bookings/${detail.id}/return-inspection`,{method:"POST",body:JSON.stringify({condition_after:condition,damage_charge:damage,maintenance_required:maintenance})});window.alert(`Return recorded. Deposit refund: ${peso(Number(r.deposit_refund))}`);await open(detail.id);load()}catch(e){setError(e.message)}};
+  const inspect=async()=>{const condition=window.prompt("Condition after return:","Good");if(!condition)return;const damage=Number(window.prompt("Damage charge:","0")||0);const maintenance=window.confirm("Does this item require maintenance?");try{const r=await api(`/admin/bookings/${detail.id}/return-inspection`,{method:"POST",body:JSON.stringify({condition_after:condition,damage_charge:damage,maintenance_required:maintenance})});if(maintenance){window.alert(`Return recorded. Maintenance records created.`);navigate("/admin/maintenance")}else{window.alert(`Return recorded. Deposit refund: ${peso(Number(r.deposit_refund))}`);await open(detail.id);load()}}catch(e){setError(e.message)}};
 
   const statuses=["All","pending","confirmed","ready","rented","overdue","returned","completed","cancelled","rejected"];
   const statusCounts=Object.fromEntries(statuses.map(s=>[s,s==="All"?rows.length:rows.filter(b=>b.status===s).length]));
@@ -1623,6 +1935,7 @@ function Bookings() {
           {detail.status==="returned"&&detail.inspection&&<button className="primary-button" onClick={()=>api(`/admin/bookings/${detail.id}/complete`,{method:"POST",body:JSON.stringify({})}).then(()=>{open(detail.id);load()}).catch(e=>setError(e.message))}>✓ Complete</button>}
           {!["cancelled","rejected","completed","returned"].includes(detail.status)&&<button className="secondary-button danger" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"cancelled"})}>✕ Cancel</button>}
           <button className="primary-button" onClick={openPaymentModal}>💰 Record Payment</button>
+          <button className="danger-button" onClick={()=>setDeleteBookingTarget(detail)}>🗑 Delete Booking</button>
         </div>
       </div>
       <div className="booking-modal-section">
@@ -1671,6 +1984,17 @@ function Bookings() {
         <button className="primary-button" disabled={paymentSubmitting||!paymentForm.amount||Number(paymentForm.amount)<=0} onClick={submitPayment}>{paymentSubmitting?"Processing...":`Confirm ${peso(Number(paymentForm.amount||0))}`}</button>
       </div>
     </div></div>}
+
+    {deleteBookingTarget&&<div className="modal-backdrop" onClick={()=>setDeleteBookingTarget(null)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+      <div className="confirm-modal-icon">🗑</div>
+      <h3>Delete Booking</h3>
+      <p>Are you sure you want to delete <strong>{deleteBookingTarget.booking_no}</strong>?</p>
+      <small>This will permanently remove the booking, all its payments, and status history. This action cannot be undone.</small>
+      <div className="confirm-modal-actions">
+        <button className="secondary-button" onClick={()=>setDeleteBookingTarget(null)}>Cancel</button>
+        <button className="danger-button" disabled={deletingBooking} onClick={deleteBooking}>{deletingBooking?"Deleting...":"Delete Booking"}</button>
+      </div>
+    </div></div>}
   </AdminShell>
 }
 
@@ -1680,10 +2004,26 @@ function Customers() {
   const [search,setSearch]=useState("");
   const [statusFilter,setStatusFilter]=useState("All");
   const [detail,setDetail]=useState(null);
+  const [renterScore,setRenterScore]=useState(null);
 
   const load=()=>api("/admin/customers").then(d=>setRows(d.customers||[])).catch(e=>setError(e.message));
   React.useEffect(()=>{load()},[]);
   const toggle=async(c)=>{try{await api(`/admin/customers/${c.id}/status`,{method:"PATCH",body:JSON.stringify({status:c.status==="active"?"blocked":"active"})});if(detail&&detail.id===c.id)setDetail({...c,status:c.status==="active"?"blocked":"active"});load()}catch(e){setError(e.message)}};
+  const del=async(c)=>{if(!confirm(`Delete customer "${c.full_name}"? This cannot be undone.`))return;try{await api(`/admin/customers/${c.id}`,{method:"DELETE"});if(detail&&detail.id===c.id)setDetail(null);load()}catch(e){setError(e.message)}};
+  const clearAll=async()=>{if(!confirm("Delete ALL customers? This cannot be undone."))return;try{await api("/admin/customers",{method:"DELETE"});setDetail(null);load()}catch(e){setError(e.message)}};
+
+  const loadScore=async(c)=>{
+    try{
+      const data=await api(`/admin/customers/${c.id}/score`);
+      setRenterScore(data);
+    }catch(e){setRenterScore(null)}
+  };
+
+  const openDetail=async(c)=>{
+    setDetail(c);
+    setRenterScore(null);
+    loadScore(c);
+  };
 
   const filtered=rows.filter(c=>{
     const matchSearch=(c.full_name||"").toLowerCase().includes(search.toLowerCase())||(c.email||"").toLowerCase().includes(search.toLowerCase())||(c.phone||"").includes(search);
@@ -1718,6 +2058,7 @@ function Customers() {
         <option value="active">Active ({rows.filter(c=>c.status==="active").length})</option>
         <option value="blocked">Blocked ({rows.filter(c=>c.status!=="active").length})</option>
       </select>
+      {rows.length>0&&<button className="danger-button" onClick={clearAll}>Clear All Customers</button>}
     </div>
 
     <section className="admin-card">
@@ -1726,7 +2067,7 @@ function Customers() {
         <h3>No customers found</h3>
         <p>{search||statusFilter!=="All"?"Try adjusting your search or filter.":"No customers registered yet."}</p>
       </div>:<div className="customer-card-grid">
-        {filtered.map(c=><article className="customer-detail-card" key={c.id} onClick={()=>setDetail(c)}>
+        {filtered.map(c=><article className="customer-detail-card" key={c.id} onClick={()=>openDetail(c)}>
           <div className="customer-card-header">
             <div className="customer-avatar-lg">{c.full_name.split(" ").map(x=>x[0]).join("").slice(0,2)}</div>
             <div className="customer-card-title">
@@ -1746,7 +2087,8 @@ function Customers() {
           </div>
           <div className="customer-card-footer" onClick={e=>e.stopPropagation()}>
             <button className={c.status==="active"?"danger-button":"secondary-button"} onClick={()=>toggle(c)}>{c.status==="active"?"Block":"Unblock"}</button>
-            <button className="secondary-button" onClick={()=>setDetail(c)}>View Details →</button>
+            <button className="danger-button" onClick={()=>del(c)}>Delete</button>
+            <button className="secondary-button" onClick={()=>openDetail(c)}>View Details →</button>
           </div>
         </article>)}
       </div>}
@@ -1768,6 +2110,25 @@ function Customers() {
         <div className="customer-detail-stat"><span className="booking-stat-icon payment">📋</span><div><small>Bookings</small><b>{detail.booking_count||0}</b></div></div>
         <div className="customer-detail-stat"><span className="booking-stat-icon total">💰</span><div><small>Lifetime value</small><b>{peso(Number(detail.lifetime_value||0))}</b></div></div>
       </div>
+      {renterScore&&<div className="booking-modal-section">
+        <div className="booking-section-header"><span>⭐</span><strong>Reliability Score</strong></div>
+        <div className="renter-score-card">
+          <div className="renter-score-main">
+            <div className={`renter-score-circle score-${renterScore.rating.toLowerCase().replace(" ","-")}`}>
+              <span className="renter-score-num">{renterScore.score}</span>
+              <span className="renter-score-label">/100</span>
+            </div>
+            <div className="renter-score-rating">{renterScore.rating}</div>
+          </div>
+          <div className="renter-score-details">
+            <div className="renter-score-row"><span>Total bookings</span><strong>{renterScore.totalBookings}</strong></div>
+            <div className="renter-score-row"><span>Completed</span><strong>{renterScore.completedBookings}</strong></div>
+            <div className="renter-score-row"><span>Late returns</span><strong className={renterScore.lateReturns>0?"text-warning":""}>{renterScore.lateReturns}</strong></div>
+            <div className="renter-score-row"><span>Damage incidents</span><strong className={renterScore.damages>0?"text-danger":""}>{renterScore.damages}</strong></div>
+            <div className="renter-score-row"><span>Total spent</span><strong>{peso(Number(renterScore.totalSpent))}</strong></div>
+          </div>
+        </div>
+      </div>}
       {detail.address&&<div className="booking-modal-section">
         <div className="booking-section-header"><span>📍</span><strong>Address</strong></div>
         <div className="customer-address-box">{detail.address}</div>
@@ -1783,6 +2144,7 @@ function Customers() {
         <div className="booking-section-header"><span>⚡</span><strong>Actions</strong></div>
         <div className="booking-actions">
           <button className={detail.status==="active"?"danger-button":"primary-button"} onClick={()=>toggle(detail)}>{detail.status==="active"?"🚫 Block Customer":"✓ Unblock Customer"}</button>
+          <button className="danger-button" onClick={()=>del(detail)}>Delete Customer</button>
         </div>
       </div>
     </div></div>}
@@ -1795,10 +2157,23 @@ function Payments() {
   const [search,setSearch]=useState("");
   const [typeFilter,setTypeFilter]=useState("All");
   const [statusFilter,setStatusFilter]=useState("All");
-  const [invoice,setInvoice]=useState(null);
+  const [expanded,setExpanded]=useState(null);
+  const [deleteTarget,setDeleteTarget]=useState(null);
+  const [deleting,setDeleting]=useState(false);
 
   const load=()=>api("/admin/payments").then(d=>setRows(d.payments||[])).catch(e=>setError(e.message));
   React.useEffect(()=>{load()},[]);
+
+  const deletePayment=async()=>{
+    if(!deleteTarget)return;
+    setDeleting(true);
+    try{
+      await api(`/admin/payments/${deleteTarget.id}`,{method:"DELETE"});
+      setDeleteTarget(null);
+      load();
+    }catch(e){setError(e.message)}
+    finally{setDeleting(false)}
+  };
 
   const filtered=rows.filter(p=>{
     const matchSearch=(p.booking_no||"").toLowerCase().includes(search.toLowerCase())||(p.customer_name||"").toLowerCase().includes(search.toLowerCase());
@@ -1806,6 +2181,26 @@ function Payments() {
     const matchStatus=statusFilter==="All"||p.status===statusFilter;
     return matchSearch&&matchType&&matchStatus;
   });
+
+  const grouped=React.useMemo(()=>{
+    const map=new Map();
+    filtered.forEach(p=>{
+      const key=p.booking_id;
+      if(!map.has(key)){
+        map.set(key,{booking_id:key,booking_no:p.booking_no,customer_name:p.customer_name,payments:[],totalPaid:0,latestDate:p.created_at,hasPending:false,hasRefund:false,primaryMethod:p.method});
+      }
+      const g=map.get(key);
+      g.payments.push(p);
+      if(p.status==="completed"){
+        g.totalPaid+=(p.payment_type==="refund"?-1:1)*Number(p.amount);
+      }
+      if(p.status==="pending")g.hasPending=true;
+      if(p.payment_type==="refund")g.hasRefund=true;
+      if(new Date(p.created_at)>new Date(g.latestDate))g.latestDate=p.created_at;
+      if(p.status==="completed")g.primaryMethod=p.method;
+    });
+    return Array.from(map.values()).sort((a,b)=>new Date(b.latestDate)-new Date(a.latestDate));
+  },[filtered]);
 
   const net=rows.filter(x=>x.status==="completed").reduce((s,x)=>s+(x.payment_type==="refund"?-1:1)*Number(x.amount),0);
   const stats={
@@ -1882,37 +2277,65 @@ function Payments() {
     </div>
 
     <section className="admin-card">
-      {filtered.length===0?<div className="inventory-empty">
+      {grouped.length===0?<div className="inventory-empty">
         <span>💳</span>
         <h3>No payments found</h3>
         <p>{search||typeFilter!=="All"||statusFilter!=="All"?"Try adjusting your filters.":"No payment transactions yet."}</p>
       </div>:<div className="payment-card-grid">
-        {filtered.map(p=><article className="payment-card" key={p.id}>
-          <div className="payment-card-top">
+        {grouped.map(g=><article className={`payment-card ${expanded===g.booking_id?"payment-card-expanded":""}`} key={g.booking_id}>
+          <div className="payment-card-top" onClick={()=>setExpanded(expanded===g.booking_id?null:g.booking_id)}>
             <div className="payment-card-icon-wrap">
-              <span className="payment-card-icon">{p.payment_type==="refund"?"↩":p.payment_type==="deposit"?"🔒":"💵"}</span>
+              <span className="payment-card-icon">{g.hasRefund?"↩":g.payments[0]?.payment_type==="deposit"?"🔒":"💵"}</span>
             </div>
             <div className="payment-card-info">
-              <strong>{p.booking_no}</strong>
-              <small>{p.customer_name}</small>
+              <strong>{g.booking_no}</strong>
+              <small>{g.customer_name}</small>
             </div>
             <div className="payment-card-amount">
-              <strong>{peso(Number(p.amount))}</strong>
-              <span className={`status-pill ${p.status==="completed"?"confirmed":p.status==="void"?"overdue":"pending"}`}>{p.status}</span>
+              <strong>{peso(Number(g.totalPaid))}</strong>
+              <span className={`status-pill ${g.hasPending?"pending":"confirmed"}`}>{g.hasPending?"pending":"completed"}</span>
             </div>
           </div>
           <div className="payment-card-body">
-            <div className="payment-card-detail"><span>📋</span><small>Type: {p.payment_type}</small></div>
-            <div className="payment-card-detail"><span>💳</span><small>Method: {(p.method||"cash").replace("_"," ")}</small></div>
-            <div className="payment-card-detail"><span>📅</span><small>{new Date(p.created_at).toLocaleDateString("en-PH",{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</small></div>
+            <div className="payment-card-detail"><span>📋</span><small>{g.payments.length} payment{g.payments.length>1?"s":""}</small></div>
+            <div className="payment-card-detail"><span>💳</span><small>Method: {(g.primaryMethod||"cash").replace("_"," ")}</small></div>
+            <div className="payment-card-detail"><span>📅</span><small>{new Date(g.latestDate).toLocaleDateString("en-PH",{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</small></div>
           </div>
-          {p.notes&&<div className="payment-card-note">📝 {p.notes}</div>}
+          {expanded===g.booking_id&&<div className="payment-card-transactions">
+            {g.payments.map(p=><div className="payment-transaction-row" key={p.id}>
+              <div className="payment-tx-info">
+                <span className={`status-pill status-tiny ${p.status==="completed"?"confirmed":p.status==="void"?"overdue":"pending"}`}>{p.status}</span>
+                <small>{p.payment_type}</small>
+                <small>{(p.method||"cash").replace("_"," ")}</small>
+                {p.notes&&<small className="payment-tx-note">{p.notes}</small>}
+              </div>
+              <div className="payment-tx-actions">
+                <div className="payment-tx-meta">
+                  <strong className={p.payment_type==="refund"?"refund-amount":""}>{p.payment_type==="refund"?"-":"+"}{peso(Number(p.amount))}</strong>
+                  <small>{new Date(p.created_at).toLocaleDateString("en-PH",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</small>
+                </div>
+                <button className="tx-delete-btn" title="Delete payment" onClick={()=>setDeleteTarget(p)}>🗑</button>
+              </div>
+            </div>)}
+          </div>}
           <div className="payment-card-footer">
-            <button className="secondary-button" onClick={()=>printInvoice(p)}>🖨 Print Invoice</button>
+            <button className="secondary-button" onClick={()=>setExpanded(expanded===g.booking_id?null:g.booking_id)}>{expanded===g.booking_id?"Hide Details":"View Details"}</button>
+            <button className="secondary-button" onClick={()=>printInvoice(g.payments[0])}>🖨 Print Invoice</button>
           </div>
         </article>)}
       </div>}
     </section>
+
+    {deleteTarget&&<div className="modal-backdrop" onClick={()=>setDeleteTarget(null)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+      <div className="confirm-modal-icon">🗑</div>
+      <h3>Delete Payment</h3>
+      <p>Are you sure you want to delete this <strong>{deleteTarget.payment_type}</strong> payment of <strong>{peso(Number(deleteTarget.amount))}</strong>?</p>
+      <small>This action cannot be undone.</small>
+      <div className="confirm-modal-actions">
+        <button className="secondary-button" onClick={()=>setDeleteTarget(null)}>Cancel</button>
+        <button className="danger-button" disabled={deleting} onClick={deletePayment}>{deleting?"Deleting...":"Delete Payment"}</button>
+      </div>
+    </div></div>}
   </AdminShell>
 }
 
@@ -2154,6 +2577,7 @@ function AdminRoutes() {
     <Route path="/admin/bookings" element={<ProtectedRoute roles={["admin"]}><Bookings/></ProtectedRoute>}/>
     <Route path="/admin/customers" element={<ProtectedRoute roles={["admin"]}><Customers/></ProtectedRoute>}/>
     <Route path="/admin/payments" element={<ProtectedRoute roles={["admin"]}><Payments/></ProtectedRoute>}/>
+    <Route path="/admin/incidents" element={<ProtectedRoute roles={["admin"]}><Incidents/></ProtectedRoute>}/>
     <Route path="/admin/reports" element={<ProtectedRoute roles={["admin"]}><Reports/></ProtectedRoute>}/>
     <Route path="/admin/maintenance" element={<ProtectedRoute roles={["admin"]}><Maintenance/></ProtectedRoute>}/>
     <Route path="/admin/access" element={<ProtectedRoute roles={["admin"]}><AccessManagement/></ProtectedRoute>}/>
@@ -2166,9 +2590,9 @@ export default function App() {
   const [cart,setCart] = useState([]);
   const add = item => setCart(prev => {
     const exists = prev.find(x=>x.id===item.id);
-    return exists ? prev.map(x=>x.id===item.id ? {...x,qty:x.qty+1}:x) : [...prev,{...item,qty:1}];
+    return exists ? prev.map(x=>x.id===item.id ? {...x,qty:Math.min(x.stock||Infinity,x.qty+1)}:x) : [...prev,{...item,qty:1}];
   });
-  const updateQty = (id,delta) => setCart(prev=>prev.map(x=>x.id===id?{...x,qty:Math.max(1,x.qty+delta)}:x));
+  const updateQty = (id,delta) => setCart(prev=>prev.map(x=>x.id===id?{...x,qty:Math.max(1,Math.min(x.stock||Infinity,x.qty+delta))}:x));
   const removeItem = id => setCart(prev=>prev.filter(x=>x.id!==id));
   const clearCart = ()=>setCart([]);
   const isAdmin = window.location.pathname.startsWith("/admin") || window.location.pathname.startsWith("/access");

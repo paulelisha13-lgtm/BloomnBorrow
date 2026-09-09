@@ -85,6 +85,12 @@ app.get("/api/health", async (_req,res) => {
   res.json({ok:true});
 });
 
+app.get("/api/settings/public", async (_req,res) => {
+  const deliveryFee = Number(await getSetting("delivery_fee", "300"));
+  const lateFeePerDay = Number(await getSetting("late_fee_per_day", "250"));
+  res.json({delivery_fee:deliveryFee,late_fee_per_day:lateFeePerDay});
+});
+
 app.post("/api/auth/login", async (req,res) => {
   const email = String(req.body.email || "").trim().toLowerCase();
   const password = String(req.body.password || "");
@@ -243,8 +249,11 @@ async function getAvailability(conn, itemId, startDate, endDate) {
 
 app.get("/api/rentals", async (_req,res) => {
   const [rows] = await db.query(`
-    SELECT id,sku,name,category,description,daily_price,security_deposit,total_quantity,status,image_url
-    FROM rental_items WHERE status='active' ORDER BY id
+    SELECT r.id,r.sku,r.name,r.category,r.description,r.daily_price,r.security_deposit,r.total_quantity,r.status,r.image_url,
+      COALESCE((SELECT SUM(bi.quantity) FROM booking_items bi JOIN bookings b ON b.id=bi.booking_id
+        WHERE bi.rental_item_id=r.id AND b.status IN ('pending','confirmed','ready','rented','overdue')
+          AND b.end_date >= CURDATE()),0) AS reserved
+    FROM rental_items r WHERE r.status='active' ORDER BY r.id
   `);
   res.json({items:rows});
 });
@@ -338,7 +347,8 @@ app.post("/api/bookings/guest", async (req,res,next) => {
       customerId = customerResult.insertId;
     }
 
-    const deliveryFee = fulfillment === "delivery" ? 300 : 0;
+    const deliveryFeeSetting = Number(await getSetting("delivery_fee", "300"));
+    const deliveryFee = fulfillment === "delivery" ? deliveryFeeSetting : 0;
     const grandTotal = rentalSubtotal + depositTotal + deliveryFee;
 
     const [bookingResult] = await conn.query(`
@@ -366,7 +376,8 @@ app.post("/api/bookings/guest", async (req,res,next) => {
 
     res.status(201).json({booking:{
       id:bookingId,booking_no:bookingNo,status:"pending",start_date:req.body.start_date,end_date:req.body.end_date,
-      rental_days:days,rental_subtotal:rentalSubtotal,deposit_total:depositTotal,delivery_fee:deliveryFee,grand_total:grandTotal
+      rental_days:days,rental_subtotal:rentalSubtotal,deposit_total:depositTotal,delivery_fee:deliveryFee,grand_total:grandTotal,
+      payment_method:paymentMethod
     }});
   } catch (error) {
     try { await conn.rollback(); } catch {}
@@ -432,6 +443,7 @@ async function recalcPaymentStatus(bookingId, conn=db) {
   let status = "unpaid";
   if (paid > 0 && paid < total) status = "partial";
   if (paid >= total) status = "paid";
+  if (paid <= 0 && total > 0) status = "refunded";
   await conn.query("UPDATE bookings SET payment_status=? WHERE id=?",[status,bookingId]);
 }
 
@@ -461,6 +473,31 @@ const validTransitions = {
   rejected:[],
   cancelled:[]
 };
+
+async function checkOverdueBookings() {
+  try {
+    const [result] = await db.query(`
+      UPDATE bookings SET status='overdue'
+      WHERE status='rented' AND end_date < CURDATE()
+    `);
+    if (result.changedRows > 0) {
+      console.log(`[OVERDUE CHECK] Auto-transitioned ${result.changedRows} booking(s) to overdue.`);
+      const [overdueBookings] = await db.query(`
+        SELECT id, booking_no, customer_name, end_date
+        FROM bookings WHERE status='overdue' AND updated_at >= DATE_SUB(NOW(), INTERVAL 2 MINUTE)
+      `);
+      for (const b of overdueBookings) {
+        await db.query(
+          "INSERT INTO booking_status_history(booking_id,from_status,to_status,note) VALUES(?,'rented','overdue','Auto-detected: rental past due date')",
+          [b.id]
+        );
+        await addNotification({bookingId:b.id,type:"BOOKING_STATUS",title:`Booking ${b.booking_no}: Overdue`,message:`Rental for ${b.customer_name} is past due.`});
+      }
+    }
+  } catch (e) {
+    console.error("[OVERDUE CHECK] Error:", e.message);
+  }
+}
 
 app.get("/api/admin/dashboard", authenticate, requireRole("admin"), async (_req,res) => {
   const [[stats]] = await db.query(`
@@ -518,12 +555,41 @@ app.get("/api/admin/dashboard", authenticate, requireRole("admin"), async (_req,
   res.json({stats,recent,months,daily});
 });
 
+app.get("/api/admin/escalations", authenticate, requireRole("admin"), async (_req,res) => {
+  const [overdue]=await db.query(`
+    SELECT b.id,b.booking_no,b.status,b.start_date,b.end_date,b.grand_total,
+      b.customer_id,b.deposit_total,
+      c.full_name AS customer_name,c.phone AS customer_phone,c.email AS customer_email,
+      DATEDIFF(CURDATE(),b.end_date) AS overdue_days,
+      GREATEST(0,DATEDIFF(CURDATE(),b.end_date)) AS days_overdue
+    FROM bookings b
+    JOIN customers c ON c.id=b.customer_id
+    WHERE b.status IN ('overdue','rented') AND b.end_date < CURDATE()
+    ORDER BY overdue_days DESC
+  `);
+  const lateRate=Number(await getSetting("late_fee_per_day","250"));
+  const escalated=overdue.map(b=>{
+    const days=b.days_overdue||0;
+    let level="gentle";
+    if(days>=14)level="final";
+    else if(days>=7)level="formal";
+    else if(days>=3)level="reminder";
+    const lateFee=days*lateRate;
+    return{...b,level,lateFee,daysText:`${days} day${days===1?"":"s"} overdue`};
+  });
+  const stats={total:escalated.length,gentle:escalated.filter(e=>e.level==="gentle").length,reminder:escalated.filter(e=>e.level==="reminder").length,formal:escalated.filter(e=>e.level==="formal").length,final:escalated.filter(e=>e.level==="final").length};
+  res.json({escalated,stats});
+});
+
 app.get("/api/admin/inventory", authenticate, requireRole("admin"), async (_req,res) => {
   const [items] = await db.query(`
     SELECT r.*,
       COALESCE((SELECT SUM(bi.quantity) FROM booking_items bi JOIN bookings b ON b.id=bi.booking_id
         WHERE bi.rental_item_id=r.id AND b.status IN ('confirmed','ready','rented','overdue')
           AND CURDATE() BETWEEN b.start_date AND b.end_date),0) AS reserved_today,
+      COALESCE((SELECT SUM(bi.quantity) FROM booking_items bi JOIN bookings b ON b.id=bi.booking_id
+        WHERE bi.rental_item_id=r.id AND b.status IN ('pending','confirmed','ready','rented','overdue')
+          AND b.end_date >= CURDATE()),0) AS reserved_all,
       COALESCE((SELECT COUNT(*) FROM maintenance_records m WHERE m.rental_item_id=r.id AND m.status IN ('open','in_progress')),0) AS open_maintenance
     FROM rental_items r ORDER BY r.created_at DESC
   `);
@@ -576,10 +642,107 @@ app.delete("/api/admin/inventory/:id", authenticate, requireRole("admin"), async
   res.json({ok:true,deleted:true});
 });
 
+app.get("/api/admin/items/:id/conditions", authenticate, requireRole("admin"), async (req,res) => {
+  const itemId=Number(req.params.id);
+  const [[item]]=await db.query("SELECT id,name,sku FROM rental_items WHERE id=?",[itemId]);
+  if(!item) return res.status(404).json({message:"Item not found."});
+  const [conditions]=await db.query(`
+    SELECT ic.*,b.booking_no,u.full_name recorded_by
+    FROM item_conditions ic
+    LEFT JOIN bookings b ON b.id=ic.booking_id
+    LEFT JOIN users u ON u.id=ic.recorded_by_user_id
+    WHERE ic.rental_item_id=? ORDER BY ic.created_at DESC
+  `,[itemId]);
+  res.json({item,conditions});
+});
+
+app.post("/api/admin/items/:id/conditions", authenticate, requireRole("admin"), async (req,res) => {
+  const itemId=Number(req.params.id);
+  const [[item]]=await db.query("SELECT id FROM rental_items WHERE id=?",[itemId]);
+  if(!item) return res.status(404).json({message:"Item not found."});
+  const {condition_status,condition_type,notes,booking_id}=req.body;
+  if(!['excellent','good','fair','poor','damaged','lost'].includes(condition_status)){
+    return res.status(400).json({message:"Invalid condition status."});
+  }
+  if(!['before_rental','after_return','damage_report','maintenance'].includes(condition_type)){
+    return res.status(400).json({message:"Invalid condition type."});
+  }
+  const [result]=await db.query(`
+    INSERT INTO item_conditions(rental_item_id,booking_id,condition_status,condition_type,notes,recorded_by_user_id)
+    VALUES(?,?,?,?,?,?)
+  `,[itemId,booking_id||null,condition_status,condition_type,notes||null,req.user.id]);
+  res.status(201).json({id:result.insertId,ok:true});
+});
+
+async function generateIncidentNo(conn=db) {
+  const [[{cnt}]]=await conn.query("SELECT COUNT(*) AS cnt FROM incidents");
+  return `INC-${String(Number(cnt||0)+1).padStart(6,"0")}`;
+}
+
+app.get("/api/admin/incidents", authenticate, requireRole("admin"), async (_req,res) => {
+  const [incidents]=await db.query(`
+    SELECT i.*,r.name item_name,r.sku item_sku,b.booking_no,
+      c.full_name customer_name,u1.full_name reported_by,u2.full_name resolved_by
+    FROM incidents i
+    LEFT JOIN rental_items r ON r.id=i.rental_item_id
+    LEFT JOIN bookings b ON b.id=i.booking_id
+    LEFT JOIN customers c ON c.id=i.customer_id
+    LEFT JOIN users u1 ON u1.id=i.reported_by_user_id
+    LEFT JOIN users u2 ON u2.id=i.resolved_by_user_id
+    ORDER BY i.created_at DESC
+  `);
+  res.json({incidents});
+});
+
+app.post("/api/admin/incidents", authenticate, requireRole("admin"), async (req,res) => {
+  const {rental_item_id,booking_id,customer_id,incident_type,description,replacement_cost,charge_amount,insurance_claim_amount}=req.body;
+  if(!rental_item_id||!description) return res.status(400).json({message:"Item and description are required."});
+  const [[item]]=await db.query("SELECT id FROM rental_items WHERE id=?",[rental_item_id]);
+  if(!item) return res.status(404).json({message:"Rental item not found."});
+  const incident_no=await generateIncidentNo();
+  const [result]=await db.query(`
+    INSERT INTO incidents(incident_no,rental_item_id,booking_id,customer_id,incident_type,description,replacement_cost,charge_amount,insurance_claim_amount,reported_by_user_id)
+    VALUES(?,?,?,?,?,?,?,?,?,?)
+  `,[incident_no,rental_item_id,booking_id||null,customer_id||null,incident_type||"damaged_minor",description,Number(replacement_cost||0),Number(charge_amount||0),Number(insurance_claim_amount||0),req.user.id]);
+  res.status(201).json({id:result.insertId,incident_no,ok:true});
+});
+
+app.patch("/api/admin/incidents/:id", authenticate, requireRole("admin"), async (req,res) => {
+  const id=Number(req.params.id);
+  const [[incident]]=await db.query("SELECT id FROM incidents WHERE id=?",[id]);
+  if(!incident) return res.status(404).json({message:"Incident not found."});
+  const {status,resolution_notes,charge_amount,insurance_claim_amount}=req.body;
+  const validStatuses=['reported','investigating','resolved_charged','resolved_insurance','written_off','dismissed'];
+  if(status && !validStatuses.includes(status)) return res.status(400).json({message:"Invalid status."});
+  const updates=[];
+  const params=[];
+  if(status){updates.push("status=?");params.push(status);}
+  if(resolution_notes!==undefined){updates.push("resolution_notes=?");params.push(resolution_notes);}
+  if(charge_amount!==undefined){updates.push("charge_amount=?");params.push(Number(charge_amount));}
+  if(insurance_claim_amount!==undefined){updates.push("insurance_claim_amount=?");params.push(Number(insurance_claim_amount));}
+  if(status&&status.startsWith("resolved_")){updates.push("resolved_at=NOW()");updates.push("resolved_by_user_id=?");params.push(req.user.id);}
+  params.push(id);
+  await db.query(`UPDATE incidents SET ${updates.join(",")} WHERE id=?`,params);
+  res.json({ok:true});
+});
+
 app.get("/api/admin/bookings/:id", authenticate, requireRole("admin"), async (req,res) => {
   const booking=await bookingDetailById(Number(req.params.id));
   if(!booking) return res.status(404).json({message:"Booking not found."});
   res.json({booking});
+});
+
+app.delete("/api/admin/bookings/:id", authenticate, requireRole("admin"), async (req,res) => {
+  const id=Number(req.params.id);
+  const [[booking]]=await db.query("SELECT id,booking_no FROM bookings WHERE id=?",[id]);
+  if(!booking) return res.status(404).json({message:"Booking not found."});
+  await db.query("DELETE FROM booking_items WHERE booking_id=?",[id]);
+  await db.query("DELETE FROM booking_status_history WHERE booking_id=?",[id]);
+  await db.query("DELETE FROM payments WHERE booking_id=?",[id]);
+  await db.query("DELETE FROM return_inspections WHERE booking_id=?",[id]);
+  await db.query("DELETE FROM notifications WHERE booking_id=?",[id]);
+  await db.query("DELETE FROM bookings WHERE id=?",[id]);
+  res.json({ok:true});
 });
 
 app.patch("/api/admin/bookings/:id/status", authenticate, requireRole("admin"), async (req,res) => {
@@ -651,8 +814,60 @@ app.patch("/api/admin/payments/:id/void", authenticate, requireRole("admin"), as
   res.json({ok:true});
 });
 
+app.delete("/api/admin/payments/:id", authenticate, requireRole("admin"), async (req,res) => {
+  const id=Number(req.params.id);
+  const [[payment]]=await db.query("SELECT booking_id FROM payments WHERE id=?",[id]);
+  if(!payment) return res.status(404).json({message:"Payment not found."});
+  await db.query("DELETE FROM payments WHERE id=?",[id]);
+  await recalcPaymentStatus(payment.booking_id);
+  res.json({ok:true});
+});
+
+app.get("/api/admin/customers/:id/score", authenticate, requireRole("admin"), async (req,res) => {
+  const customerId=Number(req.params.id);
+  const [[customer]]=await db.query("SELECT id,full_name FROM customers WHERE id=?",[customerId]);
+  if(!customer) return res.status(404).json({message:"Customer not found."});
+  const [bookings]=await db.query(`
+    SELECT b.id,b.status,b.start_date,b.end_date,b.created_at,b.grand_total,
+      ri.condition_after,ri.late_days,ri.damage_charge
+    FROM bookings b
+    LEFT JOIN return_inspections ri ON ri.booking_id=b.id
+    WHERE b.customer_id=? AND b.status IN ('completed','returned','overdue')
+    ORDER BY b.created_at DESC
+  `,[customerId]);
+  const totalBookings=bookings.length;
+  const completedBookings=bookings.filter(b=>b.status==="completed").length;
+  const lateReturns=bookings.filter(b=>Number(b.late_days||0)>0).length;
+  const damages=bookings.filter(b=>Number(b.damage_charge||0)>0).length;
+  const totalSpent=bookings.reduce((s,b)=>s+Number(b.grand_total||0),0);
+  let score=70;
+  if(totalBookings>0){
+    const completionRate=completedBookings/totalBookings;
+    score+=Math.round(completionRate*20);
+    if(lateReturns===0)score+=10;
+    else if(lateReturns<=1)score+=5;
+    else score-=Math.min(15,lateReturns*3);
+    if(damages===0)score+=5;
+    else score-=Math.min(10,damages*5);
+    if(totalBookings>=3)score+=5;
+    if(totalBookings>=5)score+=5;
+  }
+  score=Math.max(0,Math.min(100,score));
+  let rating="Fair";
+  if(score>=90)rating="Excellent";
+  else if(score>=75)rating="Good";
+  else if(score>=50)rating="Fair";
+  else if(score>=30)rating="Poor";
+  else rating="At Risk";
+  res.json({customer,score,rating,totalBookings,completedBookings,lateReturns,damages,totalSpent});
+});
+
 app.post("/api/admin/bookings/:id/return-inspection", authenticate, requireRole("admin"), async (req,res) => {
   const bookingId=Number(req.params.id);
+  if(!Number.isInteger(bookingId)||bookingId<=0) return res.status(400).json({message:"Invalid booking ID."});
+  const conditionAfter=String(req.body.condition_after||"Good").trim();
+  const damageCharge=Number(req.body.damage_charge||0);
+  if(!Number.isFinite(damageCharge)||damageCharge<0) return res.status(400).json({message:"Damage charge must be a valid non-negative amount."});
   const booking=await bookingDetailById(bookingId);
   if(!booking) return res.status(404).json({message:"Booking not found."});
   if(!["rented","overdue","returned"].includes(booking.status)) return res.status(409).json({message:"Booking must be rented/overdue before return inspection."});
@@ -661,11 +876,14 @@ app.post("/api/admin/bookings/:id/return-inspection", authenticate, requireRole(
   const lateDays=Math.max(0,Math.ceil((today-due)/86400000));
   const lateRate=Number(await getSetting("late_fee_per_day","250"));
   const lateFee = req.body.late_fee!==undefined ? Math.max(0,Number(req.body.late_fee)) : lateDays*lateRate;
-  const damage=Math.max(0,Number(req.body.damage_charge||0));
+  const damage=damageCharge;
   const deposit=Number(booking.deposit_total||0);
   const refund=Math.max(0,deposit-lateFee-damage);
-  const maintenance=Boolean(req.body.maintenance_required);
-  await db.query(`
+  const maintenance=req.body.maintenance_required===true||req.body.maintenance_required===1||req.body.maintenance_required==="true";
+  const conn=await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.query(`
     INSERT INTO return_inspections
       (booking_id,condition_before,condition_after,missing_items,damage_notes,late_days,late_fee,damage_charge,deposit_refund,maintenance_required,inspected_by_user_id)
     VALUES(?,?,?,?,?,?,?,?,?,?,?)
@@ -673,18 +891,57 @@ app.post("/api/admin/bookings/:id/return-inspection", authenticate, requireRole(
       missing_items=VALUES(missing_items),damage_notes=VALUES(damage_notes),late_days=VALUES(late_days),
       late_fee=VALUES(late_fee),damage_charge=VALUES(damage_charge),deposit_refund=VALUES(deposit_refund),
       maintenance_required=VALUES(maintenance_required),inspected_by_user_id=VALUES(inspected_by_user_id),returned_at=NOW()
-  `,[bookingId,req.body.condition_before||null,req.body.condition_after||"Good",req.body.missing_items||null,req.body.damage_notes||null,lateDays,lateFee,damage,refund,maintenance?1:0,req.user.id]);
+    `,[bookingId,req.body.condition_before||null,conditionAfter,req.body.missing_items||null,req.body.damage_notes||null,lateDays,lateFee,damage,refund,maintenance?1:0,req.user.id]);
   if(maintenance){
     for(const row of booking.items){
-      await db.query("INSERT INTO maintenance_records(rental_item_id,booking_id,reason,status,notes) VALUES(?,?,'Return inspection flagged maintenance','open',?)",[row.rental_item_id,bookingId,req.body.damage_notes||null]);
-      await db.query("UPDATE rental_items SET status='maintenance' WHERE id=?",[row.rental_item_id]);
+      await conn.query("INSERT INTO maintenance_records(rental_item_id,booking_id,reason,status,notes) VALUES(?,?,'Return inspection flagged maintenance','open',?)",[row.rental_item_id,bookingId,req.body.damage_notes||null]);
+      await conn.query("UPDATE rental_items SET status='maintenance' WHERE id=?",[row.rental_item_id]);
+      await conn.query("INSERT INTO item_conditions(rental_item_id,booking_id,condition_status,condition_type,notes,recorded_by_user_id) VALUES(?,?,'damaged','damage_report',?,?)",[row.rental_item_id,bookingId,req.body.damage_notes||"Damaged during rental",req.user.id]);
+    }
+    const incidentNo=await generateIncidentNo();
+    const normalizedCondition=conditionAfter.toLowerCase();
+    const incidentType=normalizedCondition==="lost"?"lost":damage>5000?"damaged_major":"damaged_minor";
+    await conn.query(`
+      INSERT INTO incidents(incident_no,rental_item_id,booking_id,customer_id,incident_type,status,description,charge_amount,replacement_cost,reported_by_user_id)
+      VALUES(?,?,?,?,?,?,?,?,?,?)
+    `,[incidentNo,booking.items[0]?.rental_item_id||null,bookingId,booking.customer_id,incidentType,"reported",
+       req.body.damage_notes||`Return inspection: ${req.body.condition_after||"Damaged"}`,damage,damage,req.user.id]);
+  } else if(damage > 0){
+    const incidentNo=await generateIncidentNo();
+    await conn.query(`
+      INSERT INTO incidents(incident_no,rental_item_id,booking_id,customer_id,incident_type,status,description,charge_amount,replacement_cost,reported_by_user_id)
+      VALUES(?,?,?,?,?,?,?,?,?,?)
+    `,[incidentNo,booking.items[0]?.rental_item_id||null,bookingId,booking.customer_id,"damaged_minor","reported",
+       req.body.damage_notes||"Damage charge applied during return",damage,damage,req.user.id]);
+  } else if(conditionAfter!=="Good"){
+    for(const row of booking.items){
+      const conditionMap={'Excellent':'excellent','Good':'good','Fair':'fair','Poor':'poor','Damaged':'damaged','Lost':'lost'};
+      const status=conditionMap[conditionAfter]||'good';
+      if(status!=='good'){
+        await conn.query("INSERT INTO item_conditions(rental_item_id,booking_id,condition_status,condition_type,notes,recorded_by_user_id) VALUES(?,?,?,'after_return',?,?)",[row.rental_item_id,bookingId,status,req.body.damage_notes||null,req.user.id]);
+        if(status==='damaged'||status==='lost'){
+          const incidentNo=await generateIncidentNo();
+          await conn.query(`
+            INSERT INTO incidents(incident_no,rental_item_id,booking_id,customer_id,incident_type,status,description,charge_amount,replacement_cost,reported_by_user_id)
+            VALUES(?,?,?,?,?,?,?,?,?,?)
+          `,[incidentNo,row.rental_item_id,bookingId,booking.customer_id,status==='lost'?"lost":"damaged_minor","reported",
+             req.body.damage_notes||`Item returned in ${status} condition`,0,0,req.user.id]);
+        }
+      }
     }
   }
   if(booking.status!=="returned"){
-    await db.query("UPDATE bookings SET status='returned' WHERE id=?",[bookingId]);
-    await db.query("INSERT INTO booking_status_history(booking_id,from_status,to_status,changed_by_user_id,note) VALUES(?,?,'returned',?,?)",[bookingId,booking.status,req.user.id,"Return inspection recorded"]);
+    await conn.query("UPDATE bookings SET status='returned' WHERE id=?",[bookingId]);
+    await conn.query("INSERT INTO booking_status_history(booking_id,from_status,to_status,changed_by_user_id,note) VALUES(?,?,'returned',?,?)",[bookingId,booking.status,req.user.id,"Return inspection recorded"]);
   }
-  res.json({ok:true,late_days:lateDays,late_fee:lateFee,damage_charge:damage,deposit_refund:refund});
+    await conn.commit();
+    res.json({ok:true,late_days:lateDays,late_fee:lateFee,damage_charge:damage,deposit_refund:refund});
+  } catch(error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
 });
 
 app.post("/api/admin/bookings/:id/complete", authenticate, requireRole("admin"), async (req,res) => {
@@ -720,6 +977,19 @@ app.patch("/api/admin/customers/:id/status", authenticate, requireRole("admin"),
   const status=req.body.status;
   if(!["active","blocked"].includes(status)) return res.status(400).json({message:"Invalid customer status."});
   await db.query("UPDATE customers SET status=? WHERE id=?",[status,Number(req.params.id)]);
+  res.json({ok:true});
+});
+
+app.delete("/api/admin/customers/:id", authenticate, requireRole("admin"), async (req,res) => {
+  const id=Number(req.params.id);
+  const [[customer]]=await db.query("SELECT id FROM customers WHERE id=?",[id]);
+  if(!customer) return res.status(404).json({message:"Customer not found."});
+  await db.query("DELETE FROM customers WHERE id=?",[id]);
+  res.json({ok:true});
+});
+
+app.delete("/api/admin/customers", authenticate, requireRole("admin"), async (_req,res) => {
+  await db.query("DELETE FROM customers");
   res.json({ok:true});
 });
 
@@ -843,28 +1113,32 @@ app.get("/api/admin/reports", authenticate, requireRole("admin"), async (_req,re
   }
 });
 
-app.get("/api/admin/maintenance", authenticate, requireRole("admin"), async (_req,res) => {
-  const [records]=await db.query(`
-    SELECT m.*,r.name item_name,r.sku,b.booking_no
-    FROM maintenance_records m JOIN rental_items r ON r.id=m.rental_item_id
-    LEFT JOIN bookings b ON b.id=m.booking_id
-    ORDER BY m.opened_at DESC
-  `);
-  res.json({records});
+app.get("/api/admin/maintenance", authenticate, requireRole("admin"), async (_req,res,next) => {
+  try {
+    const [records]=await db.query(`
+      SELECT m.*,r.name item_name,r.sku,b.booking_no
+      FROM maintenance_records m JOIN rental_items r ON r.id=m.rental_item_id
+      LEFT JOIN bookings b ON b.id=m.booking_id
+      ORDER BY m.opened_at DESC
+    `);
+    res.json({records});
+  } catch(err) { next(err); }
 });
 
-app.patch("/api/admin/maintenance/:id", authenticate, requireRole("admin"), async (req,res) => {
-  const id=Number(req.params.id);
-  const status=req.body.status;
-  if(!["open","in_progress","completed","cancelled"].includes(status)) return res.status(400).json({message:"Invalid maintenance status."});
-  const [[row]]=await db.query("SELECT rental_item_id FROM maintenance_records WHERE id=?",[id]);
-  if(!row) return res.status(404).json({message:"Maintenance record not found."});
-  await db.query("UPDATE maintenance_records SET status=?,cost=?,notes=?,completed_at=IF(?='completed',NOW(),completed_at) WHERE id=?",[status,Number(req.body.cost||0),req.body.notes||null,status,id]);
-  if(status==="completed"){
-    const [[open]]=await db.query("SELECT COUNT(*) count FROM maintenance_records WHERE rental_item_id=? AND status IN ('open','in_progress')",[row.rental_item_id]);
-    if(Number(open.count)===0) await db.query("UPDATE rental_items SET status='active' WHERE id=?",[row.rental_item_id]);
-  }
-  res.json({ok:true});
+app.patch("/api/admin/maintenance/:id", authenticate, requireRole("admin"), async (req,res,next) => {
+  try {
+    const id=Number(req.params.id);
+    const status=req.body.status;
+    if(!["open","in_progress","completed","cancelled"].includes(status)) return res.status(400).json({message:"Invalid maintenance status."});
+    const [[row]]=await db.query("SELECT rental_item_id FROM maintenance_records WHERE id=?",[id]);
+    if(!row) return res.status(404).json({message:"Maintenance record not found."});
+    await db.query("UPDATE maintenance_records SET status=?,cost=?,notes=?,completed_at=IF(?='completed',NOW(),completed_at) WHERE id=?",[status,Number(req.body.cost||0),req.body.notes||null,status,id]);
+    if(status==="completed"){
+      const [[open]]=await db.query("SELECT COUNT(*) count FROM maintenance_records WHERE rental_item_id=? AND status IN ('open','in_progress')",[row.rental_item_id]);
+      if(Number(open.count)===0) await db.query("UPDATE rental_items SET status='active' WHERE id=?",[row.rental_item_id]);
+    }
+    res.json({ok:true});
+  } catch(err) { next(err); }
 });
 
 app.get("/api/admin/settings", authenticate, requireRole("admin"), async (_req,res) => {
@@ -1078,6 +1352,18 @@ app.get("/api/customer-account/me", authenticateCustomer, async (req,res) => {
   res.json({user:a,bookings,favorites,addresses});
 });
 
+app.patch("/api/customer-account/bookings/:id/cancel", authenticateCustomer, requireCustomerCsrf, async (req,res) => {
+  const bookingId=Number(req.params.id);
+  const customerId=req.customerAccount.customer_id;
+  const [[booking]]=await db.query("SELECT id,booking_no,status,customer_id FROM bookings WHERE id=?",[bookingId]);
+  if(!booking) return res.status(404).json({message:"Booking not found."});
+  if(booking.customer_id!==customerId) return res.status(403).json({message:"You can only cancel your own bookings."});
+  if(booking.status!=="pending") return res.status(409).json({message:"Only pending bookings can be cancelled."});
+  await db.query("UPDATE bookings SET status='cancelled' WHERE id=?",[bookingId]);
+  await db.query("INSERT INTO booking_status_history(booking_id,from_status,to_status,note) VALUES(?,'pending','cancelled','Cancelled by customer')",[bookingId]);
+  res.json({ok:true});
+});
+
 app.post("/api/customer-account/addresses", authenticateCustomer, requireCustomerCsrf, async (req,res) => {
   const label=String(req.body.label||"Home").trim();
   const address=String(req.body.address||"").trim();
@@ -1117,6 +1403,15 @@ app.use((err,req,res,_next) => {
   const status=Number(err.statusCode)||500;
   const message=status<500 ? err.message : "Internal server error.";
   res.status(status).json({message,request_id:requestId});
+});
+
+setInterval(checkOverdueBookings, 60 * 60 * 1000);
+setTimeout(checkOverdueBookings, 5000);
+
+app.post("/api/admin/overdue-check", authenticate, requireRole("admin"), async (_req,res) => {
+  const before = Date.now();
+  await checkOverdueBookings();
+  res.json({ok:true, elapsed_ms:Date.now()-before});
 });
 
 const port = Number(process.env.PORT || 4000);

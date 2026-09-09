@@ -33,5 +33,17 @@ await conn.query(`USE \`${database.replace(/`/g, "")}\``);
 let sql = fs.readFileSync(path.resolve("schema.sql"), "utf8");
 sql = sql.replace(/CREATE DATABASE IF NOT EXISTS[\s\S]*?;\s*USE\s+\w+\s*;/i, "");
 await conn.query(sql);
+console.log("Base schema applied.");
+
+const migrationsDir = path.resolve("migrations");
+if (fs.existsSync(migrationsDir)) {
+  const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith(".sql")).sort();
+  for (const file of files) {
+    const migrationSql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
+    await conn.query(migrationSql);
+    console.log(`Ran migration: ${file}`);
+  }
+}
+
 await conn.end();
 console.log("Database migration completed.");
