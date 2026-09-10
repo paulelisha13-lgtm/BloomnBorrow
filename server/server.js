@@ -32,7 +32,16 @@ app.disable("x-powered-by");
 app.set("trust proxy", Number(process.env.TRUST_PROXY || (isProduction ? 1 : 0)));
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "same-site" },
-  referrerPolicy: { policy: "no-referrer" }
+  referrerPolicy: { policy: "no-referrer" },
+  // Rental item images are pasted in as external URLs, so allow images from any
+  // HTTPS host (plus same-origin and data: URIs). Everything else keeps helmet's
+  // strict defaults: scripts/styles/fetch stay locked to 'self'.
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      "img-src": ["'self'", "data:", "blob:", "https:"]
+    }
+  }
 }));
 app.use(cors({
   credentials: true,
@@ -128,13 +137,10 @@ app.post("/api/auth/login", parseBody(schemas.staffLogin), async (req,res) => {
 
 app.get("/api/auth/me", authenticate, async (req,res) => res.json({user:req.user}));
 
-app.patch("/api/auth/profile", authenticate, requireStaffCsrf, async (req,res) => {
-  const fullName = String(req.body.full_name || "").trim();
-  const email = String(req.body.email || "").trim().toLowerCase();
-  const phone = String(req.body.phone || "").trim();
-  if (!fullName || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return res.status(400).json({message:"A valid full name and email address are required."});
-  }
+app.patch("/api/auth/profile", authenticate, requireStaffCsrf, parseBody(schemas.updateProfile), async (req,res) => {
+  const fullName = req.body.full_name;
+  const email = req.body.email;
+  const phone = req.body.phone;
   const [duplicate] = await db.query("SELECT id FROM users WHERE email=? AND id<>? LIMIT 1",[email,req.user.id]);
   if (duplicate.length) return res.status(409).json({message:"That email address is already assigned to another staff account."});
   await db.query("UPDATE users SET full_name=?,email=?,phone=? WHERE id=?",[fullName,email,phone||null,req.user.id]);
@@ -155,10 +161,9 @@ app.post("/api/auth/logout", authenticate, requireStaffCsrf, async (req,res) => 
   res.json({ok:true});
 });
 
-app.patch("/api/auth/change-password", authenticate, async (req,res) => {
-  const current = String(req.body.current_password || "");
-  const next = String(req.body.new_password || "");
-  if (next.length < 12) return res.status(400).json({message:"New password must be at least 12 characters."});
+app.patch("/api/auth/change-password", authenticate, requireStaffCsrf, parseBody(schemas.changePassword), async (req,res) => {
+  const current = req.body.current_password;
+  const next = req.body.new_password;
   const [[row]] = await db.query("SELECT password_hash FROM users WHERE id=?",[req.user.id]);
   if (!await bcrypt.compare(current,row.password_hash)) return res.status(400).json({message:"Current password is incorrect."});
   const hash = await bcrypt.hash(next,12);
@@ -287,7 +292,7 @@ app.post("/api/availability/check", async (req,res) => {
   res.json({available:checks.every(x=>x.available),items:checks});
 });
 
-app.post("/api/bookings/guest", async (req,res,next) => {
+app.post("/api/bookings/guest", parseBody(schemas.guestBooking), async (req,res,next) => {
   const conn = await db.getConnection();
   try {
     const start = parseDateOnly(req.body.start_date);
@@ -602,14 +607,11 @@ app.get("/api/admin/inventory", authenticate, requireRole("admin"), async (_req,
   res.json({items});
 });
 
-app.post("/api/admin/inventory", authenticate, requireRole("admin"), async (req,res) => {
+app.post("/api/admin/inventory", authenticate, requireRole("admin"), parseBody(schemas.inventoryItem), async (req,res) => {
   const {sku,name,category,description,image_url} = req.body;
-  const daily = Number(req.body.daily_price);
-  const deposit = Number(req.body.security_deposit);
-  const qty = Number(req.body.total_quantity);
-  if (!sku || !name || !category || !Number.isFinite(daily) || daily<0 || !Number.isFinite(deposit) || deposit<0 || !Number.isInteger(qty) || qty<1) {
-    return res.status(400).json({message:"SKU, name, category, valid price/deposit, and quantity are required."});
-  }
+  const daily = req.body.daily_price;
+  const deposit = req.body.security_deposit;
+  const qty = req.body.total_quantity;
   try {
     const [result] = await db.query(`
       INSERT INTO rental_items(sku,name,category,description,daily_price,security_deposit,total_quantity,status,image_url)
@@ -623,7 +625,7 @@ app.post("/api/admin/inventory", authenticate, requireRole("admin"), async (req,
   }
 });
 
-app.patch("/api/admin/inventory/:id", authenticate, requireRole("admin"), async (req,res) => {
+app.patch("/api/admin/inventory/:id", authenticate, requireRole("admin"), parseBody(schemas.inventoryItem), async (req,res) => {
   const id=Number(req.params.id);
   const [[old]] = await db.query("SELECT * FROM rental_items WHERE id=?",[id]);
   if(!old) return res.status(404).json({message:"Rental item not found."});
@@ -700,9 +702,8 @@ app.get("/api/admin/incidents", authenticate, requireRole("admin"), async (_req,
   res.json({incidents});
 });
 
-app.post("/api/admin/incidents", authenticate, requireRole("admin"), async (req,res) => {
+app.post("/api/admin/incidents", authenticate, requireRole("admin"), parseBody(schemas.createIncident), async (req,res) => {
   const {rental_item_id,booking_id,customer_id,incident_type,description,replacement_cost,charge_amount,insurance_claim_amount}=req.body;
-  if(!rental_item_id||!description) return res.status(400).json({message:"Item and description are required."});
   const [[item]]=await db.query("SELECT id FROM rental_items WHERE id=?",[rental_item_id]);
   if(!item) return res.status(404).json({message:"Rental item not found."});
   const incident_no=await generateIncidentNo();
@@ -767,7 +768,7 @@ app.patch("/api/admin/bookings/:id/status", authenticate, requireRole("admin"), 
   res.json({ok:true});
 });
 
-app.patch("/api/admin/bookings/:id/reschedule", authenticate, requireRole("admin"), async (req,res) => {
+app.patch("/api/admin/bookings/:id/reschedule", authenticate, requireRole("admin"), parseBody(schemas.reschedule), async (req,res) => {
   const id=Number(req.params.id);
   const start=parseDateOnly(req.body.start_date), end=parseDateOnly(req.body.end_date);
   if(!start || !end || end<start) return res.status(400).json({message:"Valid dates are required."});
@@ -794,12 +795,11 @@ app.patch("/api/admin/bookings/:id/reschedule", authenticate, requireRole("admin
   res.json({ok:true});
 });
 
-app.post("/api/admin/bookings/:id/payments", authenticate, requireRole("admin"), async (req,res) => {
+app.post("/api/admin/bookings/:id/payments", authenticate, requireRole("admin"), parseBody(schemas.recordPayment), async (req,res) => {
   const bookingId=Number(req.params.id);
-  const amount=Number(req.body.amount);
-  const type=["rental","deposit","delivery","other","refund"].includes(req.body.payment_type)?req.body.payment_type:"rental";
-  const method=["cash","gcash","bank_transfer","other"].includes(req.body.method)?req.body.method:"cash";
-  if(!Number.isFinite(amount) || amount<=0) return res.status(400).json({message:"Payment amount must be greater than zero."});
+  const amount=req.body.amount;
+  const type=req.body.payment_type;
+  const method=req.body.method;
   const [[booking]]=await db.query("SELECT id,booking_no FROM bookings WHERE id=?",[bookingId]);
   if(!booking) return res.status(404).json({message:"Booking not found."});
   const [result]=await db.query(`

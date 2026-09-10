@@ -1233,6 +1233,17 @@ function AdminSearch() {
   </div>;
 }
 
+function ThemeToggle() {
+  const [dark, setDark] = useState(() => {
+    try { return localStorage.getItem("bloom_borrow_theme") === "dark"; } catch { return false; }
+  });
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    try { localStorage.setItem("bloom_borrow_theme", dark ? "dark" : "light"); } catch {}
+  }, [dark]);
+  return <button className="theme-toggle" onClick={() => setDark(d => !d)} title={dark ? "Switch to light mode" : "Switch to dark mode"}>{dark ? "☀️" : "🌙"}</button>;
+}
+
 function AdminShell({ children, title, subtitle }) {
   const [sidebarCollapsed,setSidebarCollapsed] = useState(()=>{
     try { return localStorage.getItem("bloom_borrow_sidebar_collapsed") === "true"; } catch { return false; }
@@ -1242,7 +1253,7 @@ function AdminShell({ children, title, subtitle }) {
     try { localStorage.setItem("bloom_borrow_sidebar_collapsed",String(next)); } catch {}
     return next;
   });
-  return <div className={`admin-app ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}><AdminSidebar collapsed={sidebarCollapsed} onToggle={toggleSidebar}/><main className="admin-main"><header className="admin-topbar"><div className="admin-topbar-left"><small>Welcome back, Admin 👋</small><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</div><div className="admin-actions"><AdminSearch/><NotificationBell/><AdminProfileMenu/></div></header>{children}</main></div>
+  return <div className={`admin-app ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}><AdminSidebar collapsed={sidebarCollapsed} onToggle={toggleSidebar}/><main className="admin-main"><header className="admin-topbar"><div className="admin-topbar-left"><small>Welcome back, Admin 👋</small><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</div><div className="admin-actions"><ThemeToggle/><AdminSearch/><NotificationBell/><AdminProfileMenu/></div></header>{children}</main></div>
 }
 
 function AccountSettings() {
@@ -1885,6 +1896,9 @@ function Bookings() {
   const [paymentSubmitting,setPaymentSubmitting]=useState(false);
   const [deleteBookingTarget,setDeleteBookingTarget]=useState(null);
   const [deletingBooking,setDeletingBooking]=useState(false);
+  const [showInspectModal,setShowInspectModal]=useState(false);
+  const [inspectForm,setInspectForm]=useState({condition:"Good",damage_charge:"0",maintenance_required:false});
+  const [inspectSubmitting,setInspectSubmitting]=useState(false);
 
   const load=()=>api("/admin/bookings").then(d=>setRows(d.bookings||[])).catch(e=>setError(e.message));
   React.useEffect(()=>{load()},[]);
@@ -1924,7 +1938,8 @@ function Bookings() {
   };
 
   const reschedule=async()=>{const start=window.prompt("New start date (YYYY-MM-DD):",String(detail.start_date).slice(0,10));if(!start)return;const end=window.prompt("New end date (YYYY-MM-DD):",String(detail.end_date).slice(0,10));if(!end)return;await act(`/admin/bookings/${detail.id}/reschedule`,{start_date:start,end_date:end})};
-  const inspect=async()=>{const condition=window.prompt("Condition after return:","Good");if(!condition)return;const damage=Number(window.prompt("Damage charge:","0")||0);const maintenance=window.confirm("Does this item require maintenance?");try{const r=await api(`/admin/bookings/${detail.id}/return-inspection`,{method:"POST",body:JSON.stringify({condition_after:condition,damage_charge:damage,maintenance_required:maintenance})});if(maintenance){window.alert(`Return recorded. Maintenance records created.`);navigate("/admin/maintenance")}else{window.alert(`Return recorded. Deposit refund: ${peso(Number(r.deposit_refund))}`);await open(detail.id);load()}}catch(e){setError(e.message)}};
+  const openInspect=()=>{setInspectForm({condition:"Good",damage_charge:"0",maintenance_required:false});setShowInspectModal(true)};
+  const submitInspect=async()=>{setInspectSubmitting(true);try{const r=await api(`/admin/bookings/${detail.id}/return-inspection`,{method:"POST",body:JSON.stringify({condition_after:inspectForm.condition,damage_charge:Number(inspectForm.damage_charge),maintenance_required:inspectForm.maintenance_required})});setShowInspectModal(false);if(inspectForm.maintenance_required){navigate("/admin/maintenance")}else{await open(detail.id);load()}}catch(e){setError(e.message)}finally{setInspectSubmitting(false)}};
 
   const statuses=["All","pending","confirmed","ready","rented","overdue","returned","completed","cancelled","rejected"];
   const statusCounts=Object.fromEntries(statuses.map(s=>[s,s==="All"?rows.length:rows.filter(b=>b.status===s).length]));
@@ -2037,14 +2052,14 @@ function Bookings() {
       {!isPaid&&!isPartial&&<div className="booking-unpaid-banner"><span className="unpaid-banner-icon">!</span><div><strong>Unpaid</strong><small>{peso(grandTotal)} total amount due</small></div></div>}
 
       <div className="booking-detail-grid">
-        <div className="booking-stat-card"><span className="booking-stat-icon status">📋</span><div><small>Status</small><b>{detail.status}</b></div></div>
-        <div className="booking-stat-card"><span className="booking-stat-icon payment">💳</span><div><small>Payment</small><b>{detail.payment_status}</b></div></div>
-        <div className="booking-stat-card"><span className="booking-stat-icon dates">📅</span><div><small>Dates</small><b>{new Date(detail.start_date).toLocaleDateString("en-PH",{month:"short",day:"numeric"})} → {new Date(detail.end_date).toLocaleDateString("en-PH",{month:"short",day:"numeric",year:"numeric"})}</b></div></div>
-        <div className="booking-stat-card"><span className="booking-stat-icon total">💰</span><div><small>Total</small><b>{peso(grandTotal)}</b></div></div>
+        <div className="booking-stat-card"><div><small>Status</small><b>{detail.status}</b></div></div>
+        <div className="booking-stat-card"><div><small>Payment</small><b>{detail.payment_status}</b></div></div>
+        <div className="booking-stat-card"><div><small>Dates</small><b>{new Date(detail.start_date).toLocaleDateString("en-PH",{month:"short",day:"numeric"})} → {new Date(detail.end_date).toLocaleDateString("en-PH",{month:"short",day:"numeric",year:"numeric"})}</b></div></div>
+        <div className="booking-stat-card"><div><small>Total</small><b>{peso(grandTotal)}</b></div></div>
       </div>
 
       <div className="booking-modal-section">
-        <div className="booking-section-header"><span>💰</span><strong>Payment Summary</strong></div>
+        <div className="booking-section-header"><strong>Payment Summary</strong></div>
         <div className="booking-payment-summary">
           <div className="payment-summary-row"><span>Total Amount</span><strong>{peso(grandTotal)}</strong></div>
           <div className="payment-summary-row"><span>Amount Paid</span><strong className="paid-text">{peso(totalPaid)}</strong></div>
@@ -2053,29 +2068,42 @@ function Bookings() {
       </div>
 
       <div className="booking-modal-section">
-        <div className="booking-section-header"><span>📦</span><strong>Items</strong></div>
+        <div className="booking-section-header"><strong>Items</strong></div>
         <div className="booking-items-list">{detail.items.map(x=><div className="booking-item-row" key={x.id}><div className="booking-item-info"><strong>{x.item_name}</strong><small>× {x.quantity} · {peso(Number(x.daily_price))}/day</small></div><span className="booking-item-subtotal">{peso(Number(x.daily_price)*x.quantity)}</span></div>)}</div>
       </div>
       <div className="booking-modal-section">
-        <div className="booking-section-header"><span>⚡</span><strong>Actions</strong></div>
-        <div className="booking-actions">
-          {detail.status==="pending"&&<><button className="primary-button" disabled={busy} onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"confirmed"})}>✓ Approve</button><button className="secondary-button danger" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"rejected"})}>✕ Reject</button></>}
-          {["pending","confirmed","ready"].includes(detail.status)&&<button className="secondary-button" onClick={reschedule}>📅 Reschedule</button>}
-          {detail.status==="confirmed"&&<button className="primary-button" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"ready"})}>✓ Mark Ready</button>}
-          {detail.status==="ready"&&detail.fulfillment==="pickup"&&<button className="primary-button" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"rented"})}>📦 Record Pickup</button>}
-          {["rented","overdue","returned"].includes(detail.status)&&<button className="primary-button" onClick={inspect}>🔍 Record Return</button>}
-          {detail.status==="returned"&&detail.inspection&&<button className="primary-button" onClick={()=>api(`/admin/bookings/${detail.id}/complete`,{method:"POST",body:JSON.stringify({})}).then(()=>{open(detail.id);load()}).catch(e=>setError(e.message))}>✓ Complete</button>}
-          {!["cancelled","rejected","completed","returned"].includes(detail.status)&&<button className="secondary-button danger" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"cancelled"})}>✕ Cancel</button>}
-          <button className="primary-button" onClick={openPaymentModal}>💰 Record Payment</button>
-          <button className="danger-button" onClick={()=>setDeleteBookingTarget(detail)}>🗑 Delete Booking</button>
+        <div className="booking-section-header"><strong>Actions</strong></div>
+        <div className="booking-actions-group">
+          <div className="booking-actions-label">Workflow</div>
+          <div className="booking-actions">
+            {detail.status==="pending"&&<><button className="primary-button" disabled={busy} onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"confirmed"})}>✓ Approve Booking</button><button className="secondary-button danger" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"rejected"})}>✕ Reject Booking</button></>}
+            {["pending","confirmed","ready"].includes(detail.status)&&<button className="secondary-button" onClick={reschedule}>📅 Reschedule Date</button>}
+            {detail.status==="confirmed"&&<button className="primary-button" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"ready"})}>✓ Mark as Ready</button>}
+            {detail.status==="ready"&&detail.fulfillment==="pickup"&&<button className="primary-button" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"rented"})}>📦 Confirm Pickup</button>}
+            {["rented","overdue","returned"].includes(detail.status)&&<button className="primary-button" onClick={openInspect}>🔍 Inspect & Return</button>}
+            {detail.status==="returned"&&detail.inspection&&<button className="primary-button" onClick={()=>api(`/admin/bookings/${detail.id}/complete`,{method:"POST",body:JSON.stringify({})}).then(()=>{open(detail.id);load()}).catch(e=>setError(e.message))}>✓ Mark Complete</button>}
+          </div>
+        </div>
+        <div className="booking-actions-group">
+          <div className="booking-actions-label">Payments</div>
+          <div className="booking-actions">
+            <button className="primary-button" onClick={openPaymentModal}>💰 Add Payment</button>
+          </div>
+        </div>
+        <div className="booking-actions-group">
+          <div className="booking-actions-label">Manage</div>
+          <div className="booking-actions">
+            {!["cancelled","rejected","completed","returned"].includes(detail.status)&&<button className="secondary-button danger" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"cancelled"})}>✕ Cancel Booking</button>}
+            <button className="danger-button" onClick={()=>setDeleteBookingTarget(detail)}>🗑 Delete Booking</button>
+          </div>
         </div>
       </div>
       <div className="booking-modal-section">
-        <div className="booking-section-header"><span>💳</span><strong>Payments</strong></div>
+        <div className="booking-section-header"><strong>Payments</strong></div>
         {detail.payments.length?<div className="booking-payments-list">{detail.payments.map(p=><div className="booking-payment-row" key={p.id}><div className="booking-payment-info"><strong>{peso(Number(p.amount))}</strong><small>{p.payment_type} · {p.method}{p.notes?` · ${p.notes}`:""}</small></div><div className="booking-payment-actions"><span className={`status-pill ${p.status==="completed"?"confirmed":"pending"}`}>{p.status}</span><button className="mini-button" onClick={()=>openInvoice({bookingNo:detail.booking_no,createdAt:p.created_at,customerName:detail.customer_name,customerEmail:detail.customer_email,customerPhone:detail.customer_phone,method:p.method,type:p.payment_type,status:p.status,amount:p.amount,note:p.notes})}>🖨</button></div></div>)}</div>:<div className="booking-empty-state">No payments recorded yet.</div>}
       </div>
       <div className="booking-modal-section">
-        <div className="booking-section-header"><span>🕐</span><strong>Status History</strong></div>
+        <div className="booking-section-header"><strong>Status History</strong></div>
         <div className="booking-timeline">{detail.history.map((h,i)=><div className="booking-timeline-item" key={h.id}><div className="booking-timeline-dot"></div><div className="booking-timeline-content"><strong>{h.to_status}</strong><small>{new Date(h.created_at).toLocaleString()}{h.changed_by?` · ${h.changed_by}`:""}</small></div></div>)}</div>
       </div>
     </div></div>})()}
@@ -2125,6 +2153,43 @@ function Bookings() {
       <div className="confirm-modal-actions">
         <button className="secondary-button" onClick={()=>setDeleteBookingTarget(null)}>Cancel</button>
         <button className="danger-button" disabled={deletingBooking} onClick={deleteBooking}>{deletingBooking?"Deleting...":"Delete Booking"}</button>
+      </div>
+    </div></div>}
+
+    {showInspectModal&&detail&&<div className="modal-backdrop" onClick={()=>setShowInspectModal(false)}><div className="modal inspect-modal" onClick={e=>e.stopPropagation()}>
+      <button className="booking-modal-close" onClick={()=>setShowInspectModal(false)}>×</button>
+      <div className="inspect-modal-header">
+        <div className="inspect-modal-icon">🔍</div>
+        <span className="eyebrow">Inspect & Return</span>
+        <h2>{detail.booking_no}</h2>
+        <p>{detail.customer_name}</p>
+      </div>
+      <div className="inspect-modal-items">
+        <div className="inspect-items-label">Items to inspect</div>
+        <div className="inspect-items-list">{detail.items.map(x=><div className="inspect-item-row" key={x.id}><strong>{x.item_name}</strong><small>× {x.quantity}</small></div>)}</div>
+      </div>
+      <div className="inspect-modal-form">
+        <label className="inspect-label">Condition after return
+          <div className="condition-grid">
+            {[{id:"Excellent",icon:"✨",label:"Excellent"},{id:"Good",icon:"👍",label:"Good"},{id:"Fair",icon:"⚠️",label:"Fair"},{id:"Poor",icon:"🔴",label:"Poor"}].map(c=><button type="button" key={c.id} className={`condition-btn ${inspectForm.condition===c.id?"active":""}`} onClick={()=>setInspectForm({...inspectForm,condition:c.id})}><span>{c.icon}</span><strong>{c.label}</strong></button>)}
+          </div>
+        </label>
+        <label className="inspect-label">Damage charge
+          <div className="inspect-amount-wrap"><span className="inspect-currency">₱</span><input type="number" min="0" value={inspectForm.damage_charge} onChange={e=>setInspectForm({...inspectForm,damage_charge:e.target.value})} placeholder="0.00" className="inspect-amount-input"/></div>
+        </label>
+        <label className="inspect-label inspect-toggle-label">
+          <div className="inspect-toggle-info">
+            <strong>Requires maintenance?</strong>
+            <small>Mark if item needs repair or cleaning</small>
+          </div>
+          <button type="button" className={`inspect-toggle ${inspectForm.maintenance_required?"active":""}`} onClick={()=>setInspectForm({...inspectForm,maintenance_required:!inspectForm.maintenance_required})}>
+            <span className="inspect-toggle-knob"></span>
+          </button>
+        </label>
+      </div>
+      <div className="inspect-modal-footer">
+        <button className="secondary-button" onClick={()=>setShowInspectModal(false)}>Cancel</button>
+        <button className="primary-button" disabled={inspectSubmitting||!inspectForm.condition} onClick={submitInspect}>{inspectSubmitting?"Processing...":"Confirm Return"}</button>
       </div>
     </div></div>}
   </AdminShell>
@@ -2193,18 +2258,20 @@ function Customers() {
     </section>
 
     <div className="admin-page-toolbar">
-      <div className="admin-search">
-        <span>⌕</span>
-        <input placeholder="Search by name, email, or phone..." value={search} onChange={e=>setSearch(e.target.value)}/>
+      <div className="toolbar-left">
+        <div className="admin-search">
+          <span>⌕</span>
+          <input placeholder="Search by name, email, or phone..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        </div>
+        <select className="booking-status-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+          <option value="All">All Status ({rows.length})</option>
+          <option value="active">Active ({rows.filter(c=>c.status==="active").length})</option>
+          <option value="blocked">Blocked ({rows.filter(c=>c.status!=="active").length})</option>
+        </select>
+        <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={setSort}/>
+        <ViewToggle view={view} onChange={setView}/>
       </div>
-      <select className="booking-status-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
-        <option value="All">All Status ({rows.length})</option>
-        <option value="active">Active ({rows.filter(c=>c.status==="active").length})</option>
-        <option value="blocked">Blocked ({rows.filter(c=>c.status!=="active").length})</option>
-      </select>
-      <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={setSort}/>
-      <ViewToggle view={view} onChange={setView}/>
-      {rows.length>0&&<button className="danger-button" onClick={clearAll}>Clear All Customers</button>}
+      {rows.length>0&&<button className="toolbar-text-danger" onClick={clearAll}>Clear All Customers</button>}
     </div>
 
     <section className="admin-card">
@@ -2266,13 +2333,13 @@ function Customers() {
         </div>
       </div>
       <div className="customer-detail-grid">
-        <div className="customer-detail-stat"><span className="booking-stat-icon status">📱</span><div><small>Phone</small><b>{detail.phone||"—"}</b></div></div>
-        <div className="customer-detail-stat"><span className="booking-stat-icon dates">📍</span><div><small>City</small><b>{detail.city||"—"}</b></div></div>
-        <div className="customer-detail-stat"><span className="booking-stat-icon payment">📋</span><div><small>Bookings</small><b>{detail.booking_count||0}</b></div></div>
-        <div className="customer-detail-stat"><span className="booking-stat-icon total">💰</span><div><small>Lifetime value</small><b>{peso(Number(detail.lifetime_value||0))}</b></div></div>
+        <div className="customer-detail-stat"><div><small>Phone</small><b>{detail.phone||"—"}</b></div></div>
+        <div className="customer-detail-stat"><div><small>City</small><b>{detail.city||"—"}</b></div></div>
+        <div className="customer-detail-stat"><div><small>Bookings</small><b>{detail.booking_count||0}</b></div></div>
+        <div className="customer-detail-stat"><div><small>Lifetime value</small><b>{peso(Number(detail.lifetime_value||0))}</b></div></div>
       </div>
       {renterScore&&<div className="booking-modal-section">
-        <div className="booking-section-header"><span>⭐</span><strong>Reliability Score</strong></div>
+        <div className="booking-section-header"><strong>Reliability Score</strong></div>
         <div className="renter-score-card">
           <div className="renter-score-main">
             <div className={`renter-score-circle score-${renterScore.rating.toLowerCase().replace(" ","-")}`}>
@@ -2291,18 +2358,18 @@ function Customers() {
         </div>
       </div>}
       {detail.address&&<div className="booking-modal-section">
-        <div className="booking-section-header"><span>📍</span><strong>Address</strong></div>
+        <div className="booking-section-header"><strong>Address</strong></div>
         <div className="customer-address-box">{detail.address}</div>
       </div>}
       <div className="booking-modal-section">
-        <div className="booking-section-header"><span>📦</span><strong>Recent Bookings</strong></div>
+        <div className="booking-section-header"><strong>Recent Bookings</strong></div>
         {detail.recent_bookings&&detail.recent_bookings.length?detail.recent_bookings.map(b=><div className="customer-booking-row" key={b.id}>
           <div className="customer-booking-info"><strong>{b.booking_no}</strong><small>{new Date(b.start_date).toLocaleDateString("en-PH",{month:"short",day:"numeric"})} → {new Date(b.end_date).toLocaleDateString("en-PH",{month:"short",day:"numeric",year:"numeric"})}</small></div>
           <div className="customer-booking-meta"><span className={`status-pill ${b.status==="pending"?"pending":b.status==="overdue"?"overdue":"confirmed"}`}>{b.status}</span><strong>{peso(Number(b.grand_total))}</strong></div>
         </div>):<div className="booking-empty-state">No booking history.</div>}
       </div>
       <div className="booking-modal-section">
-        <div className="booking-section-header"><span>⚡</span><strong>Actions</strong></div>
+        <div className="booking-section-header"><strong>Actions</strong></div>
         <div className="booking-actions">
           <button className={detail.status==="active"?"danger-button":"primary-button"} onClick={()=>toggle(detail)}>{detail.status==="active"?"🚫 Block Customer":"✓ Unblock Customer"}</button>
           <button className="danger-button" onClick={()=>del(detail)}>Delete Customer</button>
