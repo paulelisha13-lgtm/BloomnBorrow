@@ -998,3 +998,31 @@ textarea{min-height:90px;resize:vertical}
 .greeting-footer{text-align:center;padding-top:20px;border-top:1px solid #edf3f2}
 .greeting-footer p{color:var(--muted);font-size:13px;margin-bottom:16px}
 .greeting-footer .primary-button{display:inline-block}
+/* ---- list sort controls ---- */
+.sort-controls{display:flex;align-items:center;gap:6px}
+.sort-controls-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#6d8282;flex-shrink:0}
+.sort-dir-btn{width:34px;height:34px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;border:1px solid #d7e8e7;border-radius:11px;background:#fff;font-size:15px;font-weight:700;color:var(--ink);cursor:pointer;line-height:1;transition:border-color .15s ease,color .15s ease}
+.sort-dir-btn:hover{border-color:var(--brand);color:var(--brand)}
+.sort-dir-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+@media (max-width:900px){.sort-controls{width:100%}.sort-controls .booking-status-select{flex:1}}
+
+/* ---- cards / table view toggle ---- */
+.view-toggle{display:inline-flex;border:1px solid #d7e8e7;border-radius:11px;overflow:hidden;flex-shrink:0}
+.view-toggle button{border:0;background:#fff;color:#6d8282;width:36px;height:34px;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:background .15s ease,color .15s ease}
+.view-toggle button+button{border-left:1px solid #d7e8e7}
+.view-toggle button:hover{color:var(--brand)}
+.view-toggle button.active{background:var(--brand);color:#fff}
+.view-toggle button:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
+
+/* ---- shared admin table view helpers ---- */
+.table-wrap table th.num,.table-wrap table td.num{text-align:right;font-variant-numeric:tabular-nums}
+.table-wrap table td.cell-wrap{white-space:normal;max-width:260px}
+.table-wrap table td.cell-low{color:#c53030;font-weight:800}
+tr.row-clickable{cursor:pointer}
+tr.row-clickable:hover td{background:#f6fbfa}
+.table-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.table-actions .mini-button{padding:6px 10px;font-size:11px}
+.mini-button.danger{background:#fde8e8;color:#c53030}
+tr.table-subrow td{background:#f6fbfa;padding:8px 12px}
+tr.table-subrow .payment-transaction-row{border:0}
+@media (max-width:900px){.view-toggle{align-self:flex-start}}

@@ -32,53 +32,29 @@ export async function api(path, options = {}) {
     const csrf = decodeURIComponent(readCookie("bloom_borrow_staff_csrf"));
     if (csrf) headers["X-CSRF-Token"] = csrf;
   }
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    method,
-    credentials: "include",
-    headers
-  });
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      method,
+      credentials: "include",
+      headers
+    });
+  } catch {
+    throw new Error(`Cannot reach the server at ${API_BASE}. Is the API running?`);
+  }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     if (response.status === 401) clearAuth();
-    throw new Error(data.message || "Request failed");
+    throw new Error(data.message || describeHttpError(response.status));
   }
   return data;
 }
 
-export function getCustomerToken() {
-  return localStorage.getItem("bloom_borrow_customer_user") ? "cookie-session" : null;
-}
-export function getCustomerUser() {
-  try { return JSON.parse(localStorage.getItem("bloom_borrow_customer_user") || "null"); }
-  catch { return null; }
-}
-export function saveCustomerAuth(_token, user) {
-  localStorage.setItem("bloom_borrow_customer_user", JSON.stringify(user));
-}
-export function clearCustomerAuth() {
-  localStorage.removeItem("bloom_borrow_customer_user");
-}
-export async function customerApi(path, options={}) {
-  const method=String(options.method || "GET").toUpperCase();
-  const headers={
-    "Content-Type":"application/json",
-    ...(options.headers||{})
-  };
-  if(!["GET","HEAD","OPTIONS"].includes(method)){
-    const csrf=decodeURIComponent(readCookie("bloom_borrow_customer_csrf"));
-    if(csrf) headers["X-CSRF-Token"]=csrf;
-  }
-  const response=await fetch(`${API_BASE}${path}`,{
-    ...options,
-    method,
-    credentials:"include",
-    headers
-  });
-  const data=await response.json().catch(()=>({}));
-  if(!response.ok){
-    if(response.status===401) clearCustomerAuth();
-    throw new Error(data.message || "Request failed");
-  }
-  return data;
+function describeHttpError(status) {
+  if (status === 429) return "Too many requests — wait a moment and try again.";
+  if (status === 404) return "That endpoint was not found (404).";
+  if (status === 403) return "You do not have permission to do that (403).";
+  if (status >= 500) return `Server error (${status}). Please try again shortly.`;
+  return `Request failed (${status}).`;
 }

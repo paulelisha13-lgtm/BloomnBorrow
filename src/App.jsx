@@ -1,11 +1,137 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { bookings, items } from "./data";
-import { api, clearAuth, getStoredUser, getToken, saveAuth, customerApi, clearCustomerAuth, getCustomerToken, getCustomerUser, saveCustomerAuth } from "./api";
+import { api, clearAuth, getStoredUser, getToken, saveAuth } from "./api";
 import logoImg from "./logo.png";
 
 const peso = (value) =>
   new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(value);
+
+// Escape a value before putting it into an HTML string. Invoice printing opens a
+// new document with document.write(), which does NOT auto-escape like React does,
+// so customer-controlled text (name, email, notes) must be neutralised here.
+function escHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]
+  ));
+}
+
+// Build and print an invoice in a new window. Every interpolated value is escaped.
+function openInvoice({ bookingNo, createdAt, customerName, customerEmail, customerPhone, method, type, status, amount, note }) {
+  const win = window.open("", "_blank", "width=800,height=600");
+  if (!win) return;
+  const e = escHtml;
+  const dateStr = createdAt
+    ? new Date(createdAt).toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" })
+    : "";
+  const contactLines = [customerEmail, customerPhone].filter(Boolean).map(e).join("<br/>");
+  win.document.write(`<!DOCTYPE html><html><head><title>Invoice ${e(bookingNo)}</title><style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Segoe UI',sans-serif;padding:40px;color:#1a1a1a}
+    .invoice{max-width:600px;margin:auto}
+    .header{display:flex;justify-content:space-between;align-items:start;border-bottom:3px solid #089b9d;padding-bottom:20px;margin-bottom:24px}
+    .brand h1{font-size:24px;color:#089b9d;margin-bottom:4px}
+    .brand p{font-size:12px;color:#666}
+    .invoice-title{text-align:right}
+    .invoice-title h2{font-size:28px;color:#089b9d}
+    .invoice-title p{font-size:12px;color:#666}
+    .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px}
+    .info-box h3{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#089b9d;margin-bottom:8px}
+    .info-box p{font-size:13px;line-height:1.6}
+    table{width:100%;border-collapse:collapse;margin-bottom:24px}
+    th{background:#f0f9f9;padding:10px 14px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#666}
+    td{padding:12px 14px;border-bottom:1px solid #eee;font-size:13px}
+    .amount{text-align:right;font-weight:700}
+    .totals{margin-left:auto;width:260px}
+    .totals div{display:flex;justify-content:space-between;padding:8px 0;font-size:13px}
+    .totals .total-row{border-top:2px solid #089b9d;padding-top:10px;margin-top:4px;font-size:16px;font-weight:800;color:#089b9d}
+    .footer{margin-top:40px;padding-top:16px;border-top:1px solid #ddd;text-align:center;font-size:11px;color:#888}
+    @media print{body{padding:20px}}
+  </style></head><body><div class="invoice">
+    <div class="header">
+      <div class="brand"><h1>Bloom &amp; Borrow</h1><p>Rental Business Management System</p></div>
+      <div class="invoice-title"><h2>INVOICE</h2><p>${e(bookingNo)}</p><p>${e(dateStr)}</p></div>
+    </div>
+    <div class="info-grid">
+      <div class="info-box"><h3>Bill To</h3><p><strong>${e(customerName)}</strong>${contactLines ? "<br/>" + contactLines : ""}</p></div>
+      <div class="info-box"><h3>Payment Details</h3><p>Method: <strong>${e(String(method || "cash").toUpperCase())}</strong><br/>Type: <strong>${e(String(type || "rental").toUpperCase())}</strong><br/>Status: <strong>${e(String(status || "").toUpperCase())}</strong></p></div>
+    </div>
+    <table><thead><tr><th>Description</th><th class="amount">Amount</th></tr></thead><tbody>
+      <tr><td>Payment for ${e(type || "rental")} &mdash; ${e(bookingNo)}</td><td class="amount">${e(peso(Number(amount)))}</td></tr>
+      ${note ? `<tr><td>Note: ${e(note)}</td><td class="amount">&mdash;</td></tr>` : ""}
+    </tbody></table>
+    <div class="totals"><div class="total-row"><span>Total Paid</span><span>${e(peso(Number(amount)))}</span></div></div>
+    <div class="footer"><p>Thank you for your business! &middot; Bloom &amp; Borrow Rental System</p></div>
+  </div></body></html>`);
+  win.document.close();
+  setTimeout(() => win.print(), 300);
+}
+
+// ---- shared client-side list sorting ----
+function compareValues(a, b) {
+  if (typeof a === "number" && typeof b === "number") {
+    return (Number.isFinite(a) ? a : 0) - (Number.isFinite(b) ? b : 0);
+  }
+  return String(a ?? "").localeCompare(String(b ?? ""), undefined, { numeric: true, sensitivity: "base" });
+}
+
+function useSort(defaultKey, defaultDir = "asc") {
+  const [sortKey, setSortKey] = useState(defaultKey);
+  const [sortDir, setSortDir] = useState(defaultDir);
+  const setSort = (key) => {
+    if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir(key === defaultKey ? defaultDir : "asc"); }
+  };
+  return { sortKey, sortDir, setSort };
+}
+
+function sortRows(rows, sorts, sortKey, sortDir) {
+  const accessor = sorts[sortKey] && sorts[sortKey].get;
+  if (!accessor) return rows;
+  const out = [...rows].sort((a, b) => compareValues(accessor(a), accessor(b)));
+  return sortDir === "asc" ? out : out.reverse();
+}
+
+function SortControls({ sorts, sortKey, sortDir, setSort }) {
+  const keys = Object.keys(sorts);
+  if (!keys.length) return null;
+  return (
+    <div className="sort-controls">
+      <span className="sort-controls-label">Sort</span>
+      <select className="booking-status-select" value={sortKey} onChange={(e) => setSort(e.target.value)}>
+        {keys.map((k) => <option key={k} value={k}>{sorts[k].label}</option>)}
+      </select>
+      <button type="button" className="sort-dir-btn" onClick={() => setSort(sortKey)}
+        aria-label={`Sorted ${sortDir === "asc" ? "ascending" : "descending"} — toggle direction`}
+        title={sortDir === "asc" ? "Ascending" : "Descending"}>
+        {sortDir === "asc" ? "↑" : "↓"}
+      </button>
+    </div>
+  );
+}
+
+// Per-module Cards/Table preference, remembered across sessions.
+function useViewMode(storageKey, initial = "cards") {
+  const [view, setView] = useState(() => {
+    try { return localStorage.getItem(storageKey) || initial; } catch { return initial; }
+  });
+  const set = (v) => {
+    setView(v);
+    try { localStorage.setItem(storageKey, v); } catch {}
+  };
+  return [view, set];
+}
+
+function ViewToggle({ view, onChange }) {
+  return (
+    <div className="view-toggle" role="group" aria-label="View mode">
+      <button type="button" className={view === "cards" ? "active" : ""} aria-pressed={view === "cards"}
+        onClick={() => onChange("cards")} title="Card view" aria-label="Card view">▦</button>
+      <button type="button" className={view === "table" ? "active" : ""} aria-pressed={view === "table"}
+        onClick={() => onChange("table")} title="Table view" aria-label="Table view">☰</button>
+    </div>
+  );
+}
 
 function Logo({ light = false }) {
   return (
@@ -32,7 +158,7 @@ function CustomerHeader({ cartCount = 0 }) {
         </nav>
         <div className="header-actions">
           <Link className="icon-button" to="/cart" aria-label="Rental cart">🛒<span>{cartCount}</span></Link>
-          <Link className="outline-button" to="/account">My Account</Link>
+          <Link className="outline-button" to="/track">Track Booking</Link>
         </div>
       </div>
     </header>
@@ -709,84 +835,10 @@ function Track({ booking: bookingProp }) {
   </div></main>;
 }
 
+// Customer self-service is guest booking + the Track page; there is no customer
+// account/login. This route only redirects old /account links to /track.
 function Account() {
-  const [mode,setMode]=useState("home");
-  const [user,setUser]=useState(getCustomerUser());
-  const [data,setData]=useState(null);
-  const [error,setError]=useState("");
-  const [loading,setLoading]=useState(false);
-  const [form,setForm]=useState({full_name:"",email:"",phone:"",city:"",address:"",password:""});
-
-  const loadDashboard=async()=>{
-    if(!getCustomerToken()) return;
-    setLoading(true); setError("");
-    try{setData(await customerApi("/customer-account/me"))}
-    catch(e){setError(e.message)}
-    finally{setLoading(false)}
-  };
-  React.useEffect(()=>{if(user)loadDashboard()},[user]);
-
-  const register=async(e)=>{
-    e.preventDefault();setLoading(true);setError("");
-    try{
-      const r=await customerApi("/customer-auth/register",{method:"POST",body:JSON.stringify(form)});
-      saveCustomerAuth(r.token,r.user);setUser(r.user);setMode("dashboard");
-    }catch(e){setError(e.message)}finally{setLoading(false)}
-  };
-  const login=async(e)=>{
-    e.preventDefault();setLoading(true);setError("");
-    try{
-      const r=await customerApi("/customer-auth/login",{method:"POST",body:JSON.stringify({email:form.email,password:form.password})});
-      saveCustomerAuth(r.token,r.user);setUser(r.user);setMode("dashboard");
-    }catch(e){setError(e.message)}finally{setLoading(false)}
-  };
-  const logout=async()=>{try{await customerApi("/customer-auth/logout",{method:"POST"})}catch{}clearCustomerAuth();setUser(null);setData(null);setMode("home")};
-
-  if(user){
-    const current=(data?.bookings||[]).filter(b=>["confirmed","ready","rented","overdue","returned"].includes(b.status));
-    const upcoming=(data?.bookings||[]).filter(b=>new Date(String(b.start_date).slice(0,10))>new Date() && !["cancelled","rejected","completed"].includes(b.status));
-    return <main className="page container narrow-page">
-      <div className="account-dashboard-head"><div><span className="eyebrow">Customer account</span><h1>Welcome, {user.full_name}</h1><p>{user.email}</p></div><button className="secondary-button" onClick={logout}>Sign out</button></div>
-      {error&&<div className="login-error">{error}</div>}
-      <div className="account-stat-grid">
-        <Kpi icon="▣" label="Order history" value={data?.bookings?.length ?? "—"} detail="All bookings"/>
-        <Kpi icon="↗" label="Current rentals" value={current.length} detail="Active / in progress"/>
-        <Kpi icon="◷" label="Upcoming" value={upcoming.length} detail="Future reservations"/>
-        <Kpi icon="♥" label="Favorites" value={data?.favorites?.length ?? 0} detail="Saved rental items"/>
-      </div>
-      <section className="admin-card customer-account-section">
-        <div className="card-heading"><div><span>Bookings</span><h2>Your rental history</h2></div></div>
-        {loading?<p>Loading...</p>:(data?.bookings?.length?<div className="table-wrap"><table><thead><tr><th>Booking</th><th>Dates</th><th>Fulfillment</th><th>Payment</th><th>Status</th><th>Total</th></tr></thead><tbody>{data.bookings.map(b=><tr key={b.id}><td><strong>{b.booking_no}</strong></td><td>{String(b.start_date).slice(0,10)} → {String(b.end_date).slice(0,10)}</td><td>{b.fulfillment}</td><td>{b.payment_status}</td><td><span className={`status-pill ${b.status==="pending"?"pending":b.status==="overdue"?"overdue":"confirmed"}`}>{b.status}</span></td><td>{peso(Number(b.grand_total))}</td></tr>)}</tbody></table></div>:<p className="muted">No bookings yet.</p>)}
-      </section>
-      <section className="admin-card customer-account-section">
-        <div className="card-heading"><div><span>Profile</span><h2>Saved information</h2></div></div>
-        <div className="tracking-meta"><span><small>Name</small><b>{user.full_name}</b></span><span><small>Phone</small><b>{user.phone||"—"}</b></span><span><small>City</small><b>{user.city||"—"}</b></span></div>
-      </section>
-    </main>
-  }
-
-  if(mode==="register") return <main className="page container narrow-page"><div className="account-auth-card">
-    <button className="text-link account-back" onClick={()=>{setMode("home");setError("")}}>← Back</button>
-    <span className="eyebrow">Customer account</span><h1>Create account</h1><p>Guest checkout will still remain available. An account is only for saved details and rental history.</p>
-    {error&&<div className="login-error">{error}</div>}
-    <form onSubmit={register}><div className="form-grid">
-      <label>Full name<input required value={form.full_name} onChange={e=>setForm({...form,full_name:e.target.value})}/></label>
-      <label>Email<input type="email" required value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></label>
-      <label>Phone<input required value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})}/></label>
-      <label>City<input value={form.city} onChange={e=>setForm({...form,city:e.target.value})}/></label>
-      <label className="span-2">Address<textarea value={form.address} onChange={e=>setForm({...form,address:e.target.value})}/></label>
-      <label className="span-2">Password<input type="password" minLength="12" required value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/></label>
-    </div><button className="primary-button full" disabled={loading}>{loading?"Creating account...":"Create customer account"}</button></form>
-  </div></main>
-
-  if(mode==="login") return <main className="page container narrow-page"><div className="account-auth-card">
-    <button className="text-link account-back" onClick={()=>{setMode("home");setError("")}}>← Back</button>
-    <span className="eyebrow">Customer account</span><h1>Sign in</h1><p>Access your rental history and saved information.</p>
-    {error&&<div className="login-error">{error}</div>}
-    <form onSubmit={login}><label>Email<input type="email" required value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></label><label>Password<input type="password" required value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/></label><button className="primary-button full" disabled={loading}>{loading?"Signing in...":"Sign in"}</button></form>
-  </div></main>
-
-  return <main className="page container narrow-page"><div className="account-box"><span className="eyebrow">Optional account</span><h1>Your rental hub</h1><p>Create an optional account to save addresses, view order history, manage upcoming reservations, and keep favorite items.</p><div className="account-features">{["Order history","Current rentals","Upcoming reservations","Saved addresses","Favorites"].map(x=><span key={x}>✓ {x}</span>)}</div><div className="account-actions"><button className="primary-button" onClick={()=>setMode("register")}>Create account</button><button className="secondary-button" onClick={()=>setMode("login")}>Sign in</button></div><small>You can always rent as a guest without creating an account.</small></div></main>
+  return <Navigate to="/track" replace />;
 }
 
 function CustomerSite({ cart, onAdd, updateQty, removeItem, clearCart }) {
@@ -811,16 +863,23 @@ function useAuthSnapshot() {
   return { token: getToken(), user: getStoredUser() };
 }
 
+// Where a signed-in staff user should land: an intended deep link if it points
+// into the admin area, otherwise the dashboard.
+function staffDestination(search) {
+  const wanted = new URLSearchParams(search).get("redirect");
+  return wanted && wanted.startsWith("/admin") ? wanted : "/admin";
+}
+
 function AccessLogin() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   if (getToken() && getStoredUser()) {
-    const current = getStoredUser();
-    return <Navigate to="/admin" replace />;
+    return <Navigate to={staffDestination(location.search)} replace />;
   }
 
   const submit = async (e) => {
@@ -833,7 +892,7 @@ function AccessLogin() {
         body: JSON.stringify({ email, password })
       });
       saveAuth(data.token, data.user);
-      navigate("/admin");
+      navigate(staffDestination(location.search), { replace: true });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -884,11 +943,16 @@ function AccessLogin() {
 }
 
 function ProtectedRoute({ children, roles }) {
+  const location = useLocation();
   const token = getToken();
   const user = getStoredUser();
-  if (!token || !user) return <Navigate to="/access/login" replace />;
+  if (!token || !user) {
+    // Remember where they were headed so login can send them straight back.
+    return <Navigate to={`/access/login?redirect=${encodeURIComponent(location.pathname)}`} replace />;
+  }
   if (roles && !roles.includes(user.role)) {
-    return <Navigate to="/admin" replace />;
+    // Signed in but wrong role: back to sign-in (not /admin, which would loop).
+    return <Navigate to="/access/login" replace />;
   }
   return children;
 }
@@ -1480,6 +1544,19 @@ function Inventory() {
     const matchStatus=statusFilter==="All"||x.status===statusFilter;
     return matchSearch&&matchCat&&matchStatus;
   });
+  const sorts={
+    created_at:{label:"Date added",get:x=>Date.parse(x.created_at)||0},
+    name:{label:"Name",get:x=>x.name||""},
+    sku:{label:"SKU",get:x=>x.sku||""},
+    category:{label:"Category",get:x=>x.category||""},
+    daily_price:{label:"Daily price",get:x=>Number(x.daily_price)||0},
+    available:{label:"Available units",get:x=>Number(x.total_quantity||0)-Number(x.reserved_all||0)},
+    reserved_all:{label:"Reserved",get:x=>Number(x.reserved_all)||0},
+    status:{label:"Status",get:x=>x.status||""}
+  };
+  const {sortKey,sortDir,setSort}=useSort("created_at","desc");
+  const sorted=sortRows(filtered,sorts,sortKey,sortDir);
+  const [view,setView]=useViewMode("bb.view.inventory");
 
   const stats={
     total:rows.length,
@@ -1511,6 +1588,8 @@ function Inventory() {
         <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
           {statuses.map(s=><option key={s}>{s==="All"?"All statuses":s}</option>)}
         </select>
+        <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={setSort}/>
+        <ViewToggle view={view} onChange={setView}/>
       </div>
       <button className="primary-button" onClick={openNew}>+ Add rental item</button>
     </div>
@@ -1520,8 +1599,24 @@ function Inventory() {
         <span>📭</span>
         <h3>No items found</h3>
         <p>{search||categoryFilter!=="All"||statusFilter!=="All"?"Try adjusting your filters.":"Add your first rental item to get started."}</p>
-      </div>:<div className="inventory-grid">
-        {filtered.map(item=><article className="inventory-card-item" key={item.id}>
+      </div>:view==="table"?<div className="table-wrap"><table>
+        <thead><tr><th>Item</th><th>Category</th><th className="num">Price/day</th><th className="num">Deposit</th><th className="num">Available</th><th className="num">Reserved</th><th>Status</th><th></th></tr></thead>
+        <tbody>{sorted.map(item=><tr key={item.id}>
+          <td><strong>{item.name}</strong><br/><small>{item.sku}</small></td>
+          <td>{item.category}</td>
+          <td className="num">{peso(Number(item.daily_price))}</td>
+          <td className="num">{peso(Number(item.security_deposit))}</td>
+          <td className={`num ${Number(item.total_quantity)-Number(item.reserved_all||0)<5?"cell-low":""}`}>{Math.max(0,Number(item.total_quantity)-Number(item.reserved_all||0))}</td>
+          <td className="num">{item.reserved_all||0} / {item.total_quantity}</td>
+          <td><span className={`status-pill ${item.status==="active"?"confirmed":item.status==="maintenance"?"pending":""}`}>{item.status}</span></td>
+          <td><div className="table-actions">
+            <button className="mini-button" onClick={()=>openEdit(item)}>Edit</button>
+            <button className="mini-button" onClick={()=>viewConditions(item)}>History</button>
+            <button className="mini-button danger" onClick={()=>confirmDelete(item)}>Delete</button>
+          </div></td>
+        </tr>)}</tbody>
+      </table></div>:<div className="inventory-grid">
+        {sorted.map(item=><article className="inventory-card-item" key={item.id}>
           <div className="inventory-card-image">
             <img src={item.image_url||items[0].image} alt={item.name}/>
             <span className={`inventory-status-badge ${item.status}`}>{item.status}</span>
@@ -1646,6 +1741,17 @@ function Incidents() {
     const matchType=typeFilter==="All"||i.incident_type===typeFilter;
     return matchSearch&&matchStatus&&matchType;
   });
+  const sorts={
+    reported_at:{label:"Date",get:i=>Date.parse(i.reported_at)||0},
+    incident_no:{label:"Incident #",get:i=>i.incident_no||""},
+    item_name:{label:"Item",get:i=>i.item_name||""},
+    customer_name:{label:"Customer",get:i=>i.customer_name||""},
+    incident_type:{label:"Type",get:i=>i.incident_type||""},
+    charge_amount:{label:"Charge",get:i=>Number(i.charge_amount)||0},
+    status:{label:"Status",get:i=>i.status||""}
+  };
+  const {sortKey,sortDir,setSort}=useSort("reported_at","desc");
+  const sorted=sortRows(filtered,sorts,sortKey,sortDir);
 
   const stats={
     total:incidents.length,
@@ -1699,6 +1805,7 @@ function Incidents() {
           <option value="All">All Types</option>
           {Object.entries(typeLabels).map(([k,v])=><option key={k} value={k}>{v}</option>)}
         </select>
+        <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={setSort}/>
         <button className="primary-button" onClick={()=>setShowNew(true)}>+ Report Incident</button>
       </div>
     </div>
@@ -1709,7 +1816,7 @@ function Incidents() {
         <h3>No incidents found</h3>
         <p>{search||statusFilter!=="All"||typeFilter!=="All"?"Try adjusting your filters.":"No incidents reported yet."}</p>
       </div>:<div className="table-wrap"><table><thead><tr><th>Incident</th><th>Item</th><th>Customer</th><th>Type</th><th>Charge</th><th>Status</th><th>Date</th><th></th></tr></thead><tbody>
-        {filtered.map(i=><tr key={i.id}>
+        {sorted.map(i=><tr key={i.id}>
           <td><strong>{i.incident_no}</strong></td>
           <td>{i.item_name||"—"}<br/><small>{i.item_sku||""}</small></td>
           <td>{i.customer_name||"—"}</td>
@@ -1826,6 +1933,17 @@ function Bookings() {
     const matchStatus=statusFilter==="All"||b.status===statusFilter;
     return matchSearch&&matchStatus;
   });
+  const sorts={
+    start_date:{label:"Start date",get:b=>Date.parse(b.start_date)||0},
+    end_date:{label:"End date",get:b=>Date.parse(b.end_date)||0},
+    booking_no:{label:"Booking #",get:b=>b.booking_no||""},
+    customer_name:{label:"Customer",get:b=>b.customer_name||""},
+    grand_total:{label:"Total",get:b=>Number(b.grand_total)||0},
+    status:{label:"Status",get:b=>b.status||""}
+  };
+  const {sortKey,sortDir,setSort}=useSort("start_date","desc");
+  const sorted=sortRows(filtered,sorts,sortKey,sortDir);
+  const [view,setView]=useViewMode("bb.view.bookings");
 
   const stats={
     total:rows.length,
@@ -1854,6 +1972,8 @@ function Bookings() {
         <select className="booking-status-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
           {statuses.map(s=><option key={s} value={s}>{s==="All"?"All Status":s.charAt(0).toUpperCase()+s.slice(1)} ({statusCounts[s]})</option>)}
         </select>
+        <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={setSort}/>
+        <ViewToggle view={view} onChange={setView}/>
       </div>
     </div>
 
@@ -1862,8 +1982,20 @@ function Bookings() {
         <span>📭</span>
         <h3>No bookings found</h3>
         <p>{search||statusFilter!=="All"?"Try adjusting your search or filter.":"No bookings have been made yet."}</p>
-      </div>:<div className="booking-card-grid">
-        {filtered.map(b=><article className="booking-card" key={b.id} onClick={()=>open(b.id)}>
+      </div>:view==="table"?<div className="table-wrap"><table>
+        <thead><tr><th>Booking</th><th>Customer</th><th>Items</th><th>Dates</th><th>Payment</th><th>Status</th><th className="num">Total</th><th></th></tr></thead>
+        <tbody>{sorted.map(b=><tr key={b.id} className="row-clickable" onClick={()=>open(b.id)}>
+          <td><strong>{b.booking_no}</strong></td>
+          <td>{b.customer_name}</td>
+          <td className="cell-wrap"><small>{b.items||"—"}</small></td>
+          <td>{new Date(b.start_date).toLocaleDateString("en-PH",{month:"short",day:"numeric"})} → {new Date(b.end_date).toLocaleDateString("en-PH",{month:"short",day:"numeric",year:"numeric"})}</td>
+          <td><span className={`status-pill ${b.payment_status==="paid"?"confirmed":b.payment_status==="partial"?"pending":""}`}>{b.payment_status||"unpaid"}</span></td>
+          <td><span className={`status-pill ${b.status==="pending"?"pending":b.status==="overdue"?"overdue":b.status==="cancelled"||b.status==="rejected"?"overdue":"confirmed"}`}>{b.status}</span></td>
+          <td className="num">{peso(Number(b.grand_total))}</td>
+          <td><button className="mini-button" onClick={e=>{e.stopPropagation();open(b.id)}}>Manage →</button></td>
+        </tr>)}</tbody>
+      </table></div>:<div className="booking-card-grid">
+        {sorted.map(b=><article className="booking-card" key={b.id} onClick={()=>open(b.id)}>
           <div className="booking-card-top">
             <div className="booking-card-id">
               <span className="booking-avatar-sm">{b.customer_name.split(" ").map(x=>x[0]).join("").slice(0,2)}</span>
@@ -1940,7 +2072,7 @@ function Bookings() {
       </div>
       <div className="booking-modal-section">
         <div className="booking-section-header"><span>💳</span><strong>Payments</strong></div>
-        {detail.payments.length?<div className="booking-payments-list">{detail.payments.map(p=><div className="booking-payment-row" key={p.id}><div className="booking-payment-info"><strong>{peso(Number(p.amount))}</strong><small>{p.payment_type} · {p.method}{p.notes?` · ${p.notes}`:""}</small></div><div className="booking-payment-actions"><span className={`status-pill ${p.status==="completed"?"confirmed":"pending"}`}>{p.status}</span><button className="mini-button" onClick={()=>{const win=window.open("","_blank","width=800,height=600");win.document.write(`<!DOCTYPE html><html><head><title>Invoice ${detail.booking_no}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',sans-serif;padding:40px;color:#1a1a1a}.invoice{max-width:600px;margin:auto}.header{display:flex;justify-content:space-between;align-items:start;border-bottom:3px solid #089b9d;padding-bottom:20px;margin-bottom:24px}.brand h1{font-size:24px;color:#089b9d;margin-bottom:4px}.brand p{font-size:12px;color:#666}.invoice-title{text-align:right}.invoice-title h2{font-size:28px;color:#089b9d}.invoice-title p{font-size:12px;color:#666}.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px}.info-box h3{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#089b9d;margin-bottom:8px}.info-box p{font-size:13px;line-height:1.6}table{width:100%;border-collapse:collapse;margin-bottom:24px}th{background:#f0f9f9;padding:10px 14px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#666}td{padding:12px 14px;border-bottom:1px solid #eee;font-size:13px}.amount{text-align:right;font-weight:700}.totals{margin-left:auto;width:260px}.totals div{display:flex;justify-content:space-between;padding:8px 0;font-size:13px}.totals .total-row{border-top:2px solid #089b9d;padding-top:10px;margin-top:4px;font-size:16px;font-weight:800;color:#089b9d}.footer{margin-top:40px;padding-top:16px;border-top:1px solid #ddd;text-align:center;font-size:11px;color:#888}@media print{body{padding:20px}}</style></head><body><div class="invoice"><div class="header"><div class="brand"><h1>Bloom & Borrow</h1><p>Rental Business Management System</p></div><div class="invoice-title"><h2>INVOICE</h2><p>${detail.booking_no}</p><p>${new Date(p.created_at).toLocaleDateString("en-PH",{year:"numeric",month:"long",day:"numeric"})}</p></div></div><div class="info-grid"><div class="info-box"><h3>Bill To</h3><p><strong>${detail.customer_name}</strong><br/>${detail.customer_email}<br/>${detail.customer_phone}</p></div><div class="info-box"><h3>Payment Details</h3><p>Method: <strong>${(p.method||"cash").toUpperCase()}</strong><br/>Type: <strong>${(p.payment_type||"rental").toUpperCase()}</strong><br/>Status: <strong>${(p.status||"").toUpperCase()}</strong></p></div></div><table><thead><tr><th>Description</th><th class="amount">Amount</th></tr></thead><tbody><tr><td>Payment for ${p.payment_type||"rental"} — ${detail.booking_no}</td><td class="amount">${peso(Number(p.amount))}</td></tr></tbody></table><div class="totals"><div class="total-row"><span>Total Paid</span><span>${peso(Number(p.amount))}</span></div></div><div class="footer"><p>Thank you for your business! · Bloom & Borrow Rental System</p></div></div></body></html>`);win.document.close();setTimeout(()=>{win.print()},300)}}>🖨</button></div></div>)}</div>:<div className="booking-empty-state">No payments recorded yet.</div>}
+        {detail.payments.length?<div className="booking-payments-list">{detail.payments.map(p=><div className="booking-payment-row" key={p.id}><div className="booking-payment-info"><strong>{peso(Number(p.amount))}</strong><small>{p.payment_type} · {p.method}{p.notes?` · ${p.notes}`:""}</small></div><div className="booking-payment-actions"><span className={`status-pill ${p.status==="completed"?"confirmed":"pending"}`}>{p.status}</span><button className="mini-button" onClick={()=>openInvoice({bookingNo:detail.booking_no,createdAt:p.created_at,customerName:detail.customer_name,customerEmail:detail.customer_email,customerPhone:detail.customer_phone,method:p.method,type:p.payment_type,status:p.status,amount:p.amount,note:p.notes})}>🖨</button></div></div>)}</div>:<div className="booking-empty-state">No payments recorded yet.</div>}
       </div>
       <div className="booking-modal-section">
         <div className="booking-section-header"><span>🕐</span><strong>Status History</strong></div>
@@ -2030,6 +2162,18 @@ function Customers() {
     const matchStatus=statusFilter==="All"||c.status===statusFilter;
     return matchSearch&&matchStatus;
   });
+  const sorts={
+    created_at:{label:"Date joined",get:c=>Date.parse(c.created_at)||0},
+    full_name:{label:"Name",get:c=>c.full_name||""},
+    email:{label:"Email",get:c=>c.email||""},
+    booking_count:{label:"Bookings",get:c=>Number(c.booking_count)||0},
+    lifetime_value:{label:"Lifetime value",get:c=>Number(c.lifetime_value)||0},
+    last_booking_at:{label:"Last booking",get:c=>Date.parse(c.last_booking_at)||0},
+    status:{label:"Status",get:c=>c.status||""}
+  };
+  const {sortKey,sortDir,setSort}=useSort("created_at","desc");
+  const sorted=sortRows(filtered,sorts,sortKey,sortDir);
+  const [view,setView]=useViewMode("bb.view.customers");
 
   const stats={
     total:rows.length,
@@ -2058,6 +2202,8 @@ function Customers() {
         <option value="active">Active ({rows.filter(c=>c.status==="active").length})</option>
         <option value="blocked">Blocked ({rows.filter(c=>c.status!=="active").length})</option>
       </select>
+      <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={setSort}/>
+      <ViewToggle view={view} onChange={setView}/>
       {rows.length>0&&<button className="danger-button" onClick={clearAll}>Clear All Customers</button>}
     </div>
 
@@ -2066,8 +2212,23 @@ function Customers() {
         <span>👤</span>
         <h3>No customers found</h3>
         <p>{search||statusFilter!=="All"?"Try adjusting your search or filter.":"No customers registered yet."}</p>
-      </div>:<div className="customer-card-grid">
-        {filtered.map(c=><article className="customer-detail-card" key={c.id} onClick={()=>openDetail(c)}>
+      </div>:view==="table"?<div className="table-wrap"><table>
+        <thead><tr><th>Customer</th><th>Phone</th><th>City</th><th className="num">Bookings</th><th className="num">Lifetime value</th><th>Last booking</th><th>Status</th><th></th></tr></thead>
+        <tbody>{sorted.map(c=><tr key={c.id} className="row-clickable" onClick={()=>openDetail(c)}>
+          <td><strong>{c.full_name}</strong><br/><small>{c.email}</small></td>
+          <td>{c.phone||"—"}</td>
+          <td>{c.city||"—"}</td>
+          <td className="num">{c.booking_count||0}</td>
+          <td className="num">{peso(Number(c.lifetime_value||0))}</td>
+          <td>{c.last_booking_at?new Date(c.last_booking_at).toLocaleDateString("en-PH",{month:"short",day:"numeric",year:"numeric"}):"—"}</td>
+          <td><span className={`status-pill ${c.status==="active"?"confirmed":"overdue"}`}>{c.status}</span></td>
+          <td onClick={e=>e.stopPropagation()}><div className="table-actions">
+            <button className="mini-button" onClick={()=>toggle(c)}>{c.status==="active"?"Block":"Unblock"}</button>
+            <button className="mini-button danger" onClick={()=>del(c)}>Delete</button>
+          </div></td>
+        </tr>)}</tbody>
+      </table></div>:<div className="customer-card-grid">
+        {sorted.map(c=><article className="customer-detail-card" key={c.id} onClick={()=>openDetail(c)}>
           <div className="customer-card-header">
             <div className="customer-avatar-lg">{c.full_name.split(" ").map(x=>x[0]).join("").slice(0,2)}</div>
             <div className="customer-card-title">
@@ -2199,8 +2360,19 @@ function Payments() {
       if(new Date(p.created_at)>new Date(g.latestDate))g.latestDate=p.created_at;
       if(p.status==="completed")g.primaryMethod=p.method;
     });
-    return Array.from(map.values()).sort((a,b)=>new Date(b.latestDate)-new Date(a.latestDate));
+    return Array.from(map.values());
   },[filtered]);
+
+  const sorts={
+    latestDate:{label:"Latest activity",get:g=>Date.parse(g.latestDate)||0},
+    booking_no:{label:"Booking #",get:g=>g.booking_no||""},
+    customer_name:{label:"Customer",get:g=>g.customer_name||""},
+    totalPaid:{label:"Amount",get:g=>Number(g.totalPaid)||0},
+    count:{label:"# payments",get:g=>g.payments.length}
+  };
+  const {sortKey,sortDir,setSort}=useSort("latestDate","desc");
+  const sortedGroups=sortRows(grouped,sorts,sortKey,sortDir);
+  const [view,setView]=useViewMode("bb.view.payments");
 
   const net=rows.filter(x=>x.status==="completed").reduce((s,x)=>s+(x.payment_type==="refund"?-1:1)*Number(x.amount),0);
   const stats={
@@ -2210,40 +2382,16 @@ function Payments() {
     pending:rows.filter(x=>x.status==="pending").length
   };
 
-  const printInvoice=(p)=>{
-    const win=window.open("","_blank","width=800,height=600");
-    win.document.write(`<!DOCTYPE html><html><head><title>Invoice ${p.booking_no}</title><style>
-      *{margin:0;padding:0;box-sizing:border-box}
-      body{font-family:'Segoe UI',sans-serif;padding:40px;color:#1a1a1a}
-      .invoice{max-width:600px;margin:auto}
-      .header{display:flex;justify-content:space-between;align-items:start;border-bottom:3px solid #089b9d;padding-bottom:20px;margin-bottom:24px}
-      .brand h1{font-size:24px;color:#089b9d;margin-bottom:4px}
-      .brand p{font-size:12px;color:#666}
-      .invoice-title{text-align:right}
-      .invoice-title h2{font-size:28px;color:#089b9d}
-      .invoice-title p{font-size:12px;color:#666}
-      .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px}
-      .info-box h3{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#089b9d;margin-bottom:8px}
-      .info-box p{font-size:13px;line-height:1.6}
-      table{width:100%;border-collapse:collapse;margin-bottom:24px}
-      th{background:#f0f9f9;padding:10px 14px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#666}
-      td{padding:12px 14px;border-bottom:1px solid #eee;font-size:13px}
-      .amount{text-align:right;font-weight:700}
-      .totals{margin-left:auto;width:260px}
-      .totals div{display:flex;justify-content:space-between;padding:8px 0;font-size:13px}
-      .totals .total-row{border-top:2px solid #089b9d;padding-top:10px;margin-top:4px;font-size:16px;font-weight:800;color:#089b9d}
-      .footer{margin-top:40px;padding-top:16px;border-top:1px solid #ddd;text-align:center;font-size:11px;color:#888}
-      @media print{body{padding:20px}}
-    </style></head><body><div class="invoice">
-      <div class="header"><div class="brand"><h1>Bloom & Borrow</h1><p>Rental Business Management System</p><p>hello@bloom_borrow.test · +63 917 000 0000</p></div><div class="invoice-title"><h2>INVOICE</h2><p>${p.booking_no}</p><p>${new Date(p.created_at).toLocaleDateString("en-PH",{year:"numeric",month:"long",day:"numeric"})}</p></div></div>
-      <div class="info-grid"><div class="info-box"><h3>Bill To</h3><p><strong>${p.customer_name}</strong><br/>${p.customer_name||""}<br/>Booking: ${p.booking_no}</p></div><div class="info-box"><h3>Payment Details</h3><p>Method: <strong>${(p.method||"cash").toUpperCase()}</strong><br/>Type: <strong>${(p.payment_type||"rental").toUpperCase()}</strong><br/>Status: <strong>${(p.status||"").toUpperCase()}</strong></p></div></div>
-      <table><thead><tr><th>Description</th><th class="amount">Amount</th></tr></thead><tbody><tr><td>Payment for ${p.payment_type||"rental"} — ${p.booking_no}</td><td class="amount">${peso(Number(p.amount))}</td></tr>${p.notes?`<tr><td>Note: ${p.notes}</td><td class="amount">—</td></tr>`:""}</tbody></table>
-      <div class="totals"><div><span>Amount</span><span>${peso(Number(p.amount))}</span></div><div class="total-row"><span>Total Paid</span><span>${peso(Number(p.amount))}</span></div></div>
-      <div class="footer"><p>Thank you for your business! · Bloom & Borrow Rental System</p></div>
-    </div></body></html>`);
-    win.document.close();
-    setTimeout(()=>{win.print();},300);
-  };
+  const printInvoice=(p)=>openInvoice({
+    bookingNo:p.booking_no,
+    createdAt:p.created_at,
+    customerName:p.customer_name,
+    method:p.method,
+    type:p.payment_type,
+    status:p.status,
+    amount:p.amount,
+    note:p.notes
+  });
 
   return <AdminShell title="Payments" subtitle="Payment, deposit and refund transaction history with invoicing.">
     {error&&<div className="login-error">{error}</div>}
@@ -2273,6 +2421,8 @@ function Payments() {
           <option value="pending">Pending</option>
           <option value="void">Void</option>
         </select>
+        <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={setSort}/>
+        <ViewToggle view={view} onChange={setView}/>
       </div>
     </div>
 
@@ -2281,8 +2431,42 @@ function Payments() {
         <span>💳</span>
         <h3>No payments found</h3>
         <p>{search||typeFilter!=="All"||statusFilter!=="All"?"Try adjusting your filters.":"No payment transactions yet."}</p>
-      </div>:<div className="payment-card-grid">
-        {grouped.map(g=><article className={`payment-card ${expanded===g.booking_id?"payment-card-expanded":""}`} key={g.booking_id}>
+      </div>:view==="table"?<div className="table-wrap"><table>
+        <thead><tr><th>Booking</th><th>Customer</th><th className="num">Payments</th><th>Method</th><th>Latest activity</th><th>Status</th><th className="num">Amount</th><th></th></tr></thead>
+        <tbody>{sortedGroups.map(g=>[
+          <tr key={g.booking_id} className="row-clickable" onClick={()=>setExpanded(expanded===g.booking_id?null:g.booking_id)}>
+            <td><strong>{g.booking_no}</strong></td>
+            <td>{g.customer_name}</td>
+            <td className="num">{g.payments.length}</td>
+            <td>{(g.primaryMethod||"cash").replace("_"," ")}</td>
+            <td>{new Date(g.latestDate).toLocaleDateString("en-PH",{month:"short",day:"numeric",year:"numeric"})}</td>
+            <td><span className={`status-pill ${g.hasPending?"pending":"confirmed"}`}>{g.hasPending?"pending":"completed"}</span></td>
+            <td className="num">{peso(Number(g.totalPaid))}</td>
+            <td onClick={e=>e.stopPropagation()}><div className="table-actions">
+              <button className="mini-button" onClick={()=>setExpanded(expanded===g.booking_id?null:g.booking_id)}>{expanded===g.booking_id?"Hide":"Details"}</button>
+              <button className="mini-button" onClick={()=>printInvoice(g.payments[0])}>Invoice</button>
+            </div></td>
+          </tr>,
+          expanded===g.booking_id&&<tr key={g.booking_id+"-x"} className="table-subrow"><td colSpan="8">
+            {g.payments.map(p=><div className="payment-transaction-row" key={p.id}>
+              <div className="payment-tx-info">
+                <span className={`status-pill status-tiny ${p.status==="completed"?"confirmed":p.status==="void"?"overdue":"pending"}`}>{p.status}</span>
+                <small>{p.payment_type}</small>
+                <small>{(p.method||"cash").replace("_"," ")}</small>
+                {p.notes&&<small className="payment-tx-note">{p.notes}</small>}
+              </div>
+              <div className="payment-tx-actions">
+                <div className="payment-tx-meta">
+                  <strong className={p.payment_type==="refund"?"refund-amount":""}>{p.payment_type==="refund"?"-":"+"}{peso(Number(p.amount))}</strong>
+                  <small>{new Date(p.created_at).toLocaleDateString("en-PH",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</small>
+                </div>
+                <button className="tx-delete-btn" title="Delete payment" onClick={()=>setDeleteTarget(p)}>🗑</button>
+              </div>
+            </div>)}
+          </td></tr>
+        ])}</tbody>
+      </table></div>:<div className="payment-card-grid">
+        {sortedGroups.map(g=><article className={`payment-card ${expanded===g.booking_id?"payment-card-expanded":""}`} key={g.booking_id}>
           <div className="payment-card-top" onClick={()=>setExpanded(expanded===g.booking_id?null:g.booking_id)}>
             <div className="payment-card-icon-wrap">
               <span className="payment-card-icon">{g.hasRefund?"↩":g.payments[0]?.payment_type==="deposit"?"🔒":"💵"}</span>
@@ -2454,6 +2638,9 @@ function AccessManagement() {
   const [error,setError] = useState("");
   const [modal,setModal] = useState(false);
   const [form,setForm] = useState({full_name:"",email:"",phone:"",role:"admin",password:"[removed-demo-credential]"});
+  const [search,setSearch] = useState("");
+  const [roleFilter,setRoleFilter] = useState("All");
+  const [statusFilter,setStatusFilter] = useState("All");
 
   const load = async () => {
     setLoading(true);
@@ -2493,6 +2680,25 @@ function AccessManagement() {
     } catch(e){ setError(e.message); }
   };
 
+  const roles=["All",...Array.from(new Set(users.map(u=>u.role).filter(Boolean)))];
+  const filtered=users.filter(u=>{
+    const q=search.toLowerCase();
+    const matchSearch=!q||[u.full_name,u.email,u.phone].some(v=>String(v||"").toLowerCase().includes(q));
+    const matchRole=roleFilter==="All"||u.role===roleFilter;
+    const matchStatus=statusFilter==="All"||u.status===statusFilter;
+    return matchSearch&&matchRole&&matchStatus;
+  });
+  const sorts={
+    full_name:{label:"User",get:u=>u.full_name||""},
+    email:{label:"Email",get:u=>u.email||""},
+    role:{label:"Role",get:u=>u.role||""},
+    status:{label:"Status",get:u=>u.status||""},
+    last_login_at:{label:"Last login",get:u=>Date.parse(u.last_login_at)||0},
+    created_at:{label:"Date added",get:u=>Date.parse(u.created_at)||0}
+  };
+  const {sortKey,sortDir,setSort}=useSort("full_name","asc");
+  const sorted=sortRows(filtered,sorts,sortKey,sortDir);
+
   return <AdminShell title="Access Management" subtitle="Manage Admin accounts, status, roles, and access security.">
     <section className="kpi-grid">
       <Kpi icon="♜" label="Total staff" value={users.length} detail="Admin accounts"/>
@@ -2501,8 +2707,19 @@ function AccessManagement() {
     </section>
 
     <div className="admin-page-toolbar">
-      <div><strong>Staff accounts</strong></div>
-      <button className="primary-button" onClick={()=>setModal(true)}>+ Add account</button>
+      <div className="admin-search"><span>⌕</span><input placeholder="Search by name, email, or phone..." value={search} onChange={e=>setSearch(e.target.value)}/></div>
+      <div className="payment-filters">
+        <select className="booking-status-select" value={roleFilter} onChange={e=>setRoleFilter(e.target.value)}>
+          {roles.map(r=><option key={r} value={r}>{r==="All"?"All roles":r}</option>)}
+        </select>
+        <select className="booking-status-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+          <option value="All">All statuses</option>
+          <option value="active">Active</option>
+          <option value="disabled">Disabled</option>
+        </select>
+        <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={setSort}/>
+        <button className="primary-button" onClick={()=>setModal(true)}>+ Add account</button>
+      </div>
     </div>
 
     {error && <div className="login-error">{error}</div>}
@@ -2511,7 +2728,7 @@ function AccessManagement() {
       {loading ? <p>Loading accounts...</p> :
       <div className="table-wrap"><table>
         <thead><tr><th>User</th><th>Email</th><th>Phone</th><th>Role</th><th>Status</th><th>Last login</th><th>Actions</th></tr></thead>
-        <tbody>{users.map(u=><tr key={u.id}>
+        <tbody>{sorted.map(u=><tr key={u.id}>
           <td><strong>{u.full_name}</strong></td>
           <td>{u.email}</td>
           <td>{u.phone || "—"}</td>
@@ -2522,7 +2739,7 @@ function AccessManagement() {
             <button className="mini-button" onClick={()=>resetPassword(u)}>Reset password</button>
             <button className="secondary-button small" onClick={()=>toggleStatus(u)}>{u.status==="active"?"Disable":"Enable"}</button>
           </div></td>
-        </tr>)}</tbody>
+        </tr>)}{sorted.length===0&&<tr><td colSpan="7" className="muted" style={{textAlign:"center",padding:"24px"}}>No accounts match your filters.</td></tr>}</tbody>
       </table></div>}
     </section>
 
@@ -2549,10 +2766,39 @@ function AccessManagement() {
 
 function Maintenance() {
   const [rows,setRows]=useState([]); const [error,setError]=useState("");
+  const [search,setSearch]=useState(""); const [statusFilter,setStatusFilter]=useState("All");
   const load=()=>api("/admin/maintenance").then(d=>setRows(d.records||[])).catch(e=>setError(e.message));
   React.useEffect(()=>{load()},[]);
   const update=async(r,status)=>{try{await api(`/admin/maintenance/${r.id}`,{method:"PATCH",body:JSON.stringify({status,cost:r.cost||0,notes:r.notes||""})});load()}catch(e){setError(e.message)}};
-  return <AdminShell title="Maintenance" subtitle="Items flagged during returns remain unavailable until maintenance is completed.">{error&&<div className="login-error">{error}</div>}<section className="admin-card"><div className="table-wrap"><table><thead><tr><th>Item</th><th>Booking</th><th>Reason</th><th>Opened</th><th>Status</th><th>Action</th></tr></thead><tbody>{rows.map(r=><tr key={r.id}><td><strong>{r.item_name}</strong><br/><small>{r.sku}</small></td><td>{r.booking_no||"—"}</td><td>{r.reason}</td><td>{new Date(r.opened_at).toLocaleString()}</td><td><span className={`status-pill ${r.status==="completed"?"completed":r.status==="in_progress"?"ready":"pending"}`}>{r.status}</span></td><td>{r.status!=="completed"&&<><button className="mini-button" onClick={()=>update(r,"in_progress")}>In progress</button> <button className="mini-button" onClick={()=>update(r,"completed")}>Complete</button></>}</td></tr>)}</tbody></table></div></section></AdminShell>
+  const statuses=["All",...Array.from(new Set(rows.map(r=>r.status).filter(Boolean)))];
+  const filtered=rows.filter(r=>{
+    const q=search.toLowerCase();
+    const matchSearch=!q||[r.item_name,r.sku,r.booking_no,r.reason].some(v=>String(v||"").toLowerCase().includes(q));
+    const matchStatus=statusFilter==="All"||r.status===statusFilter;
+    return matchSearch&&matchStatus;
+  });
+  const sorts={
+    opened_at:{label:"Opened",get:r=>Date.parse(r.opened_at)||0},
+    item_name:{label:"Item",get:r=>r.item_name||""},
+    booking_no:{label:"Booking",get:r=>r.booking_no||""},
+    reason:{label:"Reason",get:r=>r.reason||""},
+    status:{label:"Status",get:r=>r.status||""}
+  };
+  const {sortKey,sortDir,setSort}=useSort("opened_at","desc");
+  const sorted=sortRows(filtered,sorts,sortKey,sortDir);
+  return <AdminShell title="Maintenance" subtitle="Items flagged during returns remain unavailable until maintenance is completed.">
+    {error&&<div className="login-error">{error}</div>}
+    <div className="admin-page-toolbar">
+      <div className="admin-search"><span>⌕</span><input placeholder="Search by item, SKU, booking, or reason..." value={search} onChange={e=>setSearch(e.target.value)}/></div>
+      <div className="payment-filters">
+        <select className="booking-status-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+          {statuses.map(s=><option key={s} value={s}>{s==="All"?"All statuses":String(s).replace("_"," ")}</option>)}
+        </select>
+        <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={setSort}/>
+      </div>
+    </div>
+    <section className="admin-card"><div className="table-wrap"><table><thead><tr><th>Item</th><th>Booking</th><th>Reason</th><th>Opened</th><th>Status</th><th>Action</th></tr></thead><tbody>{sorted.map(r=><tr key={r.id}><td><strong>{r.item_name}</strong><br/><small>{r.sku}</small></td><td>{r.booking_no||"—"}</td><td>{r.reason}</td><td>{new Date(r.opened_at).toLocaleString()}</td><td><span className={`status-pill ${r.status==="completed"?"completed":r.status==="in_progress"?"ready":"pending"}`}>{r.status}</span></td><td>{r.status!=="completed"&&<><button className="mini-button" onClick={()=>update(r,"in_progress")}>In progress</button> <button className="mini-button" onClick={()=>update(r,"completed")}>Complete</button></>}</td></tr>)}{sorted.length===0&&<tr><td colSpan="6" className="muted" style={{textAlign:"center",padding:"24px"}}>No maintenance records found.</td></tr>}</tbody></table></div></section>
+  </AdminShell>
 }
 
 function Settings() {

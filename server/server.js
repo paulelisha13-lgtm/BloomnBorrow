@@ -7,9 +7,13 @@ import helmet from "helmet";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
 import "dotenv/config";
 import { db } from "./db.js";
 import { authenticate, requireRole, signToken, setStaffSession, clearStaffSession, revokeJti, requireStaffCsrf, csrfForJti, verifyCsrfValue } from "./auth.js";
+import { schemas, parseBody } from "./validate.js";
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
@@ -44,30 +48,33 @@ app.use(compression());
 app.use(cookieParser());
 app.use(express.json({limit:"200kb"}));
 
+// An object `message` makes express-rate-limit reply with JSON, so the client
+// can surface the real reason instead of a generic "Request failed".
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 300,
+  limit: Number(process.env.RATE_LIMIT_GLOBAL || (isProduction ? 1200 : 5000)),
   standardHeaders: "draft-8",
-  legacyHeaders: false
+  legacyHeaders: false,
+  message: { message: "Too many requests from this device. Please wait a minute and try again." }
 });
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 10,
+  limit: Number(process.env.RATE_LIMIT_AUTH || 10),
   standardHeaders: "draft-8",
   legacyHeaders: false,
-  skipSuccessfulRequests: true
+  skipSuccessfulRequests: true,
+  message: { message: "Too many sign-in attempts. Wait 15 minutes, then try again." }
 });
 const bookingLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  limit: 30,
+  limit: Number(process.env.RATE_LIMIT_BOOKING || 30),
   standardHeaders: "draft-8",
-  legacyHeaders: false
+  legacyHeaders: false,
+  message: { message: "Too many booking submissions from this network. Please try again later." }
 });
 
 app.use("/api", globalLimiter);
 app.use("/api/auth/login", authLimiter);
-app.use("/api/customer-auth/login", authLimiter);
-app.use("/api/customer-auth/register", authLimiter);
 app.use("/api/bookings/guest", bookingLimiter);
 
 async function audit(req, action, targetUserId=null, details=null) {
@@ -91,7 +98,7 @@ app.get("/api/settings/public", async (_req,res) => {
   res.json({delivery_fee:deliveryFee,late_fee_per_day:lateFeePerDay});
 });
 
-app.post("/api/auth/login", async (req,res) => {
+app.post("/api/auth/login", parseBody(schemas.staffLogin), async (req,res) => {
   const email = String(req.body.email || "").trim().toLowerCase();
   const password = String(req.body.password || "");
   const [rows] = await db.query("SELECT * FROM users WHERE email=? LIMIT 1",[email]);
@@ -165,11 +172,10 @@ app.get("/api/users", authenticate, requireRole("admin"), async (req,res) => {
   res.json({users});
 });
 
-app.post("/api/users", authenticate, requireRole("admin"), async (req,res) => {
+app.post("/api/users", authenticate, requireRole("admin"), parseBody(schemas.createUser), async (req,res) => {
   const {full_name,phone,role} = req.body;
-  const email = String(req.body.email || "").trim().toLowerCase();
-  const password = String(req.body.password || "");
-  if (!full_name || !email || password.length < 8 || !["admin"].includes(role)) return res.status(400).json({message:"Valid name, email, role, and 8+ character password are required."});
+  const email = req.body.email;
+  const password = req.body.password;
   const hash = await bcrypt.hash(password,12);
   try {
     const [result] = await db.query("INSERT INTO users(full_name,email,phone,password_hash,role,status,password_changed_at) VALUES(?,?,?,?,?,'active',NOW())",[full_name,email,phone||null,hash,role]);
@@ -1167,244 +1173,6 @@ app.patch("/api/notifications/:id/read", authenticate, async (req,res) => {
   res.json({ok:true});
 });
 
-
-const CUSTOMER_COOKIE = "bloom_borrow_customer_session";
-const CUSTOMER_CSRF_COOKIE = "bloom_borrow_customer_csrf";
-
-function customerSecret() {
-  const value=process.env.JWT_SECRET;
-  const minimum=process.env.NODE_ENV==="production"?64:32;
-  if(!value || value.length<minimum) throw new Error(`JWT_SECRET must be at least ${minimum} characters.`);
-  return value;
-}
-function customerCsrfSecret() {
-  const value=process.env.CSRF_SECRET || process.env.JWT_SECRET;
-  const minimum=process.env.NODE_ENV==="production"?64:32;
-  if(!value || value.length<minimum) throw new Error(`CSRF_SECRET must be at least ${minimum} characters.`);
-  return value;
-}
-function customerCsrfForJti(jti) {
-  const mac=crypto.createHmac("sha256",customerCsrfSecret()).update(jti).digest("hex");
-  return `${jti}.${mac}`;
-}
-function signCustomerToken(account) {
-  return jwt.sign(
-    {sub:account.id,type:"customer",customer_id:account.customer_id,email:account.email},
-    customerSecret(),
-    {expiresIn:process.env.JWT_EXPIRES_IN || "2h",jwtid:crypto.randomUUID()}
-  );
-}
-function setCustomerSession(res,token) {
-  const payload=jwt.decode(token);
-  const secure=process.env.NODE_ENV==="production";
-  const maxAge=Math.max(1,payload.exp*1000-Date.now());
-  res.cookie(CUSTOMER_COOKIE,token,{httpOnly:true,secure,sameSite:"lax",path:"/",maxAge});
-  res.cookie(CUSTOMER_CSRF_COOKIE,customerCsrfForJti(payload.jti),{httpOnly:false,secure,sameSite:"lax",path:"/",maxAge});
-}
-function clearCustomerSession(res) {
-  const secure=process.env.NODE_ENV==="production";
-  res.clearCookie(CUSTOMER_COOKIE,{secure,sameSite:"lax",path:"/"});
-  res.clearCookie(CUSTOMER_CSRF_COOKIE,{secure,sameSite:"lax",path:"/"});
-}
-async function authenticateCustomer(req,res,next) {
-  try {
-    const token=req.cookies?.[CUSTOMER_COOKIE];
-    if(!token) return res.status(401).json({message:"Customer authentication required."});
-    const payload=jwt.verify(token,customerSecret(),{algorithms:["HS256"]});
-    if(payload.type!=="customer") return res.status(401).json({message:"Invalid customer session."});
-    const [[revoked]]=await db.query(
-      "SELECT id FROM revoked_tokens WHERE token_hash=? AND expires_at>NOW() LIMIT 1",
-      [crypto.createHash("sha256").update(String(payload.jti)).digest("hex")]
-    );
-    if(revoked) return res.status(401).json({message:"Session is no longer valid."});
-    const [[account]]=await db.query(`
-      SELECT ca.id,ca.customer_id,ca.email,ca.status,c.full_name,c.phone,c.city,c.address
-      FROM customer_accounts ca JOIN customers c ON c.id=ca.customer_id
-      WHERE ca.id=? LIMIT 1
-    `,[payload.sub]);
-    if(!account || account.status!=="active") return res.status(401).json({message:"Customer account is unavailable."});
-    req.customerAccount=account;
-    req.customerAuthPayload=payload;
-    next();
-  } catch {
-    return res.status(401).json({message:"Invalid or expired customer session."});
-  }
-}
-function requireCustomerCsrf(req,res,next) {
-  if(["GET","HEAD","OPTIONS"].includes(req.method)) return next();
-  const value=req.get("x-csrf-token");
-  const jti=req.customerAuthPayload?.jti;
-  const expected=jti?customerCsrfForJti(jti):"";
-  const a=Buffer.from(String(value||""));
-  const b=Buffer.from(expected);
-  if(!value || a.length!==b.length || !crypto.timingSafeEqual(a,b)) {
-    return res.status(403).json({message:"Security token validation failed. Refresh and try again."});
-  }
-  next();
-}
-
-app.post("/api/customer-auth/register", async (req,res) => {
-  const fullName=String(req.body.full_name||"").trim();
-  const email=String(req.body.email||"").trim().toLowerCase();
-  const phone=String(req.body.phone||"").trim();
-  const city=String(req.body.city||"").trim();
-  const address=String(req.body.address||"").trim();
-  const password=String(req.body.password||"");
-
-  if(!fullName || !email || !phone || password.length<12 || /password|bloom_borrow|123456/i.test(password)){
-    return res.status(400).json({message:"Full name, email, phone, and a non-trivial 12+ character password are required."});
-  }
-
-  const conn=await db.getConnection();
-  try{
-    await conn.beginTransaction();
-
-    const [[existingAccount]]=await conn.query("SELECT id FROM customer_accounts WHERE email=? LIMIT 1",[email]);
-    if(existingAccount){
-      await conn.rollback();
-      return res.status(409).json({message:"A customer account already exists for this email."});
-    }
-
-    const [[existingCustomer]]=await conn.query("SELECT id,status FROM customers WHERE email=? LIMIT 1",[email]);
-    let customerId;
-    if(existingCustomer){
-      if(existingCustomer.status==="blocked"){
-        await conn.rollback();
-        return res.status(403).json({message:"This customer profile is blocked."});
-      }
-      customerId=existingCustomer.id;
-      await conn.query("UPDATE customers SET full_name=?,phone=?,city=?,address=? WHERE id=?",[fullName,phone,city||null,address||null,customerId]);
-    }else{
-      const [cr]=await conn.query("INSERT INTO customers(full_name,email,phone,city,address,status) VALUES(?,?,?,?,?,'active')",[fullName,email,phone,city||null,address||null]);
-      customerId=cr.insertId;
-    }
-
-    const hash=await bcrypt.hash(password,12);
-    const [ar]=await conn.query("INSERT INTO customer_accounts(customer_id,email,password_hash,status) VALUES(?,?,?,'active')",[customerId,email,hash]);
-
-    await conn.commit();
-
-    const account={id:ar.insertId,customer_id:customerId,email};
-    const token=signCustomerToken(account);
-    setCustomerSession(res,token);
-    res.status(201).json({user:{id:account.id,customer_id:customerId,email,full_name:fullName,phone,city,address}});
-  }catch(e){
-    try{await conn.rollback()}catch{}
-    if(e.code==="ER_DUP_ENTRY") return res.status(409).json({message:"That email address is already registered."});
-    throw e;
-  }finally{
-    conn.release();
-  }
-});
-
-app.post("/api/customer-auth/login", async (req,res) => {
-  const email=String(req.body.email||"").trim().toLowerCase();
-  const password=String(req.body.password||"");
-  const [[account]]=await db.query(`
-    SELECT ca.*,c.full_name,c.phone,c.city,c.address,c.status customer_status
-    FROM customer_accounts ca JOIN customers c ON c.id=ca.customer_id
-    WHERE ca.email=? LIMIT 1
-  `,[email]);
-
-  if(!account || account.status!=="active" || account.customer_status==="blocked"){
-    return res.status(401).json({message:"Invalid email or password."});
-  }
-  if(!await bcrypt.compare(password,account.password_hash)){
-    return res.status(401).json({message:"Invalid email or password."});
-  }
-
-  await db.query("UPDATE customer_accounts SET last_login_at=NOW() WHERE id=?",[account.id]);
-  const token=signCustomerToken(account);
-  setCustomerSession(res,token);
-  res.json({user:{id:account.id,customer_id:account.customer_id,email:account.email,full_name:account.full_name,phone:account.phone,city:account.city,address:account.address}});
-});
-
-
-app.post("/api/customer-auth/logout", authenticateCustomer, requireCustomerCsrf, async (req,res) => {
-  const payload=req.customerAuthPayload;
-  await db.query(
-    `INSERT INTO revoked_tokens(token_hash,expires_at) VALUES(?,FROM_UNIXTIME(?))
-     ON DUPLICATE KEY UPDATE expires_at=VALUES(expires_at)`,
-    [crypto.createHash("sha256").update(String(payload.jti)).digest("hex"),payload.exp]
-  );
-  clearCustomerSession(res);
-  res.json({ok:true});
-});
-
-app.get("/api/customer-account/me", authenticateCustomer, async (req,res) => {
-  const a=req.customerAccount;
-  const [bookings]=await db.query(`
-    SELECT id,booking_no,start_date,end_date,fulfillment,payment_status,status,grand_total,created_at
-    FROM bookings WHERE customer_id=? ORDER BY created_at DESC
-  `,[a.customer_id]);
-
-  const [favorites]=await db.query(`
-    SELECT r.id,r.name,r.category,r.daily_price,r.security_deposit,r.image_url
-    FROM customer_favorites f JOIN rental_items r ON r.id=f.rental_item_id
-    WHERE f.customer_account_id=? ORDER BY f.created_at DESC
-  `,[a.id]);
-
-  const [addresses]=await db.query(`
-    SELECT id,label,address,city,is_default FROM customer_saved_addresses
-    WHERE customer_account_id=? ORDER BY is_default DESC,created_at DESC
-  `,[a.id]);
-
-  res.json({user:a,bookings,favorites,addresses});
-});
-
-app.patch("/api/customer-account/bookings/:id/cancel", authenticateCustomer, requireCustomerCsrf, async (req,res) => {
-  const bookingId=Number(req.params.id);
-  const customerId=req.customerAccount.customer_id;
-  const [[booking]]=await db.query("SELECT id,booking_no,status,customer_id FROM bookings WHERE id=?",[bookingId]);
-  if(!booking) return res.status(404).json({message:"Booking not found."});
-  if(booking.customer_id!==customerId) return res.status(403).json({message:"You can only cancel your own bookings."});
-  if(booking.status!=="pending") return res.status(409).json({message:"Only pending bookings can be cancelled."});
-  await db.query("UPDATE bookings SET status='cancelled' WHERE id=?",[bookingId]);
-  await db.query("INSERT INTO booking_status_history(booking_id,from_status,to_status,note) VALUES(?,'pending','cancelled','Cancelled by customer')",[bookingId]);
-  res.json({ok:true});
-});
-
-app.post("/api/customer-account/addresses", authenticateCustomer, requireCustomerCsrf, async (req,res) => {
-  const label=String(req.body.label||"Home").trim();
-  const address=String(req.body.address||"").trim();
-  const city=String(req.body.city||"").trim();
-  if(!address) return res.status(400).json({message:"Address is required."});
-  if(req.body.is_default){
-    await db.query("UPDATE customer_saved_addresses SET is_default=0 WHERE customer_account_id=?",[req.customerAccount.id]);
-  }
-  const [r]=await db.query(`
-    INSERT INTO customer_saved_addresses(customer_account_id,label,address,city,is_default)
-    VALUES(?,?,?,?,?)
-  `,[req.customerAccount.id,label,address,city||null,req.body.is_default?1:0]);
-  res.status(201).json({id:r.insertId});
-});
-
-app.delete("/api/customer-account/addresses/:id", authenticateCustomer, requireCustomerCsrf, async (req,res) => {
-  await db.query("DELETE FROM customer_saved_addresses WHERE id=? AND customer_account_id=?",[Number(req.params.id),req.customerAccount.id]);
-  res.json({ok:true});
-});
-
-app.post("/api/customer-account/favorites/:itemId", authenticateCustomer, requireCustomerCsrf, async (req,res) => {
-  await db.query(`
-    INSERT INTO customer_favorites(customer_account_id,rental_item_id) VALUES(?,?)
-    ON DUPLICATE KEY UPDATE rental_item_id=VALUES(rental_item_id)
-  `,[req.customerAccount.id,Number(req.params.itemId)]);
-  res.json({ok:true});
-});
-
-app.delete("/api/customer-account/favorites/:itemId", authenticateCustomer, requireCustomerCsrf, async (req,res) => {
-  await db.query("DELETE FROM customer_favorites WHERE customer_account_id=? AND rental_item_id=?",[req.customerAccount.id,Number(req.params.itemId)]);
-  res.json({ok:true});
-});
-
-app.use((err,req,res,_next) => {
-  const requestId=crypto.randomUUID();
-  console.error(`[${requestId}]`,err);
-  const status=Number(err.statusCode)||500;
-  const message=status<500 ? err.message : "Internal server error.";
-  res.status(status).json({message,request_id:requestId});
-});
-
 setInterval(checkOverdueBookings, 60 * 60 * 1000);
 setTimeout(checkOverdueBookings, 5000);
 
@@ -1412,6 +1180,33 @@ app.post("/api/admin/overdue-check", authenticate, requireRole("admin"), async (
   const before = Date.now();
   await checkOverdueBookings();
   res.json({ok:true, elapsed_ms:Date.now()-before});
+});
+
+// Unknown /api path -> JSON 404 (not Express's default HTML, which the client
+// cannot parse and reports as "Request failed").
+app.use("/api", (req,res) => {
+  res.status(404).json({message:`No such endpoint: ${req.method} ${req.originalUrl}`});
+});
+
+// Serve the built SPA and fall back to index.html for client-side routes
+// (/admin, /account, /rentals/:id ...) so deep links and refreshes work.
+// Skipped automatically when ../dist has not been built (e.g. API-only deploys).
+const clientDist = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist");
+if (fs.existsSync(path.join(clientDist, "index.html"))) {
+  app.use(express.static(clientDist));
+  app.use((req, res, next) => {
+    if (req.method !== "GET" || req.path.startsWith("/api")) return next();
+    res.sendFile(path.join(clientDist, "index.html"));
+  });
+}
+
+// Error handler must be registered last so every route is covered.
+app.use((err,req,res,_next) => {
+  const requestId=crypto.randomUUID();
+  console.error(`[${requestId}]`,err);
+  const status=Number(err.statusCode||err.status)||500;
+  const message=status<500 ? (err.message||"Request could not be completed.") : "Internal server error.";
+  res.status(status).json({message,request_id:requestId});
 });
 
 const port = Number(process.env.PORT || 4000);
