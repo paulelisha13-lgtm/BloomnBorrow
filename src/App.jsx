@@ -154,12 +154,8 @@ function CustomerHeader({ cartCount = 0 }) {
         <nav className="top-links">
           <NavLink to="/">Home</NavLink>
           <NavLink to="/rentals">Browse Rentals</NavLink>
-          <NavLink to="/track">Track Booking</NavLink>
+          <NavLink to="/cart">Add Rental</NavLink>
         </nav>
-        <div className="header-actions">
-          <Link className="icon-button" to="/cart" aria-label="Rental cart">🛒<span>{cartCount}</span></Link>
-          <Link className="outline-button" to="/track">Track Booking</Link>
-        </div>
       </div>
     </header>
   );
@@ -199,7 +195,7 @@ function Home({ onAdd }) {
             <p>Browse quality equipment, book in minutes, and choose delivery or pickup — no account required.</p>
             <div className="hero-actions">
               <Link className="primary-button" to="/rentals">Browse rentals →</Link>
-              <Link className="ghost-button" to="/track">Track booking</Link>
+              <Link className="ghost-button" to="/cart">Add Rental</Link>
             </div>
             <div className="trust-row">
               <span>✓ No login required</span><span>✓ Flexible dates</span><span>✓ Secure booking</span>
@@ -371,13 +367,13 @@ function ProductDetails({ onAdd }) {
 
 function Cart({ cart, updateQty, removeItem }) {
   const navigate = useNavigate();
-  const rentalSubtotal = cart.reduce((s,x)=>s+x.price*x.qty*2,0);
+  const rentalSubtotal = cart.reduce((s,x)=>s+x.price*x.qty,0);
   const deposit = cart.reduce((s,x)=>s+x.deposit*x.qty,0);
   const totalItems = cart.reduce((s,x)=>s+x.qty,0);
   return (
     <main className="page container narrow-page">
-      <div className="page-title-row"><div><span className="eyebrow">Booking</span><h1>Your rental cart</h1><p>Review your selected items and rental dates.</p></div></div>
-      {cart.length === 0 ? <div className="empty-state"><div>🛒</div><h2>Your cart is empty</h2><p>Add an item from our rental catalog to start a booking.</p><Link className="primary-button" to="/rentals">Browse rentals</Link></div> :
+      <div className="page-title-row"><div><span className="eyebrow">Booking</span><h1>Checkout Rental</h1><p>Review your selected items and proceed to checkout.</p></div></div>
+      {cart.length === 0 ? <div className="empty-state"><div>🛒</div><h2>No items yet</h2><p>Add items from our rental catalog to start a booking.</p><Link className="primary-button" to="/rentals">Browse rentals</Link></div> :
       <div className="checkout-layout">
         <section className="cart-list">
           <div className="cart-header">
@@ -393,7 +389,6 @@ function Cart({ cart, updateQty, removeItem }) {
               </div>
               <div className="cart-item-pricing">
                 <span className="price-per-day">{peso(x.price)}/day</span>
-                <span className="rental-days">2 days</span>
               </div>
               <div className="cart-item-actions">
                 <div className="qty-controls">
@@ -408,7 +403,7 @@ function Cart({ cart, updateQty, removeItem }) {
                 </button>
               </div>
             </div>
-            <div className="cart-item-total"><strong>{peso(x.price*x.qty*2)}</strong></div>
+            <div className="cart-item-total"><strong>{peso(x.price*x.qty)}</strong></div>
           </article>)}
         </section>
         <aside className="summary-card">
@@ -444,7 +439,10 @@ function Cart({ cart, updateQty, removeItem }) {
   )
 }
 
+const CHECKOUT_KEY = "bb_checkout_draft";
+
 function Checkout({ cart, clearCart }) {
+  const navigate = useNavigate();
   const [done,setDone] = useState(null);
   const [error,setError] = useState("");
   const [submitting,setSubmitting] = useState(false);
@@ -456,6 +454,70 @@ function Checkout({ cart, clearCart }) {
     fulfillment:"delivery",payment_method:"cash"
   });
   const [touched,setTouched] = useState({});
+  const [showLeaveConfirm,setShowLeaveConfirm] = useState(false);
+  const savedRef = useRef(false);
+
+  useEffect(()=>{
+    try {
+      const saved = localStorage.getItem(CHECKOUT_KEY);
+      if(saved) {
+        const d = JSON.parse(saved);
+        if(d.startDate) setStartDate(d.startDate);
+        if(d.endDate) setEndDate(d.endDate);
+        if(d.form) setForm(d.form);
+      }
+    } catch(e){}
+  },[]);
+
+  useEffect(()=>{
+    const hasData = form.full_name || form.phone || form.email || startDate || endDate;
+    if(hasData) {
+      localStorage.setItem(CHECKOUT_KEY, JSON.stringify({startDate,endDate,form}));
+    }
+  },[startDate,endDate,form]);
+
+  const isDirty = form.full_name || form.phone || form.email || startDate || endDate;
+
+  useEffect(()=>{
+    const handler = (e) => {
+      if(isDirty && !done) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return ()=>window.removeEventListener("beforeunload", handler);
+  },[isDirty,done]);
+
+  useEffect(()=>{
+    if(!isDirty || done) return;
+    const onPop = (e) => {
+      e.preventDefault();
+      setShowLeaveConfirm(true);
+    };
+    window.addEventListener("popstate", onPop);
+    window.history.pushState(null,"",window.location.href);
+    return ()=>window.removeEventListener("popstate", onPop);
+  },[isDirty,done]);
+
+  const goBack = () => {
+    if(isDirty && !done) {
+      savedRef.current = true;
+      setShowLeaveConfirm(true);
+    } else {
+      navigate(-1);
+    }
+  };
+
+  const confirmLeave = () => {
+    setShowLeaveConfirm(false);
+    localStorage.removeItem(CHECKOUT_KEY);
+    navigate(-1);
+  };
+
+  const cancelLeave = () => {
+    setShowLeaveConfirm(false);
+  };
 
   const days = startDate && endDate ? Math.max(1,Math.floor((new Date(endDate+"T00:00:00")-new Date(startDate+"T00:00:00"))/86400000)+1) : 1;
   const rentalSubtotal = cart.reduce((s,x)=>s+x.price*x.qty*days,0);
@@ -499,6 +561,7 @@ function Checkout({ cart, clearCart }) {
         throw new Error(`${failed?.item_name || "An item"} is not available in the requested quantity for those dates.`);
       }
       const data = await api("/bookings/guest",{method:"POST",body:JSON.stringify(payload)});
+      localStorage.removeItem(CHECKOUT_KEY);
       setDone(data.booking); clearCart();
     } catch(err) { setError(err.message); }
     finally { setSubmitting(false); }
@@ -510,6 +573,7 @@ function Checkout({ cart, clearCart }) {
     <main className="page container">
       <div className="page-title-row">
         <div>
+          <button type="button" className="checkout-back-btn" onClick={goBack}>← Back</button>
           <span className="eyebrow">No account required</span>
           <h1>Guest checkout</h1>
           <p>Complete your booking in just a few steps.</p>
@@ -518,216 +582,163 @@ function Checkout({ cart, clearCart }) {
 
       <div className="checkout-layout">
         <form className="checkout-form" onSubmit={submit}>
-          {error && <div className="checkout-error"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>{error}</div>}
+          {error && <div className="checkout-error">{error}</div>}
 
-          <div className="checkout-section">
-            <div className="section-header">
-              <span className="section-number">1</span>
-              <div>
-                <h2>Rental Dates</h2>
-                <p className="section-subtitle">Select your rental period</p>
-              </div>
+          <div className="date-grid">
+            <div className="form-group">
+              <label htmlFor="startDate">Rental start <span className="required">*</span></label>
+              <input id="startDate" required type="date" value={startDate} onChange={e=>setStartDate(e.target.value)}/>
             </div>
-            <div className="date-grid">
-              <div className="form-group">
-                <label htmlFor="startDate">Rental start <span className="required">*</span></label>
-                <input id="startDate" required type="date" value={startDate} onChange={e=>setStartDate(e.target.value)}/>
-              </div>
-              <div className="form-group">
-                <label htmlFor="endDate">Rental end <span className="required">*</span></label>
-                <input id="endDate" required type="date" min={startDate||undefined} value={endDate} onChange={e=>setEndDate(e.target.value)}/>
-              </div>
+            <div className="form-group">
+              <label htmlFor="endDate">Rental end <span className="required">*</span></label>
+              <input id="endDate" required type="date" min={startDate||undefined} value={endDate} onChange={e=>setEndDate(e.target.value)}/>
             </div>
           </div>
 
-          <div className="checkout-section">
-            <div className="section-header">
-              <span className="section-number">2</span>
-              <div>
-                <h2>Customer Information</h2>
-                <p className="section-subtitle">Tell us who you are</p>
-              </div>
+          <div className="form-grid">
+            <div className="form-group">
+              <label htmlFor="fullName">Full name <span className="required">*</span></label>
+              <input id="fullName" required value={form.full_name} onChange={e=>setForm({...form,full_name:e.target.value})} onBlur={()=>handleBlur("full_name")} placeholder="Juan Dela Cruz"/>
+              {getFieldError("full_name") && <span className="field-error">{getFieldError("full_name")}</span>}
             </div>
-            <div className="form-grid">
-              <div className="form-group">
-                <label htmlFor="fullName">Full name <span className="required">*</span></label>
-                <input id="fullName" required value={form.full_name} onChange={e=>setForm({...form,full_name:e.target.value})} onBlur={()=>handleBlur("full_name")} placeholder="Juan Dela Cruz"/>
-                {getFieldError("full_name") && <span className="field-error">{getFieldError("full_name")}</span>}
-              </div>
-              <div className="form-group">
-                <label htmlFor="phone">Contact number <span className="required">*</span></label>
-                <input id="phone" required type="tel" value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} onBlur={()=>handleBlur("phone")} placeholder="+63 9XX XXX XXXX"/>
-                {getFieldError("phone") && <span className="field-error">{getFieldError("phone")}</span>}
-              </div>
-              <div className="form-group span-2">
-                <label htmlFor="email">Email address <span className="required">*</span></label>
-                <input id="email" required type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} onBlur={()=>handleBlur("email")} placeholder="you@example.com"/>
-                {getFieldError("email") && <span className="field-error">{getFieldError("email")}</span>}
-              </div>
+            <div className="form-group">
+              <label htmlFor="phone">Contact number <span className="required">*</span></label>
+              <input id="phone" required type="tel" value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} onBlur={()=>handleBlur("phone")} placeholder="+63 9XX XXX XXXX"/>
+              {getFieldError("phone") && <span className="field-error">{getFieldError("phone")}</span>}
+            </div>
+            <div className="form-group span-2">
+              <label htmlFor="email">Email address <span className="required">*</span></label>
+              <input id="email" required type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} onBlur={()=>handleBlur("email")} placeholder="you@example.com"/>
+              {getFieldError("email") && <span className="field-error">{getFieldError("email")}</span>}
             </div>
           </div>
 
-          <div className="checkout-section">
-            <div className="section-header">
-              <span className="section-number">3</span>
-              <div>
-                <h2>Delivery Information</h2>
-                <p className="section-subtitle">Where should we deliver?</p>
-              </div>
+          <div className="form-grid">
+            <div className="form-group span-2">
+              <label htmlFor="address">Complete address <span className="required">*</span></label>
+              <input id="address" required={form.fulfillment==="delivery"} value={form.address} onChange={e=>setForm({...form,address:e.target.value})} placeholder="House no., street, barangay"/>
             </div>
-            <div className="form-grid">
-              <div className="form-group span-2">
-                <label htmlFor="address">Complete address <span className="required">*</span></label>
-                <input id="address" required={form.fulfillment==="delivery"} value={form.address} onChange={e=>setForm({...form,address:e.target.value})} placeholder="House no., street, barangay"/>
-              </div>
-              <div className="form-group">
-                <label htmlFor="city">City / Municipality <span className="required">*</span></label>
-                <input id="city" required value={form.city} onChange={e=>setForm({...form,city:e.target.value})} placeholder="Quezon City"/>
-              </div>
-              <div className="form-group">
-                <label htmlFor="province">Province</label>
-                <input id="province" value={form.province} onChange={e=>setForm({...form,province:e.target.value})} placeholder="Metro Manila"/>
-              </div>
-              <div className="form-group">
-                <label htmlFor="postalCode">Postal code</label>
-                <input id="postalCode" value={form.postal_code} onChange={e=>setForm({...form,postal_code:e.target.value})} onBlur={()=>handleBlur("postal_code")} placeholder="1100"/>
-                {getFieldError("postal_code") && <span className="field-error">{getFieldError("postal_code")}</span>}
-              </div>
-              <div className="form-group">
-                <label htmlFor="notes">Additional notes</label>
-                <textarea id="notes" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Landmark, gate code, etc." rows="2"/>
-              </div>
+            <div className="form-group">
+              <label htmlFor="city">City / Municipality <span className="required">*</span></label>
+              <input id="city" required value={form.city} onChange={e=>setForm({...form,city:e.target.value})} placeholder="Quezon City"/>
+            </div>
+            <div className="form-group">
+              <label htmlFor="province">Province</label>
+              <input id="province" value={form.province} onChange={e=>setForm({...form,province:e.target.value})} placeholder="Metro Manila"/>
+            </div>
+            <div className="form-group">
+              <label htmlFor="postalCode">Postal code</label>
+              <input id="postalCode" value={form.postal_code} onChange={e=>setForm({...form,postal_code:e.target.value})} onBlur={()=>handleBlur("postal_code")} placeholder="1100"/>
+              {getFieldError("postal_code") && <span className="field-error">{getFieldError("postal_code")}</span>}
+            </div>
+            <div className="form-group">
+              <label htmlFor="notes">Additional notes</label>
+              <textarea id="notes" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Landmark, gate code, etc." rows="2"/>
             </div>
           </div>
 
-          <div className="checkout-section">
-            <div className="section-header">
-              <span className="section-number">4</span>
-              <div>
-                <h2>Fulfillment Method</h2>
-                <p className="section-subtitle">How would you like to receive your items?</p>
-              </div>
-            </div>
-            <div className="fulfillment-grid">
-              <label className={`fulfillment-card ${form.fulfillment==="delivery"?"selected":""}`}>
-                <input type="radio" name="fulfillment" checked={form.fulfillment==="delivery"} onChange={()=>setForm({...form,fulfillment:"delivery"})}/>
-                <div className="fulfillment-icon">🚚</div>
-                <div className="fulfillment-info">
-                  <strong>Delivery</strong>
-                  <span>Delivered to your doorstep</span>
-                  <span className="fulfillment-price">₱300 fee</span>
-                </div>
-                <div className="fulfillment-check">✓</div>
-              </label>
-              <label className={`fulfillment-card ${form.fulfillment==="pickup"?"selected":""}`}>
-                <input type="radio" name="fulfillment" checked={form.fulfillment==="pickup"} onChange={()=>setForm({...form,fulfillment:"pickup"})}/>
-                <div className="fulfillment-icon">📦</div>
-                <div className="fulfillment-info">
-                  <strong>Pickup</strong>
-                  <span>Collect at our rental hub</span>
-                  <span className="fulfillment-price">Free</span>
-                </div>
-                <div className="fulfillment-check">✓</div>
-              </label>
-            </div>
-          </div>
-
-          <div className="checkout-section">
-            <div className="section-header">
-              <span className="section-number">5</span>
-              <div>
-                <h2>Payment Method</h2>
-                <p className="section-subtitle">How would you like to pay?</p>
-              </div>
-            </div>
-            <div className="payment-grid">
-              <label className={`payment-card ${form.payment_method==="cash"?"selected":""}`}>
-                <input type="radio" name="payment" checked={form.payment_method==="cash"} onChange={()=>setForm({...form,payment_method:"cash"})}/>
-                <div className="payment-icon">💵</div>
-                <div className="payment-info">
-                  <strong>Cash</strong>
-                  <span>Pay on pickup or delivery</span>
-                </div>
-                <div className="payment-check">✓</div>
-              </label>
-              <label className={`payment-card ${form.payment_method==="gcash"?"selected":""}`}>
-                <input type="radio" name="payment" checked={form.payment_method==="gcash"} onChange={()=>setForm({...form,payment_method:"gcash"})}/>
-                <div className="payment-icon">📱</div>
-                <div className="payment-info">
-                  <strong>GCash</strong>
-                  <span>Scan QR code to pay</span>
-                </div>
-                <div className="payment-check">✓</div>
-              </label>
-            </div>
-
-            {form.payment_method === "gcash" && (
-              <div className="gcash-panel">
-                <div className="gcash-instructions">
-                  <h4>GCash Payment Instructions</h4>
-                  <ol>
-                    <li>Open your GCash app</li>
-                    <li>Tap <strong>Scan QR</strong> in the app</li>
-                    <li>Scan the QR code shown beside</li>
-                    <li>Enter the exact amount shown in your total</li>
-                    <li>Confirm and complete the payment</li>
-                  </ol>
-                  <div className="gcash-note">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                    Your payment will be recorded and verified by our team. You will receive confirmation once payment is verified.
+          <div className="form-grid">
+            <div className="form-group">
+              <label>Fulfillment <span className="required">*</span></label>
+              <div className="fulfillment-grid">
+                <label className={`fulfillment-card ${form.fulfillment==="delivery"?"selected":""}`}>
+                  <input type="radio" name="fulfillment" checked={form.fulfillment==="delivery"} onChange={()=>setForm({...form,fulfillment:"delivery"})}/>
+                  <div className="fulfillment-info">
+                    <strong>Delivery</strong>
+                    <span>₱300 fee</span>
                   </div>
-                </div>
-                <div className="gcash-qr">
-                  <div className="qr-placeholder">
-                    <svg width="180" height="180" viewBox="0 0 180 180" fill="none">
-                      <rect width="180" height="180" fill="#fff"/>
-                      <rect x="10" y="10" width="50" height="50" rx="4" fill="#000"/>
-                      <rect x="120" y="10" width="50" height="50" rx="4" fill="#000"/>
-                      <rect x="10" y="120" width="50" height="50" rx="4" fill="#000"/>
-                      <rect x="15" y="15" width="10" height="10" fill="#fff"/>
-                      <rect x="35" y="15" width="10" height="10" fill="#fff"/>
-                      <rect x="15" y="35" width="10" height="10" fill="#fff"/>
-                      <rect x="35" y="35" width="20" height="20" fill="#fff"/>
-                      <rect x="45" y="15" width="10" height="10" fill="#000"/>
-                      <rect x="15" y="45" width="10" height="10" fill="#000"/>
-                      <rect x="125" y="15" width="10" height="10" fill="#fff"/>
-                      <rect x="145" y="15" width="10" height="10" fill="#fff"/>
-                      <rect x="125" y="35" width="10" height="10" fill="#fff"/>
-                      <rect x="145" y="35" width="20" height="20" fill="#fff"/>
-                      <rect x="155" y="15" width="10" height="10" fill="#000"/>
-                      <rect x="125" y="45" width="10" height="10" fill="#000"/>
-                      <rect x="15" y="125" width="10" height="10" fill="#fff"/>
-                      <rect x="35" y="125" width="10" height="10" fill="#fff"/>
-                      <rect x="15" y="145" width="10" height="10" fill="#fff"/>
-                      <rect x="35" y="145" width="20" height="20" fill="#fff"/>
-                      <rect x="45" y="125" width="10" height="10" fill="#000"/>
-                      <rect x="15" y="155" width="10" height="10" fill="#000"/>
-                      <rect x="70" y="70" width="40" height="40" rx="4" fill="#000"/>
-                      <rect x="80" y="80" width="20" height="20" fill="#fff"/>
-                    </svg>
+                  <div className="fulfillment-check">✓</div>
+                </label>
+                <label className={`fulfillment-card ${form.fulfillment==="pickup"?"selected":""}`}>
+                  <input type="radio" name="fulfillment" checked={form.fulfillment==="pickup"} onChange={()=>setForm({...form,fulfillment:"pickup"})}/>
+                  <div className="fulfillment-info">
+                    <strong>Pickup</strong>
+                    <span>Free</span>
                   </div>
-                  <p className="qr-label">Scan to Pay with GCash</p>
-                </div>
+                  <div className="fulfillment-check">✓</div>
+                </label>
               </div>
-            )}
+            </div>
+            <div className="form-group">
+              <label>Payment <span className="required">*</span></label>
+              <div className="payment-grid">
+                <label className={`payment-card ${form.payment_method==="cash"?"selected":""}`}>
+                  <input type="radio" name="payment" checked={form.payment_method==="cash"} onChange={()=>setForm({...form,payment_method:"cash"})}/>
+                  <div className="payment-info">
+                    <strong>Cash</strong>
+                    <span>Pay on delivery</span>
+                  </div>
+                  <div className="payment-check">✓</div>
+                </label>
+                <label className={`payment-card ${form.payment_method==="gcash"?"selected":""}`}>
+                  <input type="radio" name="payment" checked={form.payment_method==="gcash"} onChange={()=>setForm({...form,payment_method:"gcash"})}/>
+                  <div className="payment-info">
+                    <strong>GCash</strong>
+                    <span>Scan QR to pay</span>
+                  </div>
+                  <div className="payment-check">✓</div>
+                </label>
+              </div>
+            </div>
           </div>
 
-          <div className="checkout-section">
-            <label className="agree-checkbox">
-              <input type="checkbox" required/>
-              <span className="checkmark"></span>
-              <span>I agree to the <a href="#" onClick={e=>e.preventDefault()}>rental terms</a> and <a href="#" onClick={e=>e.preventDefault()}>cancellation policy</a>.</span>
-            </label>
-          </div>
+          {form.payment_method === "gcash" && (
+            <div className="gcash-panel">
+              <div className="gcash-instructions">
+                <h4>GCash Payment</h4>
+                <ol>
+                  <li>Open your GCash app</li>
+                  <li>Tap <strong>Scan QR</strong></li>
+                  <li>Scan the QR code shown</li>
+                  <li>Enter the exact total amount</li>
+                  <li>Confirm payment</li>
+                </ol>
+                <div className="gcash-note">Payment will be verified by our team.</div>
+              </div>
+              <div className="gcash-qr">
+                <div className="qr-placeholder">
+                  <svg width="120" height="120" viewBox="0 0 180 180" fill="none">
+                    <rect width="180" height="180" fill="#fff"/>
+                    <rect x="10" y="10" width="50" height="50" rx="4" fill="#000"/>
+                    <rect x="120" y="10" width="50" height="50" rx="4" fill="#000"/>
+                    <rect x="10" y="120" width="50" height="50" rx="4" fill="#000"/>
+                    <rect x="15" y="15" width="10" height="10" fill="#fff"/>
+                    <rect x="35" y="15" width="10" height="10" fill="#fff"/>
+                    <rect x="15" y="35" width="10" height="10" fill="#fff"/>
+                    <rect x="35" y="35" width="20" height="20" fill="#fff"/>
+                    <rect x="45" y="15" width="10" height="10" fill="#000"/>
+                    <rect x="15" y="45" width="10" height="10" fill="#000"/>
+                    <rect x="125" y="15" width="10" height="10" fill="#fff"/>
+                    <rect x="145" y="15" width="10" height="10" fill="#fff"/>
+                    <rect x="125" y="35" width="10" height="10" fill="#fff"/>
+                    <rect x="145" y="35" width="20" height="20" fill="#fff"/>
+                    <rect x="155" y="15" width="10" height="10" fill="#000"/>
+                    <rect x="125" y="45" width="10" height="10" fill="#000"/>
+                    <rect x="15" y="125" width="10" height="10" fill="#fff"/>
+                    <rect x="35" y="125" width="10" height="10" fill="#fff"/>
+                    <rect x="15" y="145" width="10" height="10" fill="#fff"/>
+                    <rect x="35" y="145" width="20" height="20" fill="#fff"/>
+                    <rect x="45" y="125" width="10" height="10" fill="#000"/>
+                    <rect x="15" y="155" width="10" height="10" fill="#000"/>
+                    <rect x="70" y="70" width="40" height="40" rx="4" fill="#000"/>
+                    <rect x="80" y="80" width="20" height="20" fill="#fff"/>
+                  </svg>
+                </div>
+                <p className="qr-label">Scan to Pay</p>
+              </div>
+            </div>
+          )}
+
+          <label className="agree-checkbox">
+            <input type="checkbox" required/>
+            <span>I agree to the <a href="#" onClick={e=>e.preventDefault()}>rental terms</a> and <a href="#" onClick={e=>e.preventDefault()}>cancellation policy</a>.</span>
+          </label>
 
           <button className="checkout-submit" type="submit" disabled={submitting||!isFormValid()}>
             {submitting ? (
               <span className="loading-state"><span className="spinner"></span>Processing...</span>
             ) : (
-              <>
-                Place Booking
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-              </>
+              "Place Booking"
             )}
           </button>
         </form>
@@ -772,16 +783,78 @@ function Checkout({ cart, clearCart }) {
           </div>
 
           <div className="summary-note">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
             Final prices are verified by the backend before booking confirmation.
           </div>
         </aside>
       </div>
+
+      {showLeaveConfirm&&<div className="modal-backdrop" onClick={cancelLeave}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+        <div className="confirm-modal-icon">⚠</div>
+        <h3>Leave Checkout?</h3>
+        <p>You have unsaved booking details. If you leave now, your progress will be saved and you can continue later.</p>
+        <small>Your entered information will be preserved in this browser.</small>
+        <div className="confirm-modal-actions">
+          <button className="secondary-button" onClick={cancelLeave}>Stay</button>
+          <button className="danger-button" onClick={confirmLeave}>Leave</button>
+        </div>
+      </div></div>}
     </main>
   )
 }
 
 function Track({ booking: bookingProp }) {
+  const [bookingNo, setBookingNo] = useState("");
+  const [lookupResult, setLookupResult] = useState(null);
+  const [lookupError, setLookupError] = useState("");
+  const [looking, setLooking] = useState(false);
+
+  const lookup = async (e) => {
+    e.preventDefault();
+    if (!bookingNo.trim()) return;
+    setLooking(true);
+    setLookupError("");
+    setLookupResult(null);
+    try {
+      const data = await api(`/track/${encodeURIComponent(bookingNo.trim())}`);
+      setLookupResult(data.booking || data);
+    } catch (err) {
+      setLookupError("Booking not found. Please check your booking number and try again.");
+    } finally {
+      setLooking(false);
+    }
+  };
+
+  const booking = bookingProp || lookupResult;
+
+  if (!booking) {
+    return <main className="page container narrow-page"><div className="track-card">
+      <div className="greeting-card">
+        <div className="greeting-header">
+          <span className="greeting-icon">🔍</span>
+          <h1>Track Your Booking</h1>
+          <p>Enter your booking number to view your booking details and share your experience.</p>
+        </div>
+        <form className="track-lookup-form" onSubmit={lookup}>
+          <div className="track-lookup-row">
+            <input
+              type="text"
+              placeholder="e.g. BK-20260910-001"
+              value={bookingNo}
+              onChange={e => setBookingNo(e.target.value)}
+            />
+            <button type="submit" className="primary-button" disabled={looking}>
+              {looking ? "Looking..." : "Track"}
+            </button>
+          </div>
+          {lookupError && <div className="track-lookup-error">{lookupError}</div>}
+        </form>
+        <div className="greeting-footer">
+          <Link to="/rentals" className="secondary-button">Browse Rentals</Link>
+        </div>
+      </div>
+    </div></main>;
+  }
+
   return <main className="page container narrow-page"><div className="track-card">
     <div className="greeting-card">
       <div className="greeting-header">
@@ -790,12 +863,12 @@ function Track({ booking: bookingProp }) {
         <p>We're happy to have you! Your booking request has been successfully submitted.</p>
       </div>
 
-      {bookingProp&&<div className="greeting-booking-summary">
-        <div className="greeting-booking-row"><span>Booking number</span><strong>{bookingProp.booking_no}</strong></div>
-        <div className="greeting-booking-row"><span>Rental dates</span><strong>{String(bookingProp.start_date).slice(0,10)} → {String(bookingProp.end_date).slice(0,10)}</strong></div>
-        <div className="greeting-booking-row"><span>Total amount</span><strong>{peso(Number(bookingProp.grand_total))}</strong></div>
-        <div className="greeting-booking-row"><span>Payment method</span><strong className="capitalize">{bookingProp.payment_method||"Cash"}</strong></div>
-      </div>}
+      <div className="greeting-booking-summary">
+        <div className="greeting-booking-row"><span>Booking number</span><strong>{booking.booking_no}</strong></div>
+        <div className="greeting-booking-row"><span>Rental dates</span><strong>{String(booking.start_date).slice(0,10)} → {String(booking.end_date).slice(0,10)}</strong></div>
+        <div className="greeting-booking-row"><span>Total amount</span><strong>{peso(Number(booking.grand_total))}</strong></div>
+        <div className="greeting-booking-row"><span>Payment method</span><strong className="capitalize">{booking.payment_method||"Cash"}</strong></div>
+      </div>
 
       <div className="greeting-status">
         <h2>Booking Status</h2>
@@ -811,8 +884,8 @@ function Track({ booking: bookingProp }) {
         </div>
       </div>
 
-      {bookingProp?.payment_method==="gcash"&&<div className="greeting-section">
-        <h2>💳 If You Paid via GCash</h2>
+      {booking.payment_method==="gcash"&&<div className="greeting-section">
+        <h2>If You Paid via GCash</h2>
         <p>If you selected GCash as your payment method, please:</p>
         <ol>
           <li>Wait for the Admin's message with payment instructions.</li>
@@ -823,7 +896,7 @@ function Track({ booking: bookingProp }) {
       </div>}
 
       <div className="greeting-section">
-        <h2>📩 What Happens Next?</h2>
+        <h2>What Happens Next?</h2>
         <p>Once your booking and payment have been verified, you will receive an official Booking Confirmation through Gmail or SMS.</p>
       </div>
 
@@ -853,7 +926,7 @@ function CustomerSite({ cart, onAdd, updateQty, removeItem, clearCart }) {
       <Route path="/track" element={<Track/>}/>
       <Route path="/account" element={<Account/>}/>
     </Routes>
-    <footer><div className="container footer-grid"><Logo light/><p>Easy rentals for everyday needs, events, projects, and adventures.</p><div><strong>Quick links</strong><Link to="/rentals">Browse Rentals</Link><Link to="/track">Track Booking</Link></div><div><strong>Contact</strong><span>hello@bloom_borrow.test</span><span>+63 917 000 0000</span></div></div></footer>
+    <footer><div className="container footer-grid"><Logo light/><p>Easy rentals for everyday needs, events, projects, and adventures.</p><div><strong>Quick links</strong><Link to="/rentals">Browse Rentals</Link><Link to="/cart">Add Rental</Link></div><div><strong>Contact</strong><span>hello@bloom_borrow.test</span><span>+63 917 000 0000</span></div></div></footer>
   </>
 }
 
@@ -1648,7 +1721,7 @@ function Inventory() {
             </div>
             <div className="inventory-card-actions">
               <button className="secondary-button" onClick={()=>openEdit(item)}>Edit</button>
-              <button className="secondary-button" onClick={()=>viewConditions(item)}>📋 History</button>
+              <button className="secondary-button" onClick={()=>viewConditions(item)}>History</button>
               <button className="danger-button" onClick={()=>confirmDelete(item)}>Delete</button>
             </div>
           </div>
@@ -1664,7 +1737,7 @@ function Inventory() {
         <label>Daily price<input required type="number" min="0" value={form.daily_price} onChange={e=>setForm({...form,daily_price:e.target.value})}/></label><label>Security deposit<input required type="number" min="0" value={form.security_deposit} onChange={e=>setForm({...form,security_deposit:e.target.value})}/></label>
         <label>Quantity<input required type="number" min="1" value={form.total_quantity} onChange={e=>setForm({...form,total_quantity:e.target.value})}/></label><label>Image URL<input value={form.image_url||""} onChange={e=>setForm({...form,image_url:e.target.value})}/></label>
         <label className="span-2">Description<textarea value={form.description||""} onChange={e=>setForm({...form,description:e.target.value})}/></label>
-      </div><div className="modal-actions"><button type="button" className="secondary-button" onClick={()=>setModal(false)}>Cancel</button><button className="primary-button">Save item</button></div>
+      </div><div className="modal-actions"><button type="button" className="secondary-button" onClick={()=>setModal(false)}>Cancel</button><button type="submit" className="primary-button">Save item</button></div>
     </form></div>}
 
     {deleteModal&&<div className="modal-backdrop" onClick={()=>setDeleteModal(null)}><div className="modal delete-confirm-modal" onClick={e=>e.stopPropagation()}>
@@ -1856,12 +1929,12 @@ function Incidents() {
       <div style={{marginBottom:"16px"}}><small>Description</small><p style={{margin:"4px 0",fontSize:"13px",lineHeight:"1.5"}}>{detail.description}</p></div>
       {detail.resolution_notes&&<div style={{marginBottom:"16px"}}><small>Resolution notes</small><p style={{margin:"4px 0",fontSize:"13px",lineHeight:"1.5"}}>{detail.resolution_notes}</p></div>}
       <div className="booking-actions" style={{flexWrap:"wrap",gap:"8px"}}>
-        {detail.status==="reported"&&<button className="secondary-button" onClick={()=>updateStatus(detail,"investigating")}>🔍 Start Investigation</button>}
+        {detail.status==="reported"&&<button className="secondary-button" onClick={()=>updateStatus(detail,"investigating")}>Start Investigation</button>}
         {["reported","investigating"].includes(detail.status)&&<>
-          <button className="primary-button" onClick={()=>updateStatus(detail,"resolved_charged")}>✓ Resolve (Charged)</button>
-          <button className="secondary-button" onClick={()=>updateStatus(detail,"resolved_insurance")}>✓ Resolve (Insurance)</button>
-          <button className="secondary-button" onClick={()=>updateStatus(detail,"written_off")}>📄 Write Off</button>
-          <button className="secondary-button danger" onClick={()=>updateStatus(detail,"dismissed")}>✕ Dismiss</button>
+          <button className="primary-button" onClick={()=>updateStatus(detail,"resolved_charged")}>Resolve (Charged)</button>
+          <button className="secondary-button" onClick={()=>updateStatus(detail,"resolved_insurance")}>Resolve (Insurance)</button>
+          <button className="secondary-button" onClick={()=>updateStatus(detail,"written_off")}>Write Off</button>
+          <button className="secondary-button danger" onClick={()=>updateStatus(detail,"dismissed")}>Dismiss</button>
         </>}
       </div>
     </div></div>}
@@ -2076,31 +2149,31 @@ function Bookings() {
         <div className="booking-actions-group">
           <div className="booking-actions-label">Workflow</div>
           <div className="booking-actions">
-            {detail.status==="pending"&&<><button className="primary-button" disabled={busy} onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"confirmed"})}>✓ Approve Booking</button><button className="secondary-button danger" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"rejected"})}>✕ Reject Booking</button></>}
-            {["pending","confirmed","ready"].includes(detail.status)&&<button className="secondary-button" onClick={reschedule}>📅 Reschedule Date</button>}
-            {detail.status==="confirmed"&&<button className="primary-button" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"ready"})}>✓ Mark as Ready</button>}
-            {detail.status==="ready"&&detail.fulfillment==="pickup"&&<button className="primary-button" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"rented"})}>📦 Confirm Pickup</button>}
-            {["rented","overdue","returned"].includes(detail.status)&&<button className="primary-button" onClick={openInspect}>🔍 Inspect & Return</button>}
-            {detail.status==="returned"&&detail.inspection&&<button className="primary-button" onClick={()=>api(`/admin/bookings/${detail.id}/complete`,{method:"POST",body:JSON.stringify({})}).then(()=>{open(detail.id);load()}).catch(e=>setError(e.message))}>✓ Mark Complete</button>}
+            {detail.status==="pending"&&<><button className="primary-button" disabled={busy} onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"confirmed"})}>Approve Booking</button><button className="secondary-button danger" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"rejected"})}>Reject Booking</button></>}
+            {["pending","confirmed","ready"].includes(detail.status)&&<button className="secondary-button" onClick={reschedule}>Reschedule Date</button>}
+            {detail.status==="confirmed"&&<button className="primary-button" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"ready"})}>Mark as Ready</button>}
+            {detail.status==="ready"&&detail.fulfillment==="pickup"&&<button className="primary-button" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"rented"})}>Confirm Pickup</button>}
+            {["rented","overdue","returned"].includes(detail.status)&&<button className="primary-button" onClick={openInspect}>Inspect & Return</button>}
+            {detail.status==="returned"&&detail.inspection&&<button className="primary-button" onClick={()=>api(`/admin/bookings/${detail.id}/complete`,{method:"POST",body:JSON.stringify({})}).then(()=>{open(detail.id);load()}).catch(e=>setError(e.message))}>Mark Complete</button>}
           </div>
         </div>
         <div className="booking-actions-group">
           <div className="booking-actions-label">Payments</div>
           <div className="booking-actions">
-            <button className="primary-button" onClick={openPaymentModal}>💰 Add Payment</button>
+            <button className="primary-button" onClick={openPaymentModal}>Add Payment</button>
           </div>
         </div>
         <div className="booking-actions-group">
           <div className="booking-actions-label">Manage</div>
           <div className="booking-actions">
             {!["cancelled","rejected","completed","returned"].includes(detail.status)&&<button className="secondary-button danger" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"cancelled"})}>✕ Cancel Booking</button>}
-            <button className="danger-button" onClick={()=>setDeleteBookingTarget(detail)}>🗑 Delete Booking</button>
+            <button className="danger-button" onClick={()=>setDeleteBookingTarget(detail)}>Delete Booking</button>
           </div>
         </div>
       </div>
       <div className="booking-modal-section">
         <div className="booking-section-header"><strong>Payments</strong></div>
-        {detail.payments.length?<div className="booking-payments-list">{detail.payments.map(p=><div className="booking-payment-row" key={p.id}><div className="booking-payment-info"><strong>{peso(Number(p.amount))}</strong><small>{p.payment_type} · {p.method}{p.notes?` · ${p.notes}`:""}</small></div><div className="booking-payment-actions"><span className={`status-pill ${p.status==="completed"?"confirmed":"pending"}`}>{p.status}</span><button className="mini-button" onClick={()=>openInvoice({bookingNo:detail.booking_no,createdAt:p.created_at,customerName:detail.customer_name,customerEmail:detail.customer_email,customerPhone:detail.customer_phone,method:p.method,type:p.payment_type,status:p.status,amount:p.amount,note:p.notes})}>🖨</button></div></div>)}</div>:<div className="booking-empty-state">No payments recorded yet.</div>}
+        {detail.payments.length?<div className="booking-payments-list">{detail.payments.map(p=><div className="booking-payment-row" key={p.id}><div className="booking-payment-info"><strong>{peso(Number(p.amount))}</strong><small>{p.payment_type} · {p.method}{p.notes?` · ${p.notes}`:""}</small></div><div className="booking-payment-actions"><span className={`status-pill ${p.status==="completed"?"confirmed":"pending"}`}>{p.status}</span><button className="mini-button" onClick={()=>openInvoice({bookingNo:detail.booking_no,createdAt:p.created_at,customerName:detail.customer_name,customerEmail:detail.customer_email,customerPhone:detail.customer_phone,method:p.method,type:p.payment_type,status:p.status,amount:p.amount,note:p.notes})}>Print</button></div></div>)}</div>:<div className="booking-empty-state">No payments recorded yet.</div>}
       </div>
       <div className="booking-modal-section">
         <div className="booking-section-header"><strong>Status History</strong></div>
@@ -2111,7 +2184,6 @@ function Bookings() {
     {showPaymentModal&&detail&&<div className="modal-backdrop" onClick={()=>setShowPaymentModal(false)}><div className="modal payment-modal" onClick={e=>e.stopPropagation()}>
       <button className="booking-modal-close" onClick={()=>setShowPaymentModal(false)}>×</button>
       <div className="payment-modal-header">
-        <div className="payment-modal-icon">💰</div>
         <span className="eyebrow">Record Payment</span>
         <h2>{detail.booking_no}</h2>
         <p>{detail.customer_name}</p>
@@ -2124,12 +2196,12 @@ function Bookings() {
       <div className="payment-modal-form">
         <label className="payment-label">Payment type
           <div className="payment-type-grid">
-            {[{id:"rental",icon:"💵",label:"Rental"},{id:"deposit",icon:"🔒",label:"Deposit"},{id:"refund",icon:"↩",label:"Refund"}].map(t=><button type="button" key={t.id} className={`payment-type-btn ${paymentForm.payment_type===t.id?"active":""}`} onClick={()=>setPaymentForm({...paymentForm,payment_type:t.id})}><span>{t.icon}</span><strong>{t.label}</strong></button>)}
+            {[{id:"rental",label:"Rental"},{id:"deposit",label:"Deposit"},{id:"refund",label:"Refund"}].map(t=><button type="button" key={t.id} className={`payment-type-btn ${paymentForm.payment_type===t.id?"active":""}`} onClick={()=>setPaymentForm({...paymentForm,payment_type:t.id})}><strong>{t.label}</strong></button>)}
           </div>
         </label>
         <label className="payment-label">Payment method
           <div className="payment-method-grid">
-            {[{id:"cash",icon:"💵",label:"Cash"},{id:"gcash",icon:"📱",label:"GCash"},{id:"bank_transfer",icon:"🏦",label:"Bank"},{id:"other",icon:"💳",label:"Other"}].map(m=><button type="button" key={m.id} className={`payment-method-btn ${paymentForm.method===m.id?"active":""}`} onClick={()=>setPaymentForm({...paymentForm,method:m.id})}><span>{m.icon}</span><strong>{m.label}</strong></button>)}
+            {[{id:"cash",label:"Cash"},{id:"gcash",label:"GCash"},{id:"bank_transfer",label:"Bank"},{id:"other",label:"Other"}].map(m=><button type="button" key={m.id} className={`payment-method-btn ${paymentForm.method===m.id?"active":""}`} onClick={()=>setPaymentForm({...paymentForm,method:m.id})}><strong>{m.label}</strong></button>)}
           </div>
         </label>
         <label className="payment-label">Amount
@@ -2159,7 +2231,6 @@ function Bookings() {
     {showInspectModal&&detail&&<div className="modal-backdrop" onClick={()=>setShowInspectModal(false)}><div className="modal inspect-modal" onClick={e=>e.stopPropagation()}>
       <button className="booking-modal-close" onClick={()=>setShowInspectModal(false)}>×</button>
       <div className="inspect-modal-header">
-        <div className="inspect-modal-icon">🔍</div>
         <span className="eyebrow">Inspect & Return</span>
         <h2>{detail.booking_no}</h2>
         <p>{detail.customer_name}</p>
@@ -2171,7 +2242,7 @@ function Bookings() {
       <div className="inspect-modal-form">
         <label className="inspect-label">Condition after return
           <div className="condition-grid">
-            {[{id:"Excellent",icon:"✨",label:"Excellent"},{id:"Good",icon:"👍",label:"Good"},{id:"Fair",icon:"⚠️",label:"Fair"},{id:"Poor",icon:"🔴",label:"Poor"}].map(c=><button type="button" key={c.id} className={`condition-btn ${inspectForm.condition===c.id?"active":""}`} onClick={()=>setInspectForm({...inspectForm,condition:c.id})}><span>{c.icon}</span><strong>{c.label}</strong></button>)}
+            {[{id:"Excellent",label:"Excellent"},{id:"Good",label:"Good"},{id:"Fair",label:"Fair"},{id:"Poor",label:"Poor"}].map(c=><button type="button" key={c.id} className={`condition-btn ${inspectForm.condition===c.id?"active":""}`} onClick={()=>setInspectForm({...inspectForm,condition:c.id})}><strong>{c.label}</strong></button>)}
           </div>
         </label>
         <label className="inspect-label">Damage charge
@@ -2202,12 +2273,21 @@ function Customers() {
   const [statusFilter,setStatusFilter]=useState("All");
   const [detail,setDetail]=useState(null);
   const [renterScore,setRenterScore]=useState(null);
+  const [editing,setEditing]=useState(false);
+  const [editForm,setEditForm]=useState({});
+  const [saving,setSaving]=useState(false);
+  const [editError,setEditError]=useState("");
+  const [deleteConfirm,setDeleteConfirm]=useState(null);
+  const [deleting,setDeleting]=useState(false);
 
   const load=()=>api("/admin/customers").then(d=>setRows(d.customers||[])).catch(e=>setError(e.message));
   React.useEffect(()=>{load()},[]);
   const toggle=async(c)=>{try{await api(`/admin/customers/${c.id}/status`,{method:"PATCH",body:JSON.stringify({status:c.status==="active"?"blocked":"active"})});if(detail&&detail.id===c.id)setDetail({...c,status:c.status==="active"?"blocked":"active"});load()}catch(e){setError(e.message)}};
-  const del=async(c)=>{if(!confirm(`Delete customer "${c.full_name}"? This cannot be undone.`))return;try{await api(`/admin/customers/${c.id}`,{method:"DELETE"});if(detail&&detail.id===c.id)setDetail(null);load()}catch(e){setError(e.message)}};
+  const del=async()=>{if(!deleteConfirm)return;setDeleting(true);try{await api(`/admin/customers/${deleteConfirm.id}`,{method:"DELETE"});setDeleteConfirm(null);setDetail(null);load()}catch(e){setError(e.message)}finally{setDeleting(false)}};
   const clearAll=async()=>{if(!confirm("Delete ALL customers? This cannot be undone."))return;try{await api("/admin/customers",{method:"DELETE"});setDetail(null);load()}catch(e){setError(e.message)}};
+  const startEdit=()=>{setEditForm({full_name:detail.full_name||"",email:detail.email||"",phone:detail.phone||"",city:detail.city||"",address:detail.address||""});setEditing(true);setEditError("")};
+  const cancelEdit=()=>{setEditing(false);setEditError("")};
+  const saveCustomer=async()=>{setSaving(true);setEditError("");try{const data=await api(`/admin/customers/${detail.id}`,{method:"PATCH",body:JSON.stringify(editForm)});setDetail({...detail,...data.customer});setEditing(false);load()}catch(e){setEditError(e.message)}finally{setSaving(false)}};
 
   const loadScore=async(c)=>{
     try{
@@ -2322,22 +2402,31 @@ function Customers() {
       </div>}
     </section>
 
-    {detail&&<div className="modal-backdrop" onClick={()=>setDetail(null)}><div className="modal customer-detail-modal" onClick={e=>e.stopPropagation()}>
-      <button className="booking-modal-close" onClick={()=>setDetail(null)}>×</button>
+    {detail&&<div className="modal-backdrop" onClick={()=>{setDetail(null);setEditing(false)}}><div className="modal customer-detail-modal" onClick={e=>e.stopPropagation()}>
+      <button className="booking-modal-close" onClick={()=>{setDetail(null);setEditing(false)}}>×</button>
       <div className="customer-detail-header">
-        <div className="customer-avatar-xl">{detail.full_name.split(" ").map(x=>x[0]).join("").slice(0,2)}</div>
+        <div className="customer-avatar-xl">{(editing?editForm.full_name:detail.full_name).split(" ").map(x=>x[0]).join("").slice(0,2)}</div>
         <div>
           <span className={`status-pill ${detail.status==="active"?"confirmed":"overdue"}`}>{detail.status}</span>
-          <h2>{detail.full_name}</h2>
-          <p>{detail.email}</p>
+          {editing?<input className="customer-edit-input" value={editForm.full_name} onChange={e=>setEditForm({...editForm,full_name:e.target.value})} placeholder="Full name"/>:<h2>{detail.full_name}</h2>}
+          {editing?<input className="customer-edit-input" type="email" value={editForm.email} onChange={e=>setEditForm({...editForm,email:e.target.value})} placeholder="Email"/>:<p>{detail.email}</p>}
         </div>
       </div>
-      <div className="customer-detail-grid">
+      {editing?<div className="customer-edit-form">
+        {editError&&<div className="login-error">{editError}</div>}
+        <label>Phone<input type="tel" value={editForm.phone} onChange={e=>setEditForm({...editForm,phone:e.target.value})} placeholder="Phone number"/></label>
+        <label>City<input value={editForm.city} onChange={e=>setEditForm({...editForm,city:e.target.value})} placeholder="City"/></label>
+        <label className="span-2">Address<textarea value={editForm.address} onChange={e=>setEditForm({...editForm,address:e.target.value})} placeholder="Address" rows={2}/></label>
+        <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={cancelEdit}>Cancel</button>
+          <button className="primary-button" disabled={saving} onClick={saveCustomer}>{saving?"Saving...":"Save Changes"}</button>
+        </div>
+      </div>:<><div className="customer-detail-grid">
         <div className="customer-detail-stat"><div><small>Phone</small><b>{detail.phone||"—"}</b></div></div>
         <div className="customer-detail-stat"><div><small>City</small><b>{detail.city||"—"}</b></div></div>
         <div className="customer-detail-stat"><div><small>Bookings</small><b>{detail.booking_count||0}</b></div></div>
         <div className="customer-detail-stat"><div><small>Lifetime value</small><b>{peso(Number(detail.lifetime_value||0))}</b></div></div>
-      </div>
+      </div></>}
       {renterScore&&<div className="booking-modal-section">
         <div className="booking-section-header"><strong>Reliability Score</strong></div>
         <div className="renter-score-card">
@@ -2357,7 +2446,7 @@ function Customers() {
           </div>
         </div>
       </div>}
-      {detail.address&&<div className="booking-modal-section">
+      {!editing&&detail.address&&<div className="booking-modal-section">
         <div className="booking-section-header"><strong>Address</strong></div>
         <div className="customer-address-box">{detail.address}</div>
       </div>}
@@ -2368,12 +2457,24 @@ function Customers() {
           <div className="customer-booking-meta"><span className={`status-pill ${b.status==="pending"?"pending":b.status==="overdue"?"overdue":"confirmed"}`}>{b.status}</span><strong>{peso(Number(b.grand_total))}</strong></div>
         </div>):<div className="booking-empty-state">No booking history.</div>}
       </div>
-      <div className="booking-modal-section">
+      {!editing&&<div className="booking-modal-section">
         <div className="booking-section-header"><strong>Actions</strong></div>
         <div className="booking-actions">
-          <button className={detail.status==="active"?"danger-button":"primary-button"} onClick={()=>toggle(detail)}>{detail.status==="active"?"🚫 Block Customer":"✓ Unblock Customer"}</button>
-          <button className="danger-button" onClick={()=>del(detail)}>Delete Customer</button>
+          <button className="primary-button" onClick={startEdit}>Edit Details</button>
+          <button className={detail.status==="active"?"danger-button":"primary-button"} onClick={()=>toggle(detail)}>{detail.status==="active"?"Block Customer":"Unblock Customer"}</button>
+          <button className="danger-button" onClick={()=>setDeleteConfirm(detail)}>Delete Customer</button>
         </div>
+      </div>}
+    </div></div>}
+
+    {deleteConfirm&&<div className="modal-backdrop" onClick={()=>setDeleteConfirm(null)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+      <div className="confirm-modal-icon">🗑</div>
+      <h3>Delete Customer</h3>
+      <p>Are you sure you want to delete <strong>{deleteConfirm.full_name}</strong>?</p>
+      <small>This will permanently remove the customer and their data. This action cannot be undone.</small>
+      <div className="confirm-modal-actions">
+        <button className="secondary-button" onClick={()=>setDeleteConfirm(null)}>Cancel</button>
+        <button className="danger-button" disabled={deleting} onClick={del}>{deleting?"Deleting...":"Delete Customer"}</button>
       </div>
     </div></div>}
   </AdminShell>
@@ -2571,7 +2672,7 @@ function Payments() {
           </div>}
           <div className="payment-card-footer">
             <button className="secondary-button" onClick={()=>setExpanded(expanded===g.booking_id?null:g.booking_id)}>{expanded===g.booking_id?"Hide Details":"View Details"}</button>
-            <button className="secondary-button" onClick={()=>printInvoice(g.payments[0])}>🖨 Print Invoice</button>
+            <button className="secondary-button" onClick={()=>printInvoice(g.payments[0])}>Print Invoice</button>
           </div>
         </article>)}
       </div>}
@@ -2836,7 +2937,7 @@ function Maintenance() {
   const [search,setSearch]=useState(""); const [statusFilter,setStatusFilter]=useState("All");
   const load=()=>api("/admin/maintenance").then(d=>setRows(d.records||[])).catch(e=>setError(e.message));
   React.useEffect(()=>{load()},[]);
-  const update=async(r,status)=>{try{await api(`/admin/maintenance/${r.id}`,{method:"PATCH",body:JSON.stringify({status,cost:r.cost||0,notes:r.notes||""})});load()}catch(e){setError(e.message)}};
+  const update=async(r,status)=>{try{await api(`/admin/maintenance/${r.id}`,{method:"PATCH",body:JSON.stringify({status,cost:r.cost||0,notes:r.notes||"",rental_item_id:r.rental_item_id})});load()}catch(e){setError(e.message)}};
   const statuses=["All",...Array.from(new Set(rows.map(r=>r.status).filter(Boolean)))];
   const filtered=rows.filter(r=>{
     const q=search.toLowerCase();
@@ -2901,10 +3002,15 @@ function AdminRoutes() {
 
 export default function App() {
   const [cart,setCart] = useState([]);
-  const add = item => setCart(prev => {
-    const exists = prev.find(x=>x.id===item.id);
-    return exists ? prev.map(x=>x.id===item.id ? {...x,qty:Math.min(x.stock||Infinity,x.qty+1)}:x) : [...prev,{...item,qty:1}];
-  });
+  const [toast,setToast] = useState("");
+  const add = item => {
+    setCart(prev => {
+      const exists = prev.find(x=>x.id===item.id);
+      return exists ? prev.map(x=>x.id===item.id ? {...x,qty:Math.min(x.stock||Infinity,x.qty+1)}:x) : [...prev,{...item,qty:1}];
+    });
+    setToast(`${item.name} added`);
+    setTimeout(()=>setToast(""),2000);
+  };
   const updateQty = (id,delta) => setCart(prev=>prev.map(x=>x.id===id?{...x,qty:Math.max(1,Math.min(x.stock||Infinity,x.qty+delta))}:x));
   const removeItem = id => setCart(prev=>prev.filter(x=>x.id!==id));
   const clearCart = ()=>setCart([]);
@@ -2912,5 +3018,8 @@ export default function App() {
 
   return isAdmin
     ? <AdminRoutes/>
-    : <CustomerSite cart={cart} onAdd={add} updateQty={updateQty} removeItem={removeItem} clearCart={clearCart}/>;
+    : <>
+        <CustomerSite cart={cart} onAdd={add} updateQty={updateQty} removeItem={removeItem} clearCart={clearCart}/>
+        {toast&&<div className="toast"><span className="toast-icon">✓</span>{toast}</div>}
+      </>;
 }

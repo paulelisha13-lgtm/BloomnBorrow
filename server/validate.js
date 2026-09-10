@@ -112,6 +112,14 @@ export const schemas = {
     insurance_claim_amount: money.optional().default(0),
   }),
 
+  updateCustomer: z.object({
+    full_name: name,
+    email,
+    phone,
+    city: optText(120),
+    address: optText(500),
+  }),
+
   recordPayment: z.object({
     amount: z.coerce.number().finite("must be a number").gt(0, "must be greater than zero").max(100_000_000, "is too large"),
     payment_type: z.enum(["rental", "deposit", "delivery", "other", "refund"]).optional().default("rental"),

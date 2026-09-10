@@ -417,7 +417,7 @@ app.get("/api/bookings/track", async (req,res) => {
 
 app.get("/api/admin/bookings", authenticate, requireRole("admin"), async (_req,res) => {
   const [rows] = await db.query(`
-    SELECT b.id,b.booking_no,b.customer_name,b.start_date,b.end_date,b.grand_total,b.status,
+    SELECT b.id,b.booking_no,b.customer_name,b.start_date,b.end_date,b.grand_total,b.status,b.payment_status,
            GROUP_CONCAT(CONCAT(bi.item_name,' × ',bi.quantity) ORDER BY bi.id SEPARATOR ', ') AS items
     FROM bookings b
     LEFT JOIN booking_items bi ON bi.booking_id=b.id
@@ -635,6 +635,9 @@ app.patch("/api/admin/inventory/:id", authenticate, requireRole("admin"), parseB
     UPDATE rental_items SET sku=?,name=?,category=?,description=?,daily_price=?,security_deposit=?,total_quantity=?,status=?,image_url=?
     WHERE id=?
   `,[next.sku,next.name,next.category,next.description||null,Number(next.daily_price),Number(next.security_deposit),Number(next.total_quantity),next.status,next.image_url||null,id]);
+  if(next.status==="maintenance"&&old.status!=="maintenance"){
+    await db.query("INSERT INTO maintenance_records(rental_item_id,booking_id,reason,status,notes) VALUES(?,NULL,'Manual maintenance assignment','open',?)",[id,req.body.notes||null]);
+  }
   await audit(req,"UPDATE_RENTAL_ITEM",null,{item_id:id});
   res.json({ok:true});
 });
@@ -878,12 +881,12 @@ app.post("/api/admin/bookings/:id/return-inspection", authenticate, requireRole(
   if(!booking) return res.status(404).json({message:"Booking not found."});
   if(!["rented","overdue","returned"].includes(booking.status)) return res.status(409).json({message:"Booking must be rented/overdue before return inspection."});
   const today=new Date();
-  const due=new Date(`${String(booking.end_date).slice(0,10)}T00:00:00`);
-  const lateDays=Math.max(0,Math.ceil((today-due)/86400000));
-  const lateRate=Number(await getSetting("late_fee_per_day","250"));
-  const lateFee = req.body.late_fee!==undefined ? Math.max(0,Number(req.body.late_fee)) : lateDays*lateRate;
-  const damage=damageCharge;
-  const deposit=Number(booking.deposit_total||0);
+  const due=new Date(`${String(booking.end_date||"").slice(0,10)}T00:00:00`);
+  const lateDays=Number.isFinite(Math.ceil((today-due)/86400000))?Math.max(0,Math.ceil((today-due)/86400000)):0;
+  const lateRate=Number(await getSetting("late_fee_per_day","250"))||250;
+  const lateFee = req.body.late_fee!==undefined ? Math.max(0,Number(req.body.late_fee)||0) : lateDays*(lateRate||250);
+  const damage=Number(damageCharge)||0;
+  const deposit=Number(booking.deposit_total||0)||0;
   const refund=Math.max(0,deposit-lateFee-damage);
   const maintenance=req.body.maintenance_required===true||req.body.maintenance_required===1||req.body.maintenance_required==="true";
   const conn=await db.getConnection();
@@ -898,27 +901,31 @@ app.post("/api/admin/bookings/:id/return-inspection", authenticate, requireRole(
       late_fee=VALUES(late_fee),damage_charge=VALUES(damage_charge),deposit_refund=VALUES(deposit_refund),
       maintenance_required=VALUES(maintenance_required),inspected_by_user_id=VALUES(inspected_by_user_id),returned_at=NOW()
     `,[bookingId,req.body.condition_before||null,conditionAfter,req.body.missing_items||null,req.body.damage_notes||null,lateDays,lateFee,damage,refund,maintenance?1:0,req.user.id]);
-  if(maintenance){
+    if(maintenance){
     for(const row of booking.items){
       await conn.query("INSERT INTO maintenance_records(rental_item_id,booking_id,reason,status,notes) VALUES(?,?,'Return inspection flagged maintenance','open',?)",[row.rental_item_id,bookingId,req.body.damage_notes||null]);
       await conn.query("UPDATE rental_items SET status='maintenance' WHERE id=?",[row.rental_item_id]);
       await conn.query("INSERT INTO item_conditions(rental_item_id,booking_id,condition_status,condition_type,notes,recorded_by_user_id) VALUES(?,?,'damaged','damage_report',?,?)",[row.rental_item_id,bookingId,req.body.damage_notes||"Damaged during rental",req.user.id]);
     }
-    const incidentNo=await generateIncidentNo();
-    const normalizedCondition=conditionAfter.toLowerCase();
-    const incidentType=normalizedCondition==="lost"?"lost":damage>5000?"damaged_major":"damaged_minor";
-    await conn.query(`
-      INSERT INTO incidents(incident_no,rental_item_id,booking_id,customer_id,incident_type,status,description,charge_amount,replacement_cost,reported_by_user_id)
-      VALUES(?,?,?,?,?,?,?,?,?,?)
-    `,[incidentNo,booking.items[0]?.rental_item_id||null,bookingId,booking.customer_id,incidentType,"reported",
-       req.body.damage_notes||`Return inspection: ${req.body.condition_after||"Damaged"}`,damage,damage,req.user.id]);
+    if(booking.items.length > 0){
+      const incidentNo=await generateIncidentNo();
+      const normalizedCondition=conditionAfter.toLowerCase();
+      const incidentType=normalizedCondition==="lost"?"lost":damage>5000?"damaged_major":"damaged_minor";
+      await conn.query(`
+        INSERT INTO incidents(incident_no,rental_item_id,booking_id,customer_id,incident_type,status,description,charge_amount,replacement_cost,reported_by_user_id)
+        VALUES(?,?,?,?,?,?,?,?,?,?)
+      `,[incidentNo,booking.items[0].rental_item_id,bookingId,booking.customer_id,incidentType,"reported",
+         req.body.damage_notes||`Return inspection: ${req.body.condition_after||"Damaged"}`,damage,damage,req.user.id]);
+    }
   } else if(damage > 0){
-    const incidentNo=await generateIncidentNo();
-    await conn.query(`
-      INSERT INTO incidents(incident_no,rental_item_id,booking_id,customer_id,incident_type,status,description,charge_amount,replacement_cost,reported_by_user_id)
-      VALUES(?,?,?,?,?,?,?,?,?,?)
-    `,[incidentNo,booking.items[0]?.rental_item_id||null,bookingId,booking.customer_id,"damaged_minor","reported",
-       req.body.damage_notes||"Damage charge applied during return",damage,damage,req.user.id]);
+    if(booking.items.length > 0){
+      const incidentNo=await generateIncidentNo();
+      await conn.query(`
+        INSERT INTO incidents(incident_no,rental_item_id,booking_id,customer_id,incident_type,status,description,charge_amount,replacement_cost,reported_by_user_id)
+        VALUES(?,?,?,?,?,?,?,?,?,?)
+      `,[incidentNo,booking.items[0].rental_item_id,bookingId,booking.customer_id,"damaged_minor","reported",
+         req.body.damage_notes||"Damage charge applied during return",damage,damage,req.user.id]);
+    }
   } else if(conditionAfter!=="Good"){
     for(const row of booking.items){
       const conditionMap={'Excellent':'excellent','Good':'good','Fair':'fair','Poor':'poor','Damaged':'damaged','Lost':'lost'};
@@ -984,6 +991,18 @@ app.patch("/api/admin/customers/:id/status", authenticate, requireRole("admin"),
   if(!["active","blocked"].includes(status)) return res.status(400).json({message:"Invalid customer status."});
   await db.query("UPDATE customers SET status=? WHERE id=?",[status,Number(req.params.id)]);
   res.json({ok:true});
+});
+
+app.patch("/api/admin/customers/:id", authenticate, requireRole("admin"), parseBody(schemas.updateCustomer), async (req,res) => {
+  const id=Number(req.params.id);
+  const [[existing]]=await db.query("SELECT id FROM customers WHERE id=?",[id]);
+  if(!existing) return res.status(404).json({message:"Customer not found."});
+  const {full_name,email,phone,city,address}=req.body;
+  const [[dup]]=await db.query("SELECT id FROM customers WHERE email=? AND id!=?",[email,id]);
+  if(dup) return res.status(409).json({message:"Email is already used by another customer."});
+  await db.query("UPDATE customers SET full_name=?,email=?,phone=?,city=?,address=? WHERE id=?",[full_name,email,phone,city||null,address||null,id]);
+  const [[updated]]=await db.query("SELECT * FROM customers WHERE id=?",[id]);
+  res.json({customer:updated});
 });
 
 app.delete("/api/admin/customers/:id", authenticate, requireRole("admin"), async (req,res) => {
@@ -1122,10 +1141,17 @@ app.get("/api/admin/reports", authenticate, requireRole("admin"), async (_req,re
 app.get("/api/admin/maintenance", authenticate, requireRole("admin"), async (_req,res,next) => {
   try {
     const [records]=await db.query(`
-      SELECT m.*,r.name item_name,r.sku,b.booking_no
-      FROM maintenance_records m JOIN rental_items r ON r.id=m.rental_item_id
+      SELECT COALESCE(m.id,0) AS id,r.id AS rental_item_id,m.booking_id,
+        COALESCE(m.reason,'Manual maintenance') AS reason,
+        COALESCE(m.status,'open') AS status,
+        COALESCE(m.opened_at,r.updated_at) AS opened_at,
+        COALESCE(m.cost,0) AS cost,m.notes,m.completed_at,
+        r.name item_name,r.sku,b.booking_no
+      FROM rental_items r
+      LEFT JOIN maintenance_records m ON m.rental_item_id=r.id
       LEFT JOIN bookings b ON b.id=m.booking_id
-      ORDER BY m.opened_at DESC
+      WHERE r.status='maintenance'
+      ORDER BY opened_at DESC
     `);
     res.json({records});
   } catch(err) { next(err); }
@@ -1136,7 +1162,17 @@ app.patch("/api/admin/maintenance/:id", authenticate, requireRole("admin"), asyn
     const id=Number(req.params.id);
     const status=req.body.status;
     if(!["open","in_progress","completed","cancelled"].includes(status)) return res.status(400).json({message:"Invalid maintenance status."});
-    const [[row]]=await db.query("SELECT rental_item_id FROM maintenance_records WHERE id=?",[id]);
+    let [[row]]=await db.query("SELECT rental_item_id FROM maintenance_records WHERE id=?",[id]);
+    if(!row&&req.body.rental_item_id){
+      const rid=Number(req.body.rental_item_id);
+      const [ins]=await db.query("INSERT INTO maintenance_records(rental_item_id,booking_id,reason,status,notes) VALUES(?,NULL,'Manual maintenance',?,?)",[rid,status,req.body.notes||null]);
+      row={rental_item_id:rid};
+      if(status==="completed"){
+        const [[open]]=await db.query("SELECT COUNT(*) count FROM maintenance_records WHERE rental_item_id=? AND status IN ('open','in_progress')",[rid]);
+        if(Number(open.count)===0) await db.query("UPDATE rental_items SET status='active' WHERE id=?",[rid]);
+      }
+      return res.json({ok:true});
+    }
     if(!row) return res.status(404).json({message:"Maintenance record not found."});
     await db.query("UPDATE maintenance_records SET status=?,cost=?,notes=?,completed_at=IF(?='completed',NOW(),completed_at) WHERE id=?",[status,Number(req.body.cost||0),req.body.notes||null,status,id]);
     if(status==="completed"){
