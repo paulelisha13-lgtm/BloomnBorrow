@@ -215,25 +215,6 @@ function Home({ onAdd }) {
         </div>
       </section>
 
-      <section className="section container">
-        <div className="section-heading">
-          <div><span className="eyebrow">Browse by category</span><h2>Everything you need in one place</h2></div>
-        </div>
-        <div className="category-grid">
-          {[
-            ["📷","Camera","Capture every moment"],
-            ["🔊","Audio","Make events louder"],
-            ["🎉","Events","Party essentials"],
-            ["⛺","Outdoor","Adventure-ready gear"],
-            ["🛠️","Tools","Get the job done"]
-          ].map(([icon,title,text]) => (
-            <Link to={`/rentals?category=${title}`} className="category-card" key={title}>
-              <span className="category-icon">{icon}</span><strong>{title}</strong><small>{text}</small>
-            </Link>
-          ))}
-        </div>
-      </section>
-
       <section className="section soft-section">
         <div className="container">
           <div className="section-heading">
@@ -253,13 +234,6 @@ function Home({ onAdd }) {
             ["03","Receive","Choose pickup or convenient delivery."],
             ["04","Return","Return on time and get your deposit settled."]
           ].map(([n,t,d]) => <div className="step-card" key={n}><span>{n}</span><h3>{t}</h3><p>{d}</p></div>)}
-        </div>
-      </section>
-
-      <section className="section container">
-        <div className="promo-card">
-          <div><span className="eyebrow light">Weekend special</span><h2>Rent 3 days, pay for only 2.</h2><p>Selected equipment only. Subject to availability.</p></div>
-          <Link className="light-button" to="/rentals">See eligible rentals</Link>
         </div>
       </section>
 
@@ -308,9 +282,12 @@ function Browse({ onAdd }) {
     <main className="page container">
       <div className="page-title-row"><div><span className="eyebrow">Rental catalog</span><h1>Browse rentals</h1><p>Live inventory from the Bloom&Borrow database.</p></div></div>
       <div className="catalog-layout">
-        <div className="category-tabs">
-          <button className={`tab${category==="All"?" active":""}`} onClick={()=>setCategory("All")}>All</button>
-          {[...new Set(catalog.map(i=>i.category))].map(c=><button key={c} className={`tab${category===c?" active":""}`} onClick={()=>setCategory(c)}>{c}</button>)}
+        <div className="catalog-top-bar">
+          <div className="category-tabs">
+            <button className={`tab${category==="All"?" active":""}`} onClick={()=>setCategory("All")}>All</button>
+            {[...new Set(catalog.map(i=>i.category))].map(c=><button key={c} className={`tab${category===c?" active":""}`} onClick={()=>setCategory(c)}>{c}</button>)}
+          </div>
+          <input className="catalog-search" type="text" placeholder="Search rentals..." value={search} onChange={e=>setSearch(e.target.value)}/>
         </div>
         <section className="catalog-results">
           <div className="results-toolbar"><span><strong>{filtered.length}</strong> items found</span><select value={sort} onChange={e=>setSort(e.target.value)}><option value="popular">Most popular</option><option value="low">Price: low to high</option><option value="high">Price: high to low</option><option value="new">Newest</option></select></div>
@@ -1675,7 +1652,7 @@ function Inventory() {
         <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={setSort}/>
         <ViewToggle view={view} onChange={setView}/>
       </div>
-      <button className="primary-button" onClick={openNew}>+ Add rental item</button>
+      <button className="primary-button" onClick={openNew}>+ Rent Item</button>
     </div>
 
     <section className="admin-card">
@@ -1730,7 +1707,7 @@ function Inventory() {
     </section>
 
     {modal&&<div className="modal-backdrop" onClick={()=>setModal(false)}><form className="modal" onSubmit={save} onClick={e=>e.stopPropagation()}>
-      <div className="modal-head"><div><span className="eyebrow">Inventory</span><h2>{editing?"Edit":"Add"} rental item</h2></div><button type="button" onClick={()=>setModal(false)}>×</button></div>
+      <div className="modal-head"><div><span className="eyebrow">Inventory</span><h2>{editing?"Edit":"Rent"}</h2></div><button type="button" onClick={()=>setModal(false)}>×</button></div>
       <div className="form-grid">
         <label>SKU<input required value={form.sku} onChange={e=>setForm({...form,sku:e.target.value})}/></label><label>Item name<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label>
         <label>Category<input required value={form.category} onChange={e=>setForm({...form,category:e.target.value})}/></label><label>Status<select value={form.status} onChange={e=>setForm({...form,status:e.target.value})}><option>active</option><option>inactive</option><option>maintenance</option></select></label>

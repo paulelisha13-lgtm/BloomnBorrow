@@ -296,7 +296,10 @@ footer{background:#12393b;color:#d4eaea;padding:50px 0}
 .checkout-back-btn{background:none;border:none;color:var(--brand);font-size:13px;font-weight:600;cursor:pointer;padding:0;margin-bottom:6px;display:inline-block}
 .checkout-form+.page-title-row,.page .checkout-layout .page-title-row{margin-bottom:16px}
 .catalog-layout{display:grid;gap:24px}
-.category-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+.catalog-top-bar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+.catalog-search{width:auto;min-width:180px;max-width:240px;padding:9px 14px;font-size:13px;border:1px solid var(--line);border-radius:11px;background:#fbfefe}
+.catalog-search:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(8,155,157,.08)}
+.category-tabs{display:flex;gap:8px;flex-wrap:wrap}
 .category-tabs .tab{background:#fff;border:1px solid var(--line);border-radius:11px;padding:10px 20px;cursor:pointer;font-weight:600;font-size:13px;transition:all .2s}
 .category-tabs .tab:hover{border-color:var(--brand);color:var(--brand)}
 .category-tabs .tab.active{background:var(--brand);color:white;border-color:var(--brand)}
