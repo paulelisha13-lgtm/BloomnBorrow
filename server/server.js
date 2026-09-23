@@ -296,7 +296,7 @@ app.get("/api/access/audit", authenticate, requireRole("admin"), async (req,res)
   const [actors] = await db.query("SELECT id,full_name,email FROM users ORDER BY full_name");
 
   if (req.query.export === "1") await audit(req,"EXPORT_AUDIT_LOG",null,{rows:logs.length,filters:{q,action,actor,from:req.query.from||null,to:req.query.to||null}});
-  res.json({logs,total:Number(total),limit,offset,actions:actions.map(x=>x.action),actors});
+  res.json({logs,total:Number(total),limit,offset,actions:actions.map(x=>x.action),actors,retention_days:AUDIT_RETENTION_DAYS});
 });
 
 
@@ -1324,6 +1324,41 @@ app.patch("/api/notifications/:id/read", authenticate, async (req,res) => {
 
 setInterval(checkOverdueBookings, 60 * 60 * 1000);
 setTimeout(checkOverdueBookings, 5000);
+
+// Audit log retention. The log holds personal data (emails, IPs, customer
+// names), so entries older than AUDIT_RETENTION_DAYS are deleted once a day.
+// Set AUDIT_RETENTION_DAYS=0 to keep everything. Each purge is itself logged.
+const AUDIT_RETENTION_DAYS = Math.max(0, Math.floor(Number(process.env.AUDIT_RETENTION_DAYS ?? 30)) || 0);
+
+async function purgeOldAuditLogs() {
+  if (!AUDIT_RETENTION_DAYS) return 0;
+  try {
+    let deleted = 0;
+    // Small batches so a large first purge never holds long table locks.
+    for (;;) {
+      const [result] = await db.query(
+        "DELETE FROM access_audit_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY) ORDER BY created_at LIMIT 5000",
+        [AUDIT_RETENTION_DAYS]
+      );
+      deleted += result.affectedRows;
+      if (result.affectedRows < 5000) break;
+    }
+    if (deleted > 0) {
+      await db.query(
+        "INSERT INTO access_audit_logs(user_id,action,details) VALUES(NULL,'AUDIT_LOG_PURGED',?)",
+        [JSON.stringify({ deleted, retention_days: AUDIT_RETENTION_DAYS })]
+      );
+      console.log(`Audit log retention: deleted ${deleted} entries older than ${AUDIT_RETENTION_DAYS} days.`);
+    }
+    return deleted;
+  } catch (error) {
+    console.error("Audit log retention failed:", error);
+    return 0;
+  }
+}
+
+setInterval(purgeOldAuditLogs, 24 * 60 * 60 * 1000);
+setTimeout(purgeOldAuditLogs, 15000);
 
 app.post("/api/admin/overdue-check", authenticate, requireRole("admin"), async (req,res) => {
   const before = Date.now();
