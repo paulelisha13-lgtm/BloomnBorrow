@@ -1280,3 +1280,18 @@ tr.row-clickable:hover td{background:#f6fbfa}
 tr.table-subrow td{background:#f6fbfa;padding:8px 12px}
 tr.table-subrow .payment-transaction-row{border:0}
 @media (max-width:900px){.view-toggle{align-self:flex-start}}
+
+/* Audit Log */
+.primary-button.small{padding:7px 12px;font-size:10px}
+.audit-toolbar{flex-wrap:wrap}
+.audit-filters{flex-wrap:wrap;align-items:center}
+.audit-filters input[type="date"]{width:auto;padding:7px 9px}
+.audit-more{display:flex;justify-content:center;padding-top:14px}
+.audit-detail{width:min(720px,100%);max-height:calc(100vh - 40px);overflow:auto}
+.audit-facts{display:grid;grid-template-columns:130px 1fr;gap:8px 14px;margin:0 0 16px;font-size:12px}
+.audit-facts dt{color:var(--muted);font-weight:750}
+.audit-facts dd{margin:0;word-break:break-word}
+.audit-ua{font-size:11px;color:var(--muted)}
+.audit-json{background:#f3f8f7;border:1px solid #e1eeec;border-radius:12px;padding:12px;font-size:11px;max-height:260px;overflow:auto;white-space:pre-wrap;word-break:break-word;margin:14px 0 0}
+[data-theme="dark"] .audit-json{background:var(--surface-2);border-color:var(--line);color:var(--ink)}
+@media (max-width:760px){.audit-filters{width:100%}.audit-filters>*{flex:1 1 140px}.audit-facts{grid-template-columns:1fr}.audit-facts dt{margin-top:6px}}

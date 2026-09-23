@@ -81,10 +81,21 @@ const bookingLimiter = rateLimit({
   legacyHeaders: false,
   message: { message: "Too many booking submissions from this network. Please try again later." }
 });
+// Booking numbers are sequential, so only failed lookups count: a customer can
+// re-check their own booking freely, but guessing booking numbers is capped.
+const trackLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.RATE_LIMIT_TRACK || 10),
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { message: "Too many booking lookups. Wait 15 minutes, then try again." }
+});
 
 app.use("/api", globalLimiter);
 app.use("/api/auth/login", authLimiter);
 app.use("/api/bookings/guest", bookingLimiter);
+app.use("/api/bookings/track", trackLimiter);
 
 async function audit(req, action, targetUserId=null, details=null) {
   try {
@@ -93,6 +104,16 @@ async function audit(req, action, targetUserId=null, details=null) {
       [req.user?.id || null, action, targetUserId, req.ip, req.get("user-agent")?.slice(0,255) || null, details ? JSON.stringify(details) : null]
     );
   } catch {}
+}
+
+// Field-level before/after for audit details; only fields that actually changed.
+function changedFields(before, after, keys) {
+  const changes = {};
+  for (const key of keys) {
+    const from = before?.[key] ?? null, to = after?.[key] ?? null;
+    if (String(from ?? "") !== String(to ?? "")) changes[key] = { from, to };
+  }
+  return changes;
 }
 
 app.get("/api/health", async (_req,res) => {
@@ -107,24 +128,41 @@ app.get("/api/settings/public", async (_req,res) => {
   res.json({delivery_fee:deliveryFee,late_fee_per_day:lateFeePerDay});
 });
 
+const LOGIN_FAILED = "Invalid email or password. After 5 failed attempts, sign-in is paused for 15 minutes.";
+// Compared against when the email is unknown so that response takes as long as a real one.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync(crypto.randomBytes(32).toString("hex"), 12);
+
 app.post("/api/auth/login", parseBody(schemas.staffLogin), async (req,res) => {
   const email = String(req.body.email || "").trim().toLowerCase();
   const password = String(req.body.password || "");
-  const [rows] = await db.query("SELECT * FROM users WHERE email=? LIMIT 1",[email]);
+  const [rows] = await db.query(
+    "SELECT *, (locked_until IS NOT NULL AND locked_until>NOW()) AS is_locked FROM users WHERE email=? LIMIT 1",
+    [email]
+  );
   const user = rows[0];
-  if (!user) return res.status(401).json({message:"Invalid email or password."});
-  if (user.status !== "active") return res.status(403).json({message:"This account is disabled."});
-  if (user.locked_until && new Date(user.locked_until) > new Date()) return res.status(423).json({message:"Account is temporarily locked. Try again later."});
-
-  const ok = await bcrypt.compare(password,user.password_hash);
+  // Unknown email, wrong password and a locked account all get the same reply,
+  // and a bcrypt compare always runs, so a response never reveals whether an
+  // email belongs to a staff account.
+  const ok = await bcrypt.compare(password, user?.password_hash || DUMMY_PASSWORD_HASH);
+  if (!user || Number(user.is_locked)) {
+    await audit(req, user ? "LOGIN_BLOCKED_LOCKED" : "LOGIN_FAILED_UNKNOWN_EMAIL", user?.id || null, {email});
+    return res.status(401).json({message:LOGIN_FAILED});
+  }
   if (!ok) {
     const attempts = Number(user.failed_login_attempts || 0) + 1;
     if (attempts >= 5) {
       await db.query("UPDATE users SET failed_login_attempts=0,locked_until=DATE_ADD(NOW(),INTERVAL 15 MINUTE) WHERE id=?",[user.id]);
-      return res.status(423).json({message:"Too many failed attempts. Account locked for 15 minutes."});
+      await audit(req, "ACCOUNT_LOCKED", user.id, {email, attempts});
+    } else {
+      await db.query("UPDATE users SET failed_login_attempts=? WHERE id=?",[attempts,user.id]);
     }
-    await db.query("UPDATE users SET failed_login_attempts=? WHERE id=?",[attempts,user.id]);
-    return res.status(401).json({message:"Invalid email or password."});
+    await audit(req, "LOGIN_FAILED", user.id, {email, attempts});
+    return res.status(401).json({message:LOGIN_FAILED});
+  }
+  // Only someone who knows the password learns the account is disabled.
+  if (user.status !== "active") {
+    await audit(req, "LOGIN_BLOCKED_DISABLED", user.id, {email});
+    return res.status(403).json({message:"This account is disabled."});
   }
 
   await db.query("UPDATE users SET failed_login_attempts=0,locked_until=NULL,last_login_at=NOW() WHERE id=?",[user.id]);
@@ -145,7 +183,7 @@ app.patch("/api/auth/profile", authenticate, requireStaffCsrf, parseBody(schemas
   if (duplicate.length) return res.status(409).json({message:"That email address is already assigned to another staff account."});
   await db.query("UPDATE users SET full_name=?,email=?,phone=? WHERE id=?",[fullName,email,phone||null,req.user.id]);
   const [[user]] = await db.query("SELECT id,full_name,email,phone,role,status FROM users WHERE id=?",[req.user.id]);
-  await audit(req,"UPDATE_OWN_PROFILE");
+  await audit(req,"UPDATE_OWN_PROFILE",req.user.id,{changes:changedFields(req.user,user,["full_name","email","phone"])});
   res.json({user});
 });
 
@@ -167,7 +205,13 @@ app.patch("/api/auth/change-password", authenticate, requireStaffCsrf, parseBody
   const [[row]] = await db.query("SELECT password_hash FROM users WHERE id=?",[req.user.id]);
   if (!await bcrypt.compare(current,row.password_hash)) return res.status(400).json({message:"Current password is incorrect."});
   const hash = await bcrypt.hash(next,12);
-  await db.query("UPDATE users SET password_hash=?,password_changed_at=NOW() WHERE id=?",[hash,req.user.id]);
+  // Stamped from Node's clock (not MySQL NOW()) so the fresh token issued below
+  // can never look older than the change if the two clocks drift apart.
+  await db.query("UPDATE users SET password_hash=?,password_changed_at=FROM_UNIXTIME(?) WHERE id=?",[hash,Math.floor(Date.now()/1000),req.user.id]);
+  // Every older session is now rejected by authenticate(); give this one a fresh
+  // token so the person who just changed their password stays signed in.
+  await revokeJti(req.authPayload?.jti, req.authPayload?.exp);
+  setStaffSession(res, signToken(req.user));
   await audit(req,"CHANGE_PASSWORD");
   res.json({ok:true});
 });
@@ -198,27 +242,61 @@ app.patch("/api/users/:id/status", authenticate, requireRole("admin"), async (re
   if (!["active","disabled"].includes(status)) return res.status(400).json({message:"Invalid status."});
   if (id === req.user.id && status === "disabled") return res.status(400).json({message:"You cannot disable your own account."});
   await db.query("UPDATE users SET status=? WHERE id=?",[status,id]);
-  await audit(req,"CHANGE_USER_STATUS",id,{status});
+  await audit(req,status==="disabled"?"DISABLE_USER":"ENABLE_USER",id,{status});
   res.json({ok:true});
 });
 
-app.patch("/api/users/:id/reset-password", authenticate, requireRole("admin"), async (req,res) => {
+app.patch("/api/users/:id/reset-password", authenticate, requireRole("admin"), parseBody(schemas.resetPassword), async (req,res) => {
   const id = Number(req.params.id);
-  const password = String(req.body.password || "");
-  if (password.length < 8) return res.status(400).json({message:"Password must be at least 8 characters."});
+  const password = req.body.password;
   const hash = await bcrypt.hash(password,12);
   await db.query("UPDATE users SET password_hash=?,password_changed_at=NOW(),failed_login_attempts=0,locked_until=NULL WHERE id=?",[hash,id]);
   await audit(req,"RESET_PASSWORD",id);
   res.json({ok:true});
 });
 
-app.get("/api/access/audit", authenticate, requireRole("admin"), async (_req,res) => {
+// Audit log viewer. Read-only by design: there is deliberately no endpoint that
+// edits or deletes audit rows. Filters: q (free text), action, actor (user id
+// or "guest"), from/to (YYYY-MM-DD, inclusive), limit (max 500, or 5000 with
+// export=1 for CSV downloads), offset.
+app.get("/api/access/audit", authenticate, requireRole("admin"), async (req,res) => {
+  const where = [];
+  const params = [];
+  const q = String(req.query.q || "").trim().slice(0,100);
+  if (q) {
+    const like = `%${q.replace(/[\\%_]/g, m => `\\${m}`)}%`;
+    where.push("(l.action LIKE ? OR u.full_name LIKE ? OR u.email LIKE ? OR t.full_name LIKE ? OR l.ip_address LIKE ? OR CAST(l.details AS CHAR) LIKE ?)");
+    params.push(like,like,like,like,like,like);
+  }
+  const action = String(req.query.action || "").trim();
+  if (/^[A-Z_]{1,80}$/.test(action)) { where.push("l.action=?"); params.push(action); }
+  const actor = String(req.query.actor || "").trim();
+  if (actor === "guest") where.push("l.user_id IS NULL");
+  else if (/^\d+$/.test(actor)) { where.push("l.user_id=?"); params.push(Number(actor)); }
+  const from = parseDateOnly(req.query.from), to = parseDateOnly(req.query.to);
+  if (from) { where.push("l.created_at>=?"); params.push(req.query.from); }
+  if (to) { where.push("l.created_at<DATE_ADD(?,INTERVAL 1 DAY)"); params.push(req.query.to); }
+
+  const maxLimit = req.query.export === "1" ? 5000 : 500;
+  const limit = Math.min(maxLimit, Math.max(1, Number(req.query.limit) || 100));
+  const offset = Math.max(0, Number(req.query.offset) || 0);
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const from_sql = `FROM access_audit_logs l
+    LEFT JOIN users u ON u.id=l.user_id
+    LEFT JOIN users t ON t.id=l.target_user_id`;
+
+  const [[{total}]] = await db.query(`SELECT COUNT(*) total ${from_sql} ${whereSql}`, params);
   const [logs] = await db.query(`
-    SELECT l.id,l.action,l.target_user_id,l.ip_address,l.created_at,u.full_name AS actor_name
-    FROM access_audit_logs l LEFT JOIN users u ON u.id=l.user_id
-    ORDER BY l.created_at DESC LIMIT 200
-  `);
-  res.json({logs});
+    SELECT l.id,l.action,l.user_id,l.target_user_id,l.ip_address,l.user_agent,l.details,l.created_at,
+      u.full_name AS actor_name,u.email AS actor_email,t.full_name AS target_name,t.email AS target_email
+    ${from_sql} ${whereSql}
+    ORDER BY l.created_at DESC,l.id DESC LIMIT ? OFFSET ?
+  `, [...params, limit, offset]);
+  const [actions] = await db.query("SELECT DISTINCT action FROM access_audit_logs ORDER BY action");
+  const [actors] = await db.query("SELECT id,full_name,email FROM users ORDER BY full_name");
+
+  if (req.query.export === "1") await audit(req,"EXPORT_AUDIT_LOG",null,{rows:logs.length,filters:{q,action,actor,from:req.query.from||null,to:req.query.to||null}});
+  res.json({logs,total:Number(total),limit,offset,actions:actions.map(x=>x.action),actors});
 });
 
 
@@ -269,7 +347,7 @@ app.get("/api/rentals", async (_req,res) => {
   res.json({items:rows});
 });
 
-app.post("/api/availability/check", async (req,res) => {
+app.post("/api/availability/check", parseBody(schemas.availabilityCheck), async (req,res) => {
   const start = parseDateOnly(req.body.start_date);
   const end = parseDateOnly(req.body.end_date);
   const requested = Array.isArray(req.body.items) ? req.body.items : [];
@@ -348,11 +426,19 @@ app.post("/api/bookings/guest", parseBody(schemas.guestBooking), async (req,res,
       normalized.push({item,quantity,lineRental,lineDeposit,dailyPrice,deposit});
     }
 
-    const [existingCustomer] = await conn.query("SELECT id FROM customers WHERE email=? LIMIT 1",[email]);
+    // This endpoint is unauthenticated, so an existing customer record is only
+    // linked, never modified: anyone who knows a customer's email could otherwise
+    // rewrite their saved contact details or lift a block. The contact details
+    // for this booking are still stored on the booking row itself.
+    const [existingCustomer] = await conn.query("SELECT id,status FROM customers WHERE email=? LIMIT 1",[email]);
     let customerId;
     if (existingCustomer[0]) {
+      if (existingCustomer[0].status === "blocked") {
+        const error = new Error("We are unable to accept this booking online. Please contact us directly.");
+        error.statusCode = 403;
+        throw error;
+      }
       customerId = existingCustomer[0].id;
-      await conn.query("UPDATE customers SET full_name=?,phone=?,city=?,address=?,status='active' WHERE id=?",[fullName,phone,city||null,address||null,customerId]);
     } else {
       const [customerResult] = await conn.query("INSERT INTO customers(full_name,email,phone,city,address,status) VALUES(?,?,?,?,?,'active')",[fullName,email,phone,city||null,address||null]);
       customerId = customerResult.insertId;
@@ -384,6 +470,7 @@ app.post("/api/bookings/guest", parseBody(schemas.guestBooking), async (req,res,
 
     await conn.query("INSERT INTO booking_status_history(booking_id,from_status,to_status,note) VALUES(?,NULL,'pending','Guest booking submitted')",[bookingId]);
     await conn.commit();
+    await audit(req,"GUEST_BOOKING_CREATED",null,{booking_id:bookingId,booking_no:bookingNo,customer_email:email,grand_total:grandTotal});
 
     res.status(201).json({booking:{
       id:bookingId,booking_no:bookingNo,status:"pending",start_date:req.body.start_date,end_date:req.body.end_date,
@@ -647,9 +734,12 @@ app.delete("/api/admin/inventory/:id", authenticate, requireRole("admin"), async
   const [[used]] = await db.query("SELECT COUNT(*) count FROM booking_items WHERE rental_item_id=?",[id]);
   if(Number(used.count)>0) {
     await db.query("UPDATE rental_items SET status='inactive' WHERE id=?",[id]);
+    await audit(req,"ARCHIVE_RENTAL_ITEM",null,{item_id:id});
     return res.json({ok:true,archived:true,message:"Item has booking history and was archived instead of deleted."});
   }
+  const [[gone]] = await db.query("SELECT sku,name FROM rental_items WHERE id=?",[id]);
   await db.query("DELETE FROM rental_items WHERE id=?",[id]);
+  await audit(req,"DELETE_RENTAL_ITEM",null,{item_id:id,sku:gone?.sku,name:gone?.name});
   res.json({ok:true,deleted:true});
 });
 
@@ -682,6 +772,7 @@ app.post("/api/admin/items/:id/conditions", authenticate, requireRole("admin"), 
     INSERT INTO item_conditions(rental_item_id,booking_id,condition_status,condition_type,notes,recorded_by_user_id)
     VALUES(?,?,?,?,?,?)
   `,[itemId,booking_id||null,condition_status,condition_type,notes||null,req.user.id]);
+  await audit(req,"RECORD_ITEM_CONDITION",null,{item_id:itemId,booking_id:booking_id||null,condition_status,condition_type});
   res.status(201).json({id:result.insertId,ok:true});
 });
 
@@ -714,12 +805,13 @@ app.post("/api/admin/incidents", authenticate, requireRole("admin"), parseBody(s
     INSERT INTO incidents(incident_no,rental_item_id,booking_id,customer_id,incident_type,description,replacement_cost,charge_amount,insurance_claim_amount,reported_by_user_id)
     VALUES(?,?,?,?,?,?,?,?,?,?)
   `,[incident_no,rental_item_id,booking_id||null,customer_id||null,incident_type||"damaged_minor",description,Number(replacement_cost||0),Number(charge_amount||0),Number(insurance_claim_amount||0),req.user.id]);
+  await audit(req,"CREATE_INCIDENT",null,{incident_id:result.insertId,incident_no,item_id:rental_item_id,booking_id,incident_type,charge_amount});
   res.status(201).json({id:result.insertId,incident_no,ok:true});
 });
 
 app.patch("/api/admin/incidents/:id", authenticate, requireRole("admin"), async (req,res) => {
   const id=Number(req.params.id);
-  const [[incident]]=await db.query("SELECT id FROM incidents WHERE id=?",[id]);
+  const [[incident]]=await db.query("SELECT id,incident_no,status,resolution_notes,charge_amount,insurance_claim_amount FROM incidents WHERE id=?",[id]);
   if(!incident) return res.status(404).json({message:"Incident not found."});
   const {status,resolution_notes,charge_amount,insurance_claim_amount}=req.body;
   const validStatuses=['reported','investigating','resolved_charged','resolved_insurance','written_off','dismissed'];
@@ -733,6 +825,8 @@ app.patch("/api/admin/incidents/:id", authenticate, requireRole("admin"), async 
   if(status&&status.startsWith("resolved_")){updates.push("resolved_at=NOW()");updates.push("resolved_by_user_id=?");params.push(req.user.id);}
   params.push(id);
   await db.query(`UPDATE incidents SET ${updates.join(",")} WHERE id=?`,params);
+  const [[after]]=await db.query("SELECT status,resolution_notes,charge_amount,insurance_claim_amount FROM incidents WHERE id=?",[id]);
+  await audit(req,"UPDATE_INCIDENT",null,{incident_id:id,incident_no:incident.incident_no,changes:changedFields(incident,after,["status","resolution_notes","charge_amount","insurance_claim_amount"])});
   res.json({ok:true});
 });
 
@@ -744,14 +838,16 @@ app.get("/api/admin/bookings/:id", authenticate, requireRole("admin"), async (re
 
 app.delete("/api/admin/bookings/:id", authenticate, requireRole("admin"), async (req,res) => {
   const id=Number(req.params.id);
-  const [[booking]]=await db.query("SELECT id,booking_no FROM bookings WHERE id=?",[id]);
+  const [[booking]]=await db.query("SELECT id,booking_no,customer_name,customer_email,status,grand_total FROM bookings WHERE id=?",[id]);
   if(!booking) return res.status(404).json({message:"Booking not found."});
+  const [[paid]]=await db.query("SELECT COUNT(*) count,COALESCE(SUM(amount),0) total FROM payments WHERE booking_id=? AND status='completed'",[id]);
   await db.query("DELETE FROM booking_items WHERE booking_id=?",[id]);
   await db.query("DELETE FROM booking_status_history WHERE booking_id=?",[id]);
   await db.query("DELETE FROM payments WHERE booking_id=?",[id]);
   await db.query("DELETE FROM return_inspections WHERE booking_id=?",[id]);
   await db.query("DELETE FROM notifications WHERE booking_id=?",[id]);
   await db.query("DELETE FROM bookings WHERE id=?",[id]);
+  await audit(req,"DELETE_BOOKING",null,{booking_id:id,booking_no:booking.booking_no,customer_name:booking.customer_name,customer_email:booking.customer_email,status:booking.status,grand_total:booking.grand_total,payments_deleted:Number(paid.count),payments_total:paid.total});
   res.json({ok:true});
 });
 
@@ -795,6 +891,7 @@ app.patch("/api/admin/bookings/:id/reschedule", authenticate, requireRole("admin
   await db.query("UPDATE bookings SET start_date=?,end_date=?,rental_subtotal=?,grand_total=? WHERE id=?",[req.body.start_date,req.body.end_date,subtotal,grand,id]);
   await recalcPaymentStatus(id);
   await db.query("INSERT INTO booking_status_history(booking_id,from_status,to_status,changed_by_user_id,note) VALUES(?,?,?,?,?)",[id,booking.status,booking.status,req.user.id,`Rescheduled to ${req.body.start_date} - ${req.body.end_date}`]);
+  await audit(req,"RESCHEDULE_BOOKING",null,{booking_id:id,booking_no:booking.booking_no,from:{start_date:booking.start_date,end_date:booking.end_date},to:{start_date:req.body.start_date,end_date:req.body.end_date},grand_total:{from:booking.grand_total,to:grand}});
   res.json({ok:true});
 });
 
@@ -816,19 +913,21 @@ app.post("/api/admin/bookings/:id/payments", authenticate, requireRole("admin"),
 
 app.patch("/api/admin/payments/:id/void", authenticate, requireRole("admin"), async (req,res) => {
   const id=Number(req.params.id);
-  const [[payment]]=await db.query("SELECT booking_id FROM payments WHERE id=?",[id]);
+  const [[payment]]=await db.query("SELECT booking_id,amount,payment_type,method,reference_no FROM payments WHERE id=?",[id]);
   if(!payment) return res.status(404).json({message:"Payment not found."});
   await db.query("UPDATE payments SET status='void' WHERE id=?",[id]);
   await recalcPaymentStatus(payment.booking_id);
+  await audit(req,"VOID_PAYMENT",null,{payment_id:id,...payment});
   res.json({ok:true});
 });
 
 app.delete("/api/admin/payments/:id", authenticate, requireRole("admin"), async (req,res) => {
   const id=Number(req.params.id);
-  const [[payment]]=await db.query("SELECT booking_id FROM payments WHERE id=?",[id]);
+  const [[payment]]=await db.query("SELECT booking_id,amount,payment_type,method,status,reference_no FROM payments WHERE id=?",[id]);
   if(!payment) return res.status(404).json({message:"Payment not found."});
   await db.query("DELETE FROM payments WHERE id=?",[id]);
   await recalcPaymentStatus(payment.booking_id);
+  await audit(req,"DELETE_PAYMENT",null,{payment_id:id,...payment});
   res.json({ok:true});
 });
 
@@ -948,6 +1047,7 @@ app.post("/api/admin/bookings/:id/return-inspection", authenticate, requireRole(
     await conn.query("INSERT INTO booking_status_history(booking_id,from_status,to_status,changed_by_user_id,note) VALUES(?,?,'returned',?,?)",[bookingId,booking.status,req.user.id,"Return inspection recorded"]);
   }
     await conn.commit();
+    await audit(req,"RETURN_INSPECTION",null,{booking_id:bookingId,booking_no:booking.booking_no,condition_after:conditionAfter,late_days:lateDays,late_fee:lateFee,damage_charge:damage,deposit_refund:refund});
     res.json({ok:true,late_days:lateDays,late_fee:lateFee,damage_charge:damage,deposit_refund:refund});
   } catch(error) {
     await conn.rollback();
@@ -971,6 +1071,7 @@ app.post("/api/admin/bookings/:id/complete", authenticate, requireRole("admin"),
   await db.query("UPDATE bookings SET status='completed' WHERE id=?",[id]);
   await db.query("INSERT INTO booking_status_history(booking_id,from_status,to_status,changed_by_user_id,note) VALUES(?,'returned','completed',?,?)",[id,req.user.id,req.body.note||"Rental completed"]);
   await recalcPaymentStatus(id);
+  await audit(req,"COMPLETE_BOOKING",null,{booking_id:id,booking_no:booking.booking_no,deposit_refund:booking.inspection?.deposit_refund||0});
   res.json({ok:true});
 });
 
@@ -989,32 +1090,38 @@ app.get("/api/admin/customers", authenticate, requireRole("admin"), async (_req,
 app.patch("/api/admin/customers/:id/status", authenticate, requireRole("admin"), async (req,res) => {
   const status=req.body.status;
   if(!["active","blocked"].includes(status)) return res.status(400).json({message:"Invalid customer status."});
+  const [[customer]]=await db.query("SELECT full_name,email,status FROM customers WHERE id=?",[Number(req.params.id)]);
   await db.query("UPDATE customers SET status=? WHERE id=?",[status,Number(req.params.id)]);
+  await audit(req,status==="blocked"?"BLOCK_CUSTOMER":"UNBLOCK_CUSTOMER",null,{customer_id:Number(req.params.id),full_name:customer?.full_name,email:customer?.email,from:customer?.status,to:status});
   res.json({ok:true});
 });
 
 app.patch("/api/admin/customers/:id", authenticate, requireRole("admin"), parseBody(schemas.updateCustomer), async (req,res) => {
   const id=Number(req.params.id);
-  const [[existing]]=await db.query("SELECT id FROM customers WHERE id=?",[id]);
+  const [[existing]]=await db.query("SELECT id,full_name,email,phone,city,address FROM customers WHERE id=?",[id]);
   if(!existing) return res.status(404).json({message:"Customer not found."});
   const {full_name,email,phone,city,address}=req.body;
   const [[dup]]=await db.query("SELECT id FROM customers WHERE email=? AND id!=?",[email,id]);
   if(dup) return res.status(409).json({message:"Email is already used by another customer."});
   await db.query("UPDATE customers SET full_name=?,email=?,phone=?,city=?,address=? WHERE id=?",[full_name,email,phone,city||null,address||null,id]);
   const [[updated]]=await db.query("SELECT * FROM customers WHERE id=?",[id]);
+  await audit(req,"UPDATE_CUSTOMER",null,{customer_id:id,changes:changedFields(existing,updated,["full_name","email","phone","city","address"])});
   res.json({customer:updated});
 });
 
 app.delete("/api/admin/customers/:id", authenticate, requireRole("admin"), async (req,res) => {
   const id=Number(req.params.id);
-  const [[customer]]=await db.query("SELECT id FROM customers WHERE id=?",[id]);
+  const [[customer]]=await db.query("SELECT id,full_name,email,phone FROM customers WHERE id=?",[id]);
   if(!customer) return res.status(404).json({message:"Customer not found."});
   await db.query("DELETE FROM customers WHERE id=?",[id]);
+  await audit(req,"DELETE_CUSTOMER",null,{customer_id:id,full_name:customer.full_name,email:customer.email,phone:customer.phone});
   res.json({ok:true});
 });
 
-app.delete("/api/admin/customers", authenticate, requireRole("admin"), async (_req,res) => {
+app.delete("/api/admin/customers", authenticate, requireRole("admin"), async (req,res) => {
+  const [[count]]=await db.query("SELECT COUNT(*) count FROM customers");
   await db.query("DELETE FROM customers");
+  await audit(req,"DELETE_ALL_CUSTOMERS",null,{customers_deleted:Number(count.count)});
   res.json({ok:true});
 });
 
@@ -1162,7 +1269,7 @@ app.patch("/api/admin/maintenance/:id", authenticate, requireRole("admin"), asyn
     const id=Number(req.params.id);
     const status=req.body.status;
     if(!["open","in_progress","completed","cancelled"].includes(status)) return res.status(400).json({message:"Invalid maintenance status."});
-    let [[row]]=await db.query("SELECT rental_item_id FROM maintenance_records WHERE id=?",[id]);
+    let [[row]]=await db.query("SELECT rental_item_id,status FROM maintenance_records WHERE id=?",[id]);
     if(!row&&req.body.rental_item_id){
       const rid=Number(req.body.rental_item_id);
       const [ins]=await db.query("INSERT INTO maintenance_records(rental_item_id,booking_id,reason,status,notes) VALUES(?,NULL,'Manual maintenance',?,?)",[rid,status,req.body.notes||null]);
@@ -1171,6 +1278,7 @@ app.patch("/api/admin/maintenance/:id", authenticate, requireRole("admin"), asyn
         const [[open]]=await db.query("SELECT COUNT(*) count FROM maintenance_records WHERE rental_item_id=? AND status IN ('open','in_progress')",[rid]);
         if(Number(open.count)===0) await db.query("UPDATE rental_items SET status='active' WHERE id=?",[rid]);
       }
+      await audit(req,"CREATE_MAINTENANCE",null,{maintenance_id:ins.insertId,item_id:rid,status});
       return res.json({ok:true});
     }
     if(!row) return res.status(404).json({message:"Maintenance record not found."});
@@ -1179,6 +1287,7 @@ app.patch("/api/admin/maintenance/:id", authenticate, requireRole("admin"), asyn
       const [[open]]=await db.query("SELECT COUNT(*) count FROM maintenance_records WHERE rental_item_id=? AND status IN ('open','in_progress')",[row.rental_item_id]);
       if(Number(open.count)===0) await db.query("UPDATE rental_items SET status='active' WHERE id=?",[row.rental_item_id]);
     }
+    await audit(req,"UPDATE_MAINTENANCE",null,{maintenance_id:id,item_id:row.rental_item_id,from:row.status,to:status,cost:Number(req.body.cost||0)});
     res.json({ok:true});
   } catch(err) { next(err); }
 });
@@ -1190,12 +1299,16 @@ app.get("/api/admin/settings", authenticate, requireRole("admin"), async (_req,r
 
 app.put("/api/admin/settings", authenticate, requireRole("admin"), async (req,res) => {
   const allowed=["business_name","business_email","business_phone","business_address","delivery_fee","late_fee_per_day","currency","cancellation_policy","notification_email_enabled","notification_sms_enabled"];
+  const [beforeRows]=await db.query("SELECT setting_key,setting_value FROM business_settings");
+  const before=Object.fromEntries(beforeRows.map(x=>[x.setting_key,x.setting_value]));
+  const after={...before};
+  for(const key of allowed) if(req.body[key]!==undefined) after[key]=String(req.body[key]);
   for(const key of allowed){
     if(req.body[key]!==undefined){
       await db.query("INSERT INTO business_settings(setting_key,setting_value) VALUES(?,?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)",[key,String(req.body[key])]);
     }
   }
-  await audit(req,"UPDATE_SETTINGS");
+  await audit(req,"UPDATE_SETTINGS",null,{changes:changedFields(before,after,allowed)});
   res.json({ok:true});
 });
 
@@ -1212,9 +1325,10 @@ app.patch("/api/notifications/:id/read", authenticate, async (req,res) => {
 setInterval(checkOverdueBookings, 60 * 60 * 1000);
 setTimeout(checkOverdueBookings, 5000);
 
-app.post("/api/admin/overdue-check", authenticate, requireRole("admin"), async (_req,res) => {
+app.post("/api/admin/overdue-check", authenticate, requireRole("admin"), async (req,res) => {
   const before = Date.now();
   await checkOverdueBookings();
+  await audit(req,"RUN_OVERDUE_CHECK");
   res.json({ok:true, elapsed_ms:Date.now()-before});
 });
 
