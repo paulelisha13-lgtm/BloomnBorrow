@@ -109,12 +109,18 @@ export async function authenticate(req, res, next) {
     }
 
     const [rows] = await db.query(
-      "SELECT id, full_name, email, phone, role, status FROM users WHERE id=? LIMIT 1",
+      `SELECT id, full_name, email, phone, role, status,
+         UNIX_TIMESTAMP(password_changed_at) AS password_changed_ts
+       FROM users WHERE id=? LIMIT 1`,
       [payload.sub]
     );
-    const user = rows[0];
-    if (!user || user.status !== "active") {
+    const { password_changed_ts: passwordChangedTs, ...user } = rows[0] || {};
+    if (!rows[0] || user.status !== "active") {
       return res.status(401).json({ message: "Account is unavailable." });
+    }
+    // A password change or admin reset ends every session issued before it.
+    if (passwordChangedTs && payload.iat < Math.floor(Number(passwordChangedTs))) {
+      return res.status(401).json({ message: "Your password was changed. Please sign in again." });
     }
 
     req.user = user;

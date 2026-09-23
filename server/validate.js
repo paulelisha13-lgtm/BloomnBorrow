@@ -13,7 +13,14 @@ const email = z.string().trim().toLowerCase().max(160).regex(EMAIL_RE, "must be 
 const phone = z.string().trim().min(5, "is too short").max(32, "is too long");
 const optText = (max) => z.string().trim().max(max, "is too long").optional().default("");
 const money = z.coerce.number().finite("must be a number").min(0, "cannot be negative").max(100_000_000, "is too large");
-const password = (min) => z.string().min(min, `must be at least ${min} characters`).max(200, "is too long");
+// One rule for every password a person sets (create, change, admin reset). It
+// matches bootstrap-admin.js so no path accepts a weaker staff password.
+export const PASSWORD_RULE = "Use at least 14 characters with uppercase, lowercase, a number, and a symbol.";
+const password = z.string().max(200, "is too long").superRefine((value, ctx) => {
+  const strong = value.length >= 14 && /[A-Z]/.test(value) && /[a-z]/.test(value) && /[0-9]/.test(value) && /[^A-Za-z0-9]/.test(value);
+  if (!strong) ctx.addIssue({ code: "custom", message: `is too weak. ${PASSWORD_RULE}` });
+  else if (/admin123|password|bloom_borrow|changeme/i.test(value)) ctx.addIssue({ code: "custom", message: "is too predictable." });
+});
 const dateOnly = z.string().trim().regex(DATE_RE, "must be in YYYY-MM-DD format");
 const positiveId = z.coerce.number().int("must be a whole number").positive("must be a positive id");
 
@@ -45,7 +52,11 @@ export const schemas = {
     email,
     phone: z.string().trim().max(32).optional().default(""),
     role: z.enum(["admin"]),
-    password: password(8),
+    password,
+  }),
+
+  resetPassword: z.object({
+    password,
   }),
 
   updateProfile: z.object({
@@ -56,7 +67,7 @@ export const schemas = {
 
   changePassword: z.object({
     current_password: z.string().min(1, "is required").max(200),
-    new_password: password(12),
+    new_password: password,
   }),
 
   guestBooking: z
@@ -70,6 +81,24 @@ export const schemas = {
       end_date: dateOnly,
       fulfillment: z.enum(["pickup", "delivery"]).optional().default("delivery"),
       payment_method: z.enum(["cash", "gcash", "bank_transfer", "other"]).optional().default("cash"),
+      items: z
+        .array(
+          z.object({
+            item_id: positiveId,
+            quantity: z.coerce.number().int().min(1, "must be at least 1").max(1000, "is too large"),
+          })
+        )
+        .min(1, "at least one item is required")
+        .max(50, "has too many items"),
+    })
+    .superRefine(rangeWithinAYear),
+
+  // Public pre-check before booking: same date/item bounds as guestBooking so an
+  // anonymous caller cannot make the server run an unbounded number of queries.
+  availabilityCheck: z
+    .object({
+      start_date: dateOnly,
+      end_date: dateOnly,
       items: z
         .array(
           z.object({
