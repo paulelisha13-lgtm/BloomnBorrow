@@ -2966,12 +2966,12 @@ const AUDIT_LABELS = {
   CREATE_MAINTENANCE:"Opened maintenance", UPDATE_MAINTENANCE:"Updated maintenance",
   BLOCK_CUSTOMER:"Blocked customer", UNBLOCK_CUSTOMER:"Unblocked customer", UPDATE_CUSTOMER:"Edited customer",
   DELETE_CUSTOMER:"Deleted customer", DELETE_ALL_CUSTOMERS:"Deleted ALL customers",
-  UPDATE_SETTINGS:"Changed business settings", RUN_OVERDUE_CHECK:"Ran overdue check", EXPORT_AUDIT_LOG:"Exported audit log"
+  UPDATE_SETTINGS:"Changed business settings", RUN_OVERDUE_CHECK:"Ran overdue check", EXPORT_AUDIT_LOG:"Exported audit log", AUDIT_LOG_PURGED:"Old audit entries deleted (retention)"
 };
 const auditLabel = a => AUDIT_LABELS[a] || String(a||"").toLowerCase().replace(/_/g," ");
 // Pill colour: red = security-relevant or destructive, amber = a change, green = routine.
 function auditTone(a) {
-  if (/FAILED|LOCKED|BLOCKED|DELETE|VOID|DISABLE_USER|RESET_PASSWORD|EXPORT/.test(a)) return "overdue";
+  if (/FAILED|LOCKED|BLOCKED|DELETE|PURGED|VOID|DISABLE_USER|RESET_PASSWORD|EXPORT/.test(a)) return "overdue";
   if (/UPDATE|CHANGE|RESCHEDULE|BLOCK|STATUS|SETTINGS/.test(a)) return "pending";
   return "completed";
 }
@@ -2989,11 +2989,12 @@ function auditSummary(l) {
   if (d.status && d.from===undefined) parts.push(d.status);
   if (d.changes) { const keys=Object.keys(d.changes); parts.push(keys.length?`changed: ${keys.join(", ")}`:"no changes"); }
   if (d.customers_deleted!==undefined) parts.push(`${d.customers_deleted} customers`);
+  if (d.retention_days!==undefined) parts.push(`${d.deleted} entries older than ${d.retention_days} days`);
   if (d.attempts) parts.push(`attempt ${d.attempts}`);
   if (l.target_name && !parts.includes(l.target_name)) parts.unshift(l.target_name);
   return parts.join(" · ") || "—";
 }
-const auditActor = l => l.actor_name || (l.user_id ? `User #${l.user_id}` : "Guest / not signed in");
+const auditActor = l => l.actor_name || (l.user_id ? `User #${l.user_id}` : l.action==="AUDIT_LOG_PURGED" ? "System" : "Guest / not signed in");
 
 function csvCell(v) {
   let s = v===null||v===undefined ? "" : typeof v==="object" ? JSON.stringify(v) : String(v);
@@ -3013,6 +3014,7 @@ function AuditLog() {
   const [exporting,setExporting]=useState(false);
   const [error,setError]=useState("");
   const [detail,setDetail]=useState(null);
+  const [retentionDays,setRetentionDays]=useState(null);
 
   const query=(extra={})=>new URLSearchParams(Object.entries({...filters,...extra}).filter(([,v])=>v!==""&&v!==undefined)).toString();
 
@@ -3021,7 +3023,7 @@ function AuditLog() {
     try{
       const data=await api(`/access/audit?${query({limit:PAGE,offset})}`);
       setLogs(prev=>offset?[...prev,...data.logs]:data.logs);
-      setTotal(data.total); setActions(data.actions||[]); setActors(data.actors||[]); setError("");
+      setTotal(data.total); setActions(data.actions||[]); setActors(data.actors||[]); setRetentionDays(data.retention_days??null); setError("");
     }catch(e){setError(e.message)}
     finally{setLoading(false)}
   };
@@ -3072,6 +3074,7 @@ function AuditLog() {
 
     <section className="admin-card">
       <div className="card-heading"><div><span>Activity</span><h2>{total.toLocaleString()} event{total===1?"":"s"}{hasFilters?" match your filters":""}</h2></div></div>
+      {retentionDays!==null&&<p className="muted audit-retention">{retentionDays>0?`Entries older than ${retentionDays} days are deleted automatically every day. Use Export CSV to keep a copy before they are removed.`:"Audit entries are kept permanently (automatic cleanup is off)."}</p>}
       {!loading&&logs.length===0?<div className="inventory-empty"><span>🛡</span><h3>No audit events found</h3><p>{hasFilters?"Try adjusting your filters.":"Activity will appear here as staff use the system."}</p></div>:
       <div className="table-wrap"><table>
         <thead><tr><th>Time</th><th>Staff</th><th>Action</th><th>Details</th><th>IP address</th><th></th></tr></thead>
