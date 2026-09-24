@@ -920,6 +920,15 @@ function staffDestination(search) {
   return wanted && wanted.startsWith("/admin") ? wanted : "/admin";
 }
 
+// Password input with a Show/Hide toggle. Takes the same props as <input>.
+function PasswordInput(props) {
+  const [visible,setVisible]=useState(false);
+  return <span className="password-field">
+    <input {...props} type={visible?"text":"password"} autoCapitalize="off" autoCorrect="off" spellCheck={false}/>
+    <button type="button" className="password-toggle" onClick={()=>setVisible(v=>!v)} aria-pressed={visible} aria-label={visible?"Hide password":"Show password"}>{visible?"Hide":"Show"}</button>
+  </span>;
+}
+
 function AccessLogin() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -980,7 +989,7 @@ function AccessLogin() {
             <input type="email" value={email} onChange={e=>setEmail(e.target.value)} required />
           </label>
           <label>Password
-            <input type="password" value={password} onChange={e=>setPassword(e.target.value)} required />
+            <PasswordInput autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required />
           </label>
 
           <button className="primary-button full" disabled={loading}>
@@ -1361,9 +1370,9 @@ function AccountSettings() {
       </form>
       <form className="admin-card account-settings-card" onSubmit={changePassword}>
         <div className="card-heading"><div><span>Security</span><h2>Change password</h2></div></div>
-        <label>Current password<input type="password" autoComplete="current-password" required value={passwords.current_password} onChange={e=>setPasswords({...passwords,current_password:e.target.value})}/></label>
-        <label>New password<input type="password" autoComplete="new-password" minLength="14" required value={passwords.new_password} onChange={e=>setPasswords({...passwords,new_password:e.target.value})}/></label>
-        <label>Confirm new password<input type="password" autoComplete="new-password" minLength="14" required value={passwords.confirm_password} onChange={e=>setPasswords({...passwords,confirm_password:e.target.value})}/></label>
+        <label>Current password<PasswordInput autoComplete="current-password" required value={passwords.current_password} onChange={e=>setPasswords({...passwords,current_password:e.target.value})}/></label>
+        <label>New password<PasswordInput autoComplete="new-password" minLength="14" required value={passwords.new_password} onChange={e=>setPasswords({...passwords,new_password:e.target.value})}/></label>
+        <label>Confirm new password<PasswordInput autoComplete="new-password" minLength="14" required value={passwords.confirm_password} onChange={e=>setPasswords({...passwords,confirm_password:e.target.value})}/></label>
         <small className="password-help">Use at least 14 characters with uppercase, lowercase, a number, and a symbol. Avoid predictable or reused passwords.</small>
         {passwordMsg && <div className="settings-success">{passwordMsg}</div>}
         <button className="primary-button" disabled={saving}>{saving?"Updating…":"Change password"}</button>
@@ -2903,7 +2912,7 @@ function AccessManagement() {
         <label>Email<input type="email" required value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></label>
         <label>Phone<input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})}/></label>
         <label>Role<select value={form.role} onChange={e=>setForm({...form,role:e.target.value})}><option value="admin">Admin</option></select></label>
-        <label className="span-2">Temporary password<input required minLength="14" placeholder="14+ chars: upper, lower, number, symbol" value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/></label>
+        <label className="span-2">Temporary password<PasswordInput autoComplete="new-password" required minLength="14" placeholder="14+ chars: upper, lower, number, symbol" value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/></label>
       </div>
       <div className="modal-actions"><button type="button" className="secondary-button" onClick={()=>setModal(false)}>Cancel</button><button className="primary-button">Create account</button></div>
     </form></div>}

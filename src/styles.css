@@ -1296,3 +1296,10 @@ tr.table-subrow .payment-transaction-row{border:0}
 [data-theme="dark"] .audit-json{background:var(--surface-2);border-color:var(--line);color:var(--ink)}
 @media (max-width:760px){.audit-filters{width:100%}.audit-filters>*{flex:1 1 140px}.audit-facts{grid-template-columns:1fr}.audit-facts dt{margin-top:6px}}
 .audit-retention{margin:-6px 0 12px}
+
+/* Password field with Show/Hide toggle */
+.password-field{position:relative;display:block}
+.password-field input{padding-right:64px}
+.password-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:var(--brand);font-size:12px;font-weight:750;padding:6px 8px;border-radius:8px;cursor:pointer}
+.password-toggle:hover{background:var(--brand-soft)}
+.password-toggle:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
