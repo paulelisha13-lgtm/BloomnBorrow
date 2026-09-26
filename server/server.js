@@ -381,6 +381,9 @@ app.post("/api/bookings/guest", parseBody(schemas.guestBooking), async (req,res,
     const phone = String(req.body.phone || "").trim();
     const city = String(req.body.city || "").trim();
     const address = String(req.body.address || "").trim();
+    const province = String(req.body.province || "").trim();
+    const postalCode = String(req.body.postal_code || "").trim();
+    const notes = String(req.body.notes || "").trim();
     const fulfillment = req.body.fulfillment === "pickup" ? "pickup" : "delivery";
     const paymentMethod = ["cash","gcash","bank_transfer","other"].includes(req.body.payment_method) ? req.body.payment_method : "cash";
 
@@ -440,7 +443,7 @@ app.post("/api/bookings/guest", parseBody(schemas.guestBooking), async (req,res,
       }
       customerId = existingCustomer[0].id;
     } else {
-      const [customerResult] = await conn.query("INSERT INTO customers(full_name,email,phone,city,address,status) VALUES(?,?,?,?,?,'active')",[fullName,email,phone,city||null,address||null]);
+      const [customerResult] = await conn.query("INSERT INTO customers(full_name,email,phone,city,address,province,postal_code,status) VALUES(?,?,?,?,?,?,?,'active')",[fullName,email,phone,city||null,address||null,province||null,postalCode||null]);
       customerId = customerResult.insertId;
     }
 
@@ -450,11 +453,11 @@ app.post("/api/bookings/guest", parseBody(schemas.guestBooking), async (req,res,
 
     const [bookingResult] = await conn.query(`
       INSERT INTO bookings
-        (customer_id,customer_name,customer_email,customer_phone,city,delivery_address,start_date,end_date,
-         fulfillment,payment_method,payment_status,status,rental_subtotal,deposit_total,delivery_fee,grand_total)
-      VALUES (?,?,?,?,?,?,?,?,?,?,'unpaid','pending',?,?,?,?)
-    `,[customerId,fullName,email,phone,city||null,address||null,req.body.start_date,req.body.end_date,
-       fulfillment,paymentMethod,rentalSubtotal,depositTotal,deliveryFee,grandTotal]);
+        (customer_id,customer_name,customer_email,customer_phone,city,delivery_address,province,postal_code,start_date,end_date,
+         fulfillment,payment_method,payment_status,status,rental_subtotal,deposit_total,delivery_fee,grand_total,notes)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'unpaid','pending',?,?,?,?,?)
+    `,[customerId,fullName,email,phone,city||null,address||null,province||null,postalCode||null,req.body.start_date,req.body.end_date,
+       fulfillment,paymentMethod,rentalSubtotal,depositTotal,deliveryFee,grandTotal,notes||null]);
 
     const bookingId = bookingResult.insertId;
     const bookingNo = `RF-${String(bookingId).padStart(6,"0")}`;
@@ -513,6 +516,70 @@ app.get("/api/admin/bookings", authenticate, requireRole("admin"), async (_req,r
     LIMIT 250
   `);
   res.json({bookings:rows});
+});
+
+app.post("/api/admin/bookings", authenticate, requireRole("admin"), requireStaffCsrf, parseBody(schemas.adminBooking), async (req,res,next) => {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [[customer]] = await conn.query("SELECT * FROM customers WHERE id=? FOR UPDATE",[req.body.customer_id]);
+    if (!customer) { const error=new Error("Customer not found."); error.statusCode=404; throw error; }
+    if (customer.status === "blocked") { const error=new Error("Blocked customers cannot receive new bookings."); error.statusCode=409; throw error; }
+    if (req.body.fulfillment === "delivery" && !String(customer.address||"").trim()) { const error=new Error("This customer needs a complete delivery address before booking."); error.statusCode=400; throw error; }
+    if (new Set(req.body.items.map(x=>x.item_id)).size !== req.body.items.length) { const error=new Error("Add each rental item only once; adjust its quantity instead."); error.statusCode=400; throw error; }
+
+    const start = parseDateOnly(req.body.start_date);
+    const end = parseDateOnly(req.body.end_date);
+    const days = rentalDays(start,end);
+    const normalized = [];
+    let rentalSubtotal = 0;
+    let depositTotal = 0;
+    let deliveryFee = 0;
+
+    for (const row of req.body.items) {
+      const [[item]] = await conn.query("SELECT * FROM rental_items WHERE id=? FOR UPDATE",[row.item_id]);
+      if (!item || item.status !== "active") {
+        const error = new Error("One of the selected rental items is unavailable."); error.statusCode=409; throw error;
+      }
+      const availability = await getAvailability(conn,row.item_id,req.body.start_date,req.body.end_date);
+      if (availability.available_quantity < row.quantity) {
+        const error = new Error(`${item.name} only has ${availability.available_quantity} available for the selected dates.`); error.statusCode=409; throw error;
+      }
+      const dailyPrice = Number(item.daily_price);
+      const deposit = Number(item.security_deposit);
+      const feePerPiece = req.body.fulfillment === "delivery" ? Number(row.delivery_fee_per_piece) : 0;
+      const lineRental = dailyPrice * row.quantity * days;
+      const lineDeposit = deposit * row.quantity;
+      const lineDelivery = feePerPiece * row.quantity;
+      rentalSubtotal += lineRental; depositTotal += lineDeposit; deliveryFee += lineDelivery;
+      normalized.push({item,quantity:row.quantity,dailyPrice,deposit,feePerPiece,lineRental,lineDeposit,lineDelivery});
+    }
+
+    const grandTotal = rentalSubtotal + depositTotal + deliveryFee;
+    const [result] = await conn.query(`
+      INSERT INTO bookings
+        (customer_id,customer_name,customer_email,customer_phone,city,delivery_address,province,postal_code,start_date,end_date,
+         fulfillment,payment_method,payment_status,status,rental_subtotal,deposit_total,delivery_fee,grand_total,notes)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'unpaid','pending',?,?,?,?,?)
+    `,[customer.id,customer.full_name,customer.email,customer.phone,customer.city,customer.address,customer.province,customer.postal_code,
+       req.body.start_date,req.body.end_date,req.body.fulfillment,req.body.payment_method,rentalSubtotal,depositTotal,deliveryFee,grandTotal,req.body.notes||null]);
+    const bookingId=result.insertId;
+    const bookingNo=`RF-${String(bookingId).padStart(6,"0")}`;
+    await conn.query("UPDATE bookings SET booking_no=? WHERE id=?",[bookingNo,bookingId]);
+    for (const row of normalized) await conn.query(`
+      INSERT INTO booking_items
+        (booking_id,rental_item_id,item_name,quantity,daily_price,security_deposit,rental_days,line_rental_total,line_deposit_total,delivery_fee_per_piece,line_delivery_total)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    `,[bookingId,row.item.id,row.item.name,row.quantity,row.dailyPrice,row.deposit,days,row.lineRental,row.lineDeposit,row.feePerPiece,row.lineDelivery]);
+    await conn.query("INSERT INTO booking_status_history(booking_id,from_status,to_status,changed_by_user_id,note) VALUES(?,NULL,'pending',?,'Admin booking created')",[bookingId,req.user.id]);
+    await conn.commit();
+    await audit(req,"CREATE_BOOKING",null,{booking_id:bookingId,booking_no:bookingNo,customer_id:customer.id,grand_total:grandTotal});
+    res.status(201).json({booking:await bookingDetailById(bookingId)});
+  } catch (error) {
+    try { await conn.rollback(); } catch {}
+    if (error.statusCode) return res.status(error.statusCode).json({message:error.message});
+    next(error);
+  } finally { conn.release(); }
 });
 
 
@@ -1080,11 +1147,31 @@ app.get("/api/admin/customers", authenticate, requireRole("admin"), async (_req,
     SELECT c.*,
       COUNT(b.id) booking_count,
       COALESCE(SUM(CASE WHEN b.status='completed' THEN b.grand_total ELSE 0 END),0) lifetime_value,
-      MAX(b.created_at) last_booking_at
+      MAX(b.created_at) last_booking_at,
+      SUM(CASE WHEN b.status='pending' THEN 1 ELSE 0 END) pending_booking_count
     FROM customers c LEFT JOIN bookings b ON b.customer_id=c.id
     GROUP BY c.id ORDER BY c.created_at DESC
   `);
   res.json({customers});
+});
+
+app.get("/api/admin/customers/:id", authenticate, requireRole("admin"), async (req,res) => {
+  const id=Number(req.params.id);
+  const [[customer]]=await db.query(`
+    SELECT c.*,COUNT(b.id) booking_count,
+      COALESCE(SUM(CASE WHEN b.status='completed' THEN b.grand_total ELSE 0 END),0) lifetime_value,
+      MAX(b.created_at) last_booking_at,
+      SUM(CASE WHEN b.status='pending' THEN 1 ELSE 0 END) pending_booking_count
+    FROM customers c LEFT JOIN bookings b ON b.customer_id=c.id WHERE c.id=? GROUP BY c.id
+  `,[id]);
+  if(!customer) return res.status(404).json({message:"Customer not found."});
+  const [bookings]=await db.query(`
+    SELECT b.id,b.booking_no,b.start_date,b.end_date,b.status,b.payment_status,b.rental_subtotal,b.deposit_total,b.delivery_fee,b.grand_total,b.created_at,
+      GROUP_CONCAT(CONCAT(bi.item_name,' × ',bi.quantity) ORDER BY bi.id SEPARATOR ', ') items
+    FROM bookings b LEFT JOIN booking_items bi ON bi.booking_id=b.id
+    WHERE b.customer_id=? GROUP BY b.id ORDER BY b.created_at DESC
+  `,[id]);
+  res.json({customer:{...customer,recent_bookings:bookings}});
 });
 
 app.patch("/api/admin/customers/:id/status", authenticate, requireRole("admin"), async (req,res) => {
@@ -1098,14 +1185,14 @@ app.patch("/api/admin/customers/:id/status", authenticate, requireRole("admin"),
 
 app.patch("/api/admin/customers/:id", authenticate, requireRole("admin"), parseBody(schemas.updateCustomer), async (req,res) => {
   const id=Number(req.params.id);
-  const [[existing]]=await db.query("SELECT id,full_name,email,phone,city,address FROM customers WHERE id=?",[id]);
+  const [[existing]]=await db.query("SELECT id,full_name,email,phone,city,address,province,postal_code FROM customers WHERE id=?",[id]);
   if(!existing) return res.status(404).json({message:"Customer not found."});
-  const {full_name,email,phone,city,address}=req.body;
+  const {full_name,email,phone,city,address,province,postal_code}=req.body;
   const [[dup]]=await db.query("SELECT id FROM customers WHERE email=? AND id!=?",[email,id]);
   if(dup) return res.status(409).json({message:"Email is already used by another customer."});
-  await db.query("UPDATE customers SET full_name=?,email=?,phone=?,city=?,address=? WHERE id=?",[full_name,email,phone,city||null,address||null,id]);
+  await db.query("UPDATE customers SET full_name=?,email=?,phone=?,city=?,address=?,province=?,postal_code=? WHERE id=?",[full_name,email,phone,city||null,address||null,province||null,postal_code||null,id]);
   const [[updated]]=await db.query("SELECT * FROM customers WHERE id=?",[id]);
-  await audit(req,"UPDATE_CUSTOMER",null,{customer_id:id,changes:changedFields(existing,updated,["full_name","email","phone","city","address"])});
+  await audit(req,"UPDATE_CUSTOMER",null,{customer_id:id,changes:changedFields(existing,updated,["full_name","email","phone","city","address","province","postal_code"])});
   res.json({customer:updated});
 });
 

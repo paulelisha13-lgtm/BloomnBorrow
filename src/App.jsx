@@ -1943,6 +1943,48 @@ function Incidents() {
   </AdminShell>
 }
 
+function AddBooking() {
+  const navigate=useNavigate();
+  const [customers,setCustomers]=useState([]),[inventory,setInventory]=useState([]);
+  const [customerId,setCustomerId]=useState(""),[customerSearch,setCustomerSearch]=useState("");
+  const [form,setForm]=useState({start_date:"",end_date:"",fulfillment:"delivery",payment_method:"cash",notes:""});
+  const [items,setItems]=useState([{item_id:"",quantity:1,delivery_fee_per_piece:0}]);
+  const [availability,setAvailability]=useState({}),[error,setError]=useState(""),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false);
+  useEffect(()=>{Promise.all([api("/admin/customers"),api("/admin/inventory")]).then(([c,i])=>{setCustomers(c.customers||[]);setInventory((i.items||[]).filter(x=>x.status==="active"))}).catch(e=>setError(e.message)).finally(()=>setLoading(false))},[]);
+  const customer=customers.find(c=>String(c.id)===String(customerId));
+  const days=form.start_date&&form.end_date?Math.max(1,Math.floor((new Date(form.end_date+"T00:00:00")-new Date(form.start_date+"T00:00:00"))/86400000)+1):1;
+  const details=items.map(row=>{const item=inventory.find(x=>String(x.id)===String(row.item_id));const qty=Math.max(0,Number(row.quantity)||0);const rental=Number(item?.daily_price||0)*qty*days;const deposit=Number(item?.security_deposit||0)*qty;const delivery=form.fulfillment==="delivery"?Math.max(0,Number(row.delivery_fee_per_piece)||0)*qty:0;return {...row,item,qty,rental,deposit,delivery,total:rental+deposit+delivery}});
+  const totals=details.reduce((a,x)=>({rental:a.rental+x.rental,deposit:a.deposit+x.deposit,delivery:a.delivery+x.delivery,total:a.total+x.total}),{rental:0,deposit:0,delivery:0,total:0});
+  const updateItem=(index,key,value)=>setItems(v=>v.map((x,i)=>i===index?{...x,[key]:value}:x));
+  useEffect(()=>{if(!form.start_date||!form.end_date||items.some(x=>!x.item_id||Number(x.quantity)<1)){setAvailability({});return}const timer=setTimeout(()=>api("/availability/check",{method:"POST",body:JSON.stringify({start_date:form.start_date,end_date:form.end_date,items:items.map(x=>({item_id:Number(x.item_id),quantity:Number(x.quantity)}))})}).then(d=>setAvailability(Object.fromEntries(d.items.map(x=>[x.item_id,x])))).catch(()=>setAvailability({})),300);return()=>clearTimeout(timer)},[form.start_date,form.end_date,items]);
+  const submit=async e=>{e.preventDefault();setError("");if(!customer)return setError("Select an existing customer.");if(form.fulfillment==="delivery"&&!customer.address)return setError("The selected customer needs a complete delivery address.");if(form.end_date<form.start_date)return setError("End date cannot be before start date.");if(details.some(x=>!x.item||x.qty<1))return setError("Complete every rental item.");if(new Set(details.map(x=>x.item_id)).size!==details.length)return setError("Add each rental item only once; adjust its quantity instead.");if(details.some(x=>availability[x.item_id]&&!availability[x.item_id].available))return setError("One or more items are unavailable for the selected dates.");setSaving(true);try{const data=await api("/admin/bookings",{method:"POST",body:JSON.stringify({...form,customer_id:Number(customerId),items:details.map(x=>({item_id:Number(x.item_id),quantity:x.qty,delivery_fee_per_piece:form.fulfillment==="delivery"?Number(x.delivery_fee_per_piece):0}))})});navigate("/admin/bookings",{state:{created:data.booking?.booking_no}})}catch(e){setError(e.message)}finally{setSaving(false)}};
+  const matches=customers.filter(c=>!customerSearch||[c.full_name,c.email,c.phone].some(v=>String(v||"").toLowerCase().includes(customerSearch.toLowerCase()))).slice(0,8);
+  if(loading)return <AdminShell title="Add Booking" subtitle="Create a booking for an existing customer."><div className="admin-card booking-empty-state">Loading customers and inventory…</div></AdminShell>;
+  return <AdminShell title="Add Booking" subtitle="Create a reviewable booking without duplicating customer records.">
+    <form className="admin-booking-form" onSubmit={submit}>{error&&<div className="login-error">{error}</div>}
+      <section className="admin-card form-section"><div className="form-section-title"><span>1</span><div><h2>Customer Information</h2><p>Search and select the stored customer record.</p></div></div>
+        <div className="form-group"><label>Search customer <span className="required">*</span></label><input value={customerSearch} onChange={e=>setCustomerSearch(e.target.value)} placeholder="Name, email, or contact number"/></div>
+        <div className="customer-picker">{matches.map(c=><button type="button" key={c.id} className={String(c.id)===String(customerId)?"selected":""} onClick={()=>setCustomerId(c.id)}><strong>{c.full_name}</strong><small>{c.email} · {c.phone}</small><span className={`status-pill ${c.status==="active"?"confirmed":"overdue"}`}>{c.status}</span></button>)}</div>
+        {customer&&<div className="selected-customer"><div><small>Customer reference</small><strong>CUST-{String(customer.id).padStart(6,"0")}</strong></div><div><small>Contact</small><strong>{customer.phone}</strong></div><div><small>Email</small><strong>{customer.email}</strong></div><div><small>Complete address</small><strong>{[customer.address,customer.city,customer.province,customer.postal_code].filter(Boolean).join(", ")||"—"}</strong></div></div>}
+      </section>
+      <section className="admin-card form-section"><div className="form-section-title"><span>2</span><div><h2>Rental Information</h2><p>Existing duration-based prices are calculated inclusively.</p></div></div><div className="form-grid">
+        <div className="form-group"><label>Start date <span className="required">*</span></label><input required type="date" value={form.start_date} onChange={e=>setForm({...form,start_date:e.target.value})}/></div>
+        <div className="form-group"><label>End date <span className="required">*</span></label><input required type="date" min={form.start_date||undefined} value={form.end_date} onChange={e=>setForm({...form,end_date:e.target.value})}/></div>
+        <div className="form-group"><label>Fulfillment</label><select value={form.fulfillment} onChange={e=>setForm({...form,fulfillment:e.target.value})}><option value="delivery">Delivery</option><option value="pickup">Pickup</option></select></div>
+        <div className="form-group"><label>Payment method</label><select value={form.payment_method} onChange={e=>setForm({...form,payment_method:e.target.value})}><option value="cash">Cash</option><option value="gcash">GCash</option><option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select></div>
+      </div></section>
+      <section className="admin-card form-section"><div className="form-section-title"><span>3</span><div><h2>Rental Items</h2><p>Delivery fees are entered and stored per piece for each item.</p></div></div>
+        <div className="admin-booking-items">{details.map((row,index)=><article className="admin-booking-item" key={index}><div className="item-row-head">{row.item?.image_url?<img src={row.item.image_url} alt=""/>:<span className="item-image-placeholder">B</span>}<div className="form-group grow"><label>Rental item <span className="required">*</span></label><select required value={row.item_id} onChange={e=>updateItem(index,"item_id",e.target.value)}><option value="">Select item</option>{inventory.map(x=><option key={x.id} value={x.id}>{x.name} — {peso(Number(x.daily_price))}/day</option>)}</select></div>{items.length>1&&<button type="button" className="mini-button danger" onClick={()=>setItems(v=>v.filter((_,i)=>i!==index))}>Remove</button>}</div>
+          <div className="item-input-grid"><div className="form-group"><label>Quantity / pieces</label><input required min="1" step="1" type="number" value={row.quantity} onChange={e=>updateItem(index,"quantity",e.target.value)}/></div><div className="form-group"><label>Rental duration</label><input readOnly value={`${days} day${days===1?"":"s"}`}/></div><div className="form-group"><label>Delivery fee / piece</label><input required min="0" step="0.01" disabled={form.fulfillment!=="delivery"} type="number" value={row.delivery_fee_per_piece} onChange={e=>updateItem(index,"delivery_fee_per_piece",e.target.value)}/></div><div className="form-group"><label>Availability</label><div className={`availability-box ${availability[row.item_id]?.available?"ok":availability[row.item_id]?"bad":""}`}>{availability[row.item_id]?availability[row.item_id].available?`Available (${availability[row.item_id].available_quantity})`:`Only ${availability[row.item_id].available_quantity} available`:"Select dates and item"}</div></div></div>
+          <div className="item-calculation"><span>Rental <b>{peso(row.rental)}</b></span><span>Delivery <b>{peso(row.delivery)}</b></span><span>Deposit <b>{peso(row.deposit)}</b></span><span>Item total <b>{peso(row.total)}</b></span></div></article>)}</div>
+        <button type="button" className="secondary-button" onClick={()=>setItems(v=>[...v,{item_id:"",quantity:1,delivery_fee_per_piece:0}])}>+ Add another item</button>
+      </section>
+      <section className="admin-card form-section booking-review"><div className="form-section-title"><span>4</span><div><h2>Booking Summary</h2><p>Review all customer, rental, and fee details before saving.</p></div></div><div className="form-group"><label>Booking notes</label><textarea rows="3" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Optional internal or delivery notes"/></div><div className="review-total"><div><span>Rental subtotal</span><strong>{peso(totals.rental)}</strong></div><div><span>Security deposit</span><strong>{peso(totals.deposit)}</strong></div><div><span>Total delivery fee</span><strong>{peso(totals.delivery)}</strong></div><div className="grand"><span>Grand total</span><strong>{peso(totals.total)}</strong></div></div></section>
+      <div className="sticky-form-actions"><button type="button" className="secondary-button" onClick={()=>navigate("/admin/bookings")}>Cancel</button><button className="primary-button" disabled={saving}>{saving?"Creating booking…":"Create Pending Booking"}</button></div>
+    </form>
+  </AdminShell>;
+}
+
 function Bookings() {
   const navigate=useNavigate();
   const [rows,setRows]=useState([]);
@@ -2044,6 +2086,7 @@ function Bookings() {
         <input placeholder="Search by booking # or customer..." value={search} onChange={e=>setSearch(e.target.value)}/>
       </div>
       <div className="booking-filter-group">
+        <button className="primary-button" onClick={()=>navigate("/admin/bookings/new")}>+ Add Booking</button>
         <select className="booking-status-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
           {statuses.map(s=><option key={s} value={s}>{s==="All"?"All Status":s.charAt(0).toUpperCase()+s.slice(1)} ({statusCounts[s]})</option>)}
         </select>
@@ -2129,14 +2172,14 @@ function Bookings() {
 
       <div className="booking-modal-section">
         <div className="booking-section-header"><strong>Items</strong></div>
-        <div className="booking-items-list">{detail.items.map(x=><div className="booking-item-row" key={x.id}><div className="booking-item-info"><strong>{x.item_name}</strong><small>× {x.quantity} · {peso(Number(x.daily_price))}/day</small></div><span className="booking-item-subtotal">{peso(Number(x.daily_price)*x.quantity)}</span></div>)}</div>
+        <div className="booking-items-list">{detail.items.map(x=><div className="booking-item-row" key={x.id}><div className="booking-item-info"><strong>{x.item_name}</strong><small>{x.quantity} pieces · {peso(Number(x.daily_price))}/day · {x.rental_days} days</small><small>Delivery: {peso(Number(x.delivery_fee_per_piece||0))} × {x.quantity} = {peso(Number(x.line_delivery_total||0))}</small></div><span className="booking-item-subtotal">{peso(Number(x.line_rental_total)+Number(x.line_deposit_total)+Number(x.line_delivery_total||0))}</span></div>)}</div>
       </div>
       <div className="booking-modal-section">
         <div className="booking-section-header"><strong>Actions</strong></div>
         <div className="booking-actions-group">
           <div className="booking-actions-label">Workflow</div>
           <div className="booking-actions">
-            {detail.status==="pending"&&<><button className="primary-button" disabled={busy} onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"confirmed"})}>Approve Booking</button><button className="secondary-button danger" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"rejected"})}>Reject Booking</button></>}
+            {detail.status==="pending"&&<><button className="primary-button" disabled={busy} onClick={()=>window.confirm("Approve this booking?")&&act(`/admin/bookings/${detail.id}/status`,{status:"confirmed"})}>Approve Booking</button><button className="secondary-button danger" onClick={()=>window.confirm("Reject this booking? This ends its workflow.")&&act(`/admin/bookings/${detail.id}/status`,{status:"rejected"})}>Reject Booking</button></>}
             {["pending","confirmed","ready"].includes(detail.status)&&<button className="secondary-button" onClick={reschedule}>Reschedule Date</button>}
             {detail.status==="confirmed"&&<button className="primary-button" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"ready"})}>Mark as Ready</button>}
             {detail.status==="ready"&&detail.fulfillment==="pickup"&&<button className="primary-button" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"rented"})}>Confirm Pickup</button>}
@@ -2272,7 +2315,7 @@ function Customers() {
   const toggle=async(c)=>{try{await api(`/admin/customers/${c.id}/status`,{method:"PATCH",body:JSON.stringify({status:c.status==="active"?"blocked":"active"})});if(detail&&detail.id===c.id)setDetail({...c,status:c.status==="active"?"blocked":"active"});load()}catch(e){setError(e.message)}};
   const del=async()=>{if(!deleteConfirm)return;setDeleting(true);try{await api(`/admin/customers/${deleteConfirm.id}`,{method:"DELETE"});setDeleteConfirm(null);setDetail(null);load()}catch(e){setError(e.message)}finally{setDeleting(false)}};
   const clearAll=async()=>{if(!confirm("Delete ALL customers? This cannot be undone."))return;try{await api("/admin/customers",{method:"DELETE"});setDetail(null);load()}catch(e){setError(e.message)}};
-  const startEdit=()=>{setEditForm({full_name:detail.full_name||"",email:detail.email||"",phone:detail.phone||"",city:detail.city||"",address:detail.address||""});setEditing(true);setEditError("")};
+  const startEdit=()=>{setEditForm({full_name:detail.full_name||"",email:detail.email||"",phone:detail.phone||"",city:detail.city||"",address:detail.address||"",province:detail.province||"",postal_code:detail.postal_code||""});setEditing(true);setEditError("")};
   const cancelEdit=()=>{setEditing(false);setEditError("")};
   const saveCustomer=async()=>{setSaving(true);setEditError("");try{const data=await api(`/admin/customers/${detail.id}`,{method:"PATCH",body:JSON.stringify(editForm)});setDetail({...detail,...data.customer});setEditing(false);load()}catch(e){setEditError(e.message)}finally{setSaving(false)}};
 
@@ -2284,10 +2327,11 @@ function Customers() {
   };
 
   const openDetail=async(c)=>{
-    setDetail(c);
+    try{const data=await api(`/admin/customers/${c.id}`);setDetail(data.customer)}catch(e){setError(e.message);return}
     setRenterScore(null);
     loadScore(c);
   };
+  const approveBooking=async booking=>{if(!window.confirm(`Approve ${booking.booking_no}? Inventory will remain reserved for the selected dates.`))return;try{await api(`/admin/bookings/${booking.id}/status`,{method:"PATCH",body:JSON.stringify({status:"confirmed"})});await openDetail(detail);load()}catch(e){setError(e.message)}};
 
   const filtered=rows.filter(c=>{
     const matchSearch=(c.full_name||"").toLowerCase().includes(search.toLowerCase())||(c.email||"").toLowerCase().includes(search.toLowerCase())||(c.phone||"").includes(search);
@@ -2358,7 +2402,7 @@ function Customers() {
           <td><span className={`status-pill ${c.status==="active"?"confirmed":"overdue"}`}>{c.status}</span></td>
           <td onClick={e=>e.stopPropagation()}><div className="table-actions">
             <button className="mini-button" onClick={()=>toggle(c)}>{c.status==="active"?"Block":"Unblock"}</button>
-            <button className="mini-button danger" onClick={()=>del(c)}>Delete</button>
+            <button className="mini-button danger" onClick={()=>setDeleteConfirm(c)}>Delete</button>
           </div></td>
         </tr>)}</tbody>
       </table></div>:<div className="customer-card-grid">
@@ -2403,12 +2447,16 @@ function Customers() {
         {editError&&<div className="login-error">{editError}</div>}
         <label>Phone<input type="tel" value={editForm.phone} onChange={e=>setEditForm({...editForm,phone:e.target.value})} placeholder="Phone number"/></label>
         <label>City<input value={editForm.city} onChange={e=>setEditForm({...editForm,city:e.target.value})} placeholder="City"/></label>
+        <label>Province<input value={editForm.province} onChange={e=>setEditForm({...editForm,province:e.target.value})} placeholder="Province"/></label>
+        <label>Postal code<input value={editForm.postal_code} onChange={e=>setEditForm({...editForm,postal_code:e.target.value})} placeholder="Postal code"/></label>
         <label className="span-2">Address<textarea value={editForm.address} onChange={e=>setEditForm({...editForm,address:e.target.value})} placeholder="Address" rows={2}/></label>
         <div className="modal-actions">
           <button type="button" className="secondary-button" onClick={cancelEdit}>Cancel</button>
           <button className="primary-button" disabled={saving} onClick={saveCustomer}>{saving?"Saving...":"Save Changes"}</button>
         </div>
       </div>:<><div className="customer-detail-grid">
+        <div className="customer-detail-stat"><div><small>Customer reference</small><b>CUST-{String(detail.id).padStart(6,"0")}</b></div></div>
+        <div className="customer-detail-stat"><div><small>Registered</small><b>{new Date(detail.created_at).toLocaleDateString("en-PH")}</b></div></div>
         <div className="customer-detail-stat"><div><small>Phone</small><b>{detail.phone||"—"}</b></div></div>
         <div className="customer-detail-stat"><div><small>City</small><b>{detail.city||"—"}</b></div></div>
         <div className="customer-detail-stat"><div><small>Bookings</small><b>{detail.booking_count||0}</b></div></div>
@@ -2435,13 +2483,13 @@ function Customers() {
       </div>}
       {!editing&&detail.address&&<div className="booking-modal-section">
         <div className="booking-section-header"><strong>Address</strong></div>
-        <div className="customer-address-box">{detail.address}</div>
+        <div className="customer-address-box">{[detail.address,detail.city,detail.province,detail.postal_code].filter(Boolean).join(", ")}</div>
       </div>}
       <div className="booking-modal-section">
         <div className="booking-section-header"><strong>Recent Bookings</strong></div>
         {detail.recent_bookings&&detail.recent_bookings.length?detail.recent_bookings.map(b=><div className="customer-booking-row" key={b.id}>
           <div className="customer-booking-info"><strong>{b.booking_no}</strong><small>{new Date(b.start_date).toLocaleDateString("en-PH",{month:"short",day:"numeric"})} → {new Date(b.end_date).toLocaleDateString("en-PH",{month:"short",day:"numeric",year:"numeric"})}</small></div>
-          <div className="customer-booking-meta"><span className={`status-pill ${b.status==="pending"?"pending":b.status==="overdue"?"overdue":"confirmed"}`}>{b.status}</span><strong>{peso(Number(b.grand_total))}</strong></div>
+          <div className="customer-booking-meta"><span className={`status-pill ${b.status==="pending"?"pending":b.status==="overdue"?"overdue":"confirmed"}`}>{b.status}</span><strong>{peso(Number(b.grand_total))}</strong>{b.status==="pending"&&<button className="primary-button" onClick={()=>approveBooking(b)}>Approve</button>}</div>
         </div>):<div className="booking-empty-state">No booking history.</div>}
       </div>
       {!editing&&<div className="booking-modal-section">
@@ -3140,6 +3188,7 @@ function AdminRoutes() {
     <Route path="/admin" element={<ProtectedRoute roles={["admin"]}><AdminDashboard/></ProtectedRoute>}/>
     <Route path="/admin/inventory" element={<ProtectedRoute roles={["admin"]}><Inventory/></ProtectedRoute>}/>
     <Route path="/admin/bookings" element={<ProtectedRoute roles={["admin"]}><Bookings/></ProtectedRoute>}/>
+    <Route path="/admin/bookings/new" element={<ProtectedRoute roles={["admin"]}><AddBooking/></ProtectedRoute>}/>
     <Route path="/admin/customers" element={<ProtectedRoute roles={["admin"]}><Customers/></ProtectedRoute>}/>
     <Route path="/admin/payments" element={<ProtectedRoute roles={["admin"]}><Payments/></ProtectedRoute>}/>
     <Route path="/admin/incidents" element={<ProtectedRoute roles={["admin"]}><Incidents/></ProtectedRoute>}/>

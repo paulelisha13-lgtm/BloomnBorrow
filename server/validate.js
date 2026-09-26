@@ -77,6 +77,9 @@ export const schemas = {
       phone,
       city: optText(120),
       address: optText(500),
+      province: optText(120),
+      postal_code: optText(20),
+      notes: optText(1000),
       start_date: dateOnly,
       end_date: dateOnly,
       fulfillment: z.enum(["pickup", "delivery"]).optional().default("delivery"),
@@ -90,6 +93,22 @@ export const schemas = {
         )
         .min(1, "at least one item is required")
         .max(50, "has too many items"),
+    })
+    .superRefine(rangeWithinAYear),
+
+  adminBooking: z
+    .object({
+      customer_id: positiveId,
+      start_date: dateOnly,
+      end_date: dateOnly,
+      fulfillment: z.enum(["pickup", "delivery"]),
+      payment_method: z.enum(["cash", "gcash", "bank_transfer", "other"]).optional().default("cash"),
+      notes: optText(1000),
+      items: z.array(z.object({
+        item_id: positiveId,
+        quantity: z.coerce.number().int().min(1).max(1000),
+        delivery_fee_per_piece: money,
+      })).min(1).max(50),
     })
     .superRefine(rangeWithinAYear),
 
@@ -147,6 +166,8 @@ export const schemas = {
     phone,
     city: optText(120),
     address: optText(500),
+    province: optText(120),
+    postal_code: optText(20),
   }),
 
   recordPayment: z.object({
