@@ -98,7 +98,14 @@ export const schemas = {
 
   adminBooking: z
     .object({
-      customer_id: positiveId,
+      customer_id: optionalId,
+      full_name: z.string().trim().max(120).optional().default(""),
+      email: z.string().trim().toLowerCase().max(160).optional().default(""),
+      phone: z.string().trim().max(32).optional().default(""),
+      address: optText(500),
+      city: optText(120),
+      province: optText(120),
+      postal_code: optText(20),
       start_date: dateOnly,
       end_date: dateOnly,
       fulfillment: z.enum(["pickup", "delivery"]),
@@ -110,7 +117,14 @@ export const schemas = {
         delivery_fee_per_piece: money,
       })).min(1).max(50),
     })
-    .superRefine(rangeWithinAYear),
+    .superRefine((obj,ctx)=>{
+      rangeWithinAYear(obj,ctx);
+      if (!obj.customer_id) {
+        if (!obj.full_name) ctx.addIssue({code:"custom",path:["full_name"],message:"is required"});
+        if (!obj.phone || obj.phone.length < 5) ctx.addIssue({code:"custom",path:["phone"],message:"must be a valid contact number"});
+        if (!EMAIL_RE.test(obj.email)) ctx.addIssue({code:"custom",path:["email"],message:"must be a valid email address"});
+      }
+    }),
 
   // Public pre-check before booking: same date/item bounds as guestBooking so an
   // anonymous caller cannot make the server run an unbounded number of queries.

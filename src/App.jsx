@@ -1791,8 +1791,8 @@ function Incidents() {
   const [incidents,setIncidents]=useState([]);
   const [error,setError]=useState("");
   const [search,setSearch]=useState("");
-  const [statusFilter,setStatusFilter]=useState("All");
   const [typeFilter,setTypeFilter]=useState("All");
+  const [statusFilter,setStatusFilter]=useState("All");
   const [detail,setDetail]=useState(null);
   const [showNew,setShowNew]=useState(false);
   const [newForm,setNewForm]=useState({rental_item_id:"",booking_id:"",customer_id:"",incident_type:"damaged_minor",description:"",replacement_cost:"",charge_amount:"",insurance_claim_amount:""});
@@ -1947,39 +1947,46 @@ function AddBooking() {
   const navigate=useNavigate();
   const [customers,setCustomers]=useState([]),[inventory,setInventory]=useState([]);
   const [customerId,setCustomerId]=useState(""),[customerSearch,setCustomerSearch]=useState("");
+  const [customerMode,setCustomerMode]=useState("new");
+  const [customerForm,setCustomerForm]=useState({full_name:"",phone:"",email:"",address:"",city:"",province:"",postal_code:""});
   const [form,setForm]=useState({start_date:"",end_date:"",fulfillment:"delivery",payment_method:"cash",notes:""});
   const [items,setItems]=useState([{item_id:"",quantity:1,delivery_fee_per_piece:0}]);
+  const [openSections,setOpenSections]=useState({customer:true,rental:true,items:true,summary:true});
   const [availability,setAvailability]=useState({}),[error,setError]=useState(""),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false);
   useEffect(()=>{Promise.all([api("/admin/customers"),api("/admin/inventory")]).then(([c,i])=>{setCustomers(c.customers||[]);setInventory((i.items||[]).filter(x=>x.status==="active"))}).catch(e=>setError(e.message)).finally(()=>setLoading(false))},[]);
   const customer=customers.find(c=>String(c.id)===String(customerId));
+  const bookingCustomer=customerMode==="existing"?customer:customerForm;
   const days=form.start_date&&form.end_date?Math.max(1,Math.floor((new Date(form.end_date+"T00:00:00")-new Date(form.start_date+"T00:00:00"))/86400000)+1):1;
   const details=items.map(row=>{const item=inventory.find(x=>String(x.id)===String(row.item_id));const qty=Math.max(0,Number(row.quantity)||0);const rental=Number(item?.daily_price||0)*qty*days;const deposit=Number(item?.security_deposit||0)*qty;const delivery=form.fulfillment==="delivery"?Math.max(0,Number(row.delivery_fee_per_piece)||0)*qty:0;return {...row,item,qty,rental,deposit,delivery,total:rental+deposit+delivery}});
   const totals=details.reduce((a,x)=>({rental:a.rental+x.rental,deposit:a.deposit+x.deposit,delivery:a.delivery+x.delivery,total:a.total+x.total}),{rental:0,deposit:0,delivery:0,total:0});
   const updateItem=(index,key,value)=>setItems(v=>v.map((x,i)=>i===index?{...x,[key]:value}:x));
+  const toggleSection=key=>setOpenSections(v=>({...v,[key]:!v[key]}));
   useEffect(()=>{if(!form.start_date||!form.end_date||items.some(x=>!x.item_id||Number(x.quantity)<1)){setAvailability({});return}const timer=setTimeout(()=>api("/availability/check",{method:"POST",body:JSON.stringify({start_date:form.start_date,end_date:form.end_date,items:items.map(x=>({item_id:Number(x.item_id),quantity:Number(x.quantity)}))})}).then(d=>setAvailability(Object.fromEntries(d.items.map(x=>[x.item_id,x])))).catch(()=>setAvailability({})),300);return()=>clearTimeout(timer)},[form.start_date,form.end_date,items]);
-  const submit=async e=>{e.preventDefault();setError("");if(!customer)return setError("Select an existing customer.");if(form.fulfillment==="delivery"&&!customer.address)return setError("The selected customer needs a complete delivery address.");if(form.end_date<form.start_date)return setError("End date cannot be before start date.");if(details.some(x=>!x.item||x.qty<1))return setError("Complete every rental item.");if(new Set(details.map(x=>x.item_id)).size!==details.length)return setError("Add each rental item only once; adjust its quantity instead.");if(details.some(x=>availability[x.item_id]&&!availability[x.item_id].available))return setError("One or more items are unavailable for the selected dates.");setSaving(true);try{const data=await api("/admin/bookings",{method:"POST",body:JSON.stringify({...form,customer_id:Number(customerId),items:details.map(x=>({item_id:Number(x.item_id),quantity:x.qty,delivery_fee_per_piece:form.fulfillment==="delivery"?Number(x.delivery_fee_per_piece):0}))})});navigate("/admin/bookings",{state:{created:data.booking?.booking_no}})}catch(e){setError(e.message)}finally{setSaving(false)}};
+  const submit=async e=>{e.preventDefault();setError("");if(customerMode==="existing"&&!customer)return setError("Select an existing customer.");if(customerMode==="new"&&(!customerForm.full_name.trim()||!customerForm.phone.trim()||!customerForm.email.trim()))return setError("Complete the new customer's name, contact number, and email address.");if(form.fulfillment==="delivery"&&!bookingCustomer?.address?.trim())return setError("A complete delivery address is required.");if(form.end_date<form.start_date)return setError("End date cannot be before start date.");if(details.some(x=>!x.item||x.qty<1))return setError("Complete every rental item.");if(new Set(details.map(x=>x.item_id)).size!==details.length)return setError("Add each rental item only once; adjust its quantity instead.");if(details.some(x=>availability[x.item_id]&&!availability[x.item_id].available))return setError("One or more items are unavailable for the selected dates.");setSaving(true);try{const data=await api("/admin/bookings",{method:"POST",body:JSON.stringify({...form,...(customerMode==="new"?customerForm:{}),customer_id:customerMode==="existing"?Number(customerId):null,items:details.map(x=>({item_id:Number(x.item_id),quantity:x.qty,delivery_fee_per_piece:form.fulfillment==="delivery"?Number(x.delivery_fee_per_piece):0}))})});navigate("/admin/bookings",{state:{created:data.booking?.booking_no}})}catch(e){setError(e.message)}finally{setSaving(false)}};
   const matches=customers.filter(c=>!customerSearch||[c.full_name,c.email,c.phone].some(v=>String(v||"").toLowerCase().includes(customerSearch.toLowerCase()))).slice(0,8);
-  if(loading)return <AdminShell title="Add Booking" subtitle="Create a booking for an existing customer."><div className="admin-card booking-empty-state">Loading customers and inventory…</div></AdminShell>;
-  return <AdminShell title="Add Booking" subtitle="Create a reviewable booking without duplicating customer records.">
+  if(loading)return <AdminShell title="Add Booking" subtitle="Create a new offline booking manually."><div className="admin-card booking-empty-state">Loading customers and inventory…</div></AdminShell>;
+  return <AdminShell title="Add Booking" subtitle="Create a new offline booking and enter the customer details manually.">
     <form className="admin-booking-form" onSubmit={submit}>{error&&<div className="login-error">{error}</div>}
-      <section className="admin-card form-section"><div className="form-section-title"><span>1</span><div><h2>Customer Information</h2><p>Search and select the stored customer record.</p></div></div>
-        <div className="form-group"><label>Search customer <span className="required">*</span></label><input value={customerSearch} onChange={e=>setCustomerSearch(e.target.value)} placeholder="Name, email, or contact number"/></div>
-        <div className="customer-picker">{matches.map(c=><button type="button" key={c.id} className={String(c.id)===String(customerId)?"selected":""} onClick={()=>setCustomerId(c.id)}><strong>{c.full_name}</strong><small>{c.email} · {c.phone}</small><span className={`status-pill ${c.status==="active"?"confirmed":"overdue"}`}>{c.status}</span></button>)}</div>
-        {customer&&<div className="selected-customer"><div><small>Customer reference</small><strong>CUST-{String(customer.id).padStart(6,"0")}</strong></div><div><small>Contact</small><strong>{customer.phone}</strong></div><div><small>Email</small><strong>{customer.email}</strong></div><div><small>Complete address</small><strong>{[customer.address,customer.city,customer.province,customer.postal_code].filter(Boolean).join(", ")||"—"}</strong></div></div>}
+      <section className={`admin-card form-section ${openSections.customer?"is-open":"is-collapsed"}`}><button type="button" className="form-section-toggle" onClick={()=>toggleSection("customer")} aria-expanded={openSections.customer}><div className="form-section-title"><span>1</span><div><h2>Customer Information</h2><p>{openSections.customer?"Enter a new walk-in customer or select an existing record.":bookingCustomer?.full_name?`${bookingCustomer.full_name} · ${bookingCustomer.phone}`:"Customer details not completed"}</p></div></div><span className="section-chevron">⌄</span></button>
+        {openSections.customer&&<div className="form-section-content">
+        <div className="customer-mode-toggle"><button type="button" className={customerMode==="new"?"active":""} onClick={()=>setCustomerMode("new")}>New Customer</button><button type="button" className={customerMode==="existing"?"active":""} onClick={()=>setCustomerMode("existing")}>Existing Customer</button></div>
+        {customerMode==="existing"&&<><div className="form-group"><label>Search customer <span className="required">*</span></label><input value={customerSearch} onChange={e=>setCustomerSearch(e.target.value)} placeholder="Name, email, or contact number"/></div><div className="customer-picker">{matches.map(c=><button type="button" key={c.id} className={String(c.id)===String(customerId)?"selected":""} onClick={()=>setCustomerId(c.id)}><strong>{c.full_name}</strong><small>{c.email} · {c.phone}</small><span className={`status-pill ${c.status==="active"?"confirmed":"overdue"}`}>{c.status}</span></button>)}</div></>}
+        {customerMode==="new"?<div className="customer-information-fields"><div className="form-group"><label>Customer Name <span className="required">*</span></label><input required type="text" value={customerForm.full_name} onChange={e=>setCustomerForm({...customerForm,full_name:e.target.value})} placeholder="Enter full name"/></div><div className="form-group"><label>Contact Number <span className="required">*</span></label><input required type="tel" value={customerForm.phone} onChange={e=>setCustomerForm({...customerForm,phone:e.target.value})} placeholder="09XX XXX XXXX"/></div><div className="form-group"><label>Email Address <span className="required">*</span></label><input required type="email" value={customerForm.email} onChange={e=>setCustomerForm({...customerForm,email:e.target.value})} placeholder="customer@example.com"/></div><div className="form-group customer-address-field"><label>Full Address <span className="required">*</span></label><textarea required rows="3" value={customerForm.address} onChange={e=>setCustomerForm({...customerForm,address:e.target.value})} placeholder="House number, street, barangay, city, province, postal code"/></div></div>:customer&&<div className="customer-information-fields"><div className="form-group"><label>Customer Name</label><input type="text" readOnly value={customer.full_name||""}/></div><div className="form-group"><label>Contact Number</label><input type="tel" readOnly value={customer.phone||""}/></div><div className="form-group"><label>Email Address</label><input type="email" readOnly value={customer.email||""}/></div><div className="form-group customer-address-field"><label>Full Address</label><textarea rows="3" readOnly value={[customer.address,customer.city,customer.province,customer.postal_code].filter(Boolean).join(", ")}/></div><div className="customer-reference"><small>Customer reference</small><strong>CUST-{String(customer.id).padStart(6,"0")}</strong></div></div>}
+        </div>}
       </section>
-      <section className="admin-card form-section"><div className="form-section-title"><span>2</span><div><h2>Rental Information</h2><p>Existing duration-based prices are calculated inclusively.</p></div></div><div className="form-grid">
+      <section className={`admin-card form-section ${openSections.rental?"is-open":"is-collapsed"}`}><button type="button" className="form-section-toggle" onClick={()=>toggleSection("rental")} aria-expanded={openSections.rental}><div className="form-section-title"><span>2</span><div><h2>Rental Information</h2><p>{openSections.rental?"Existing duration-based prices are calculated inclusively.":form.start_date&&form.end_date?`${form.start_date} → ${form.end_date} · ${days} days`:"Rental dates not set"}</p></div></div><span className="section-chevron">⌄</span></button>{openSections.rental&&<div className="form-section-content"><div className="form-grid">
         <div className="form-group"><label>Start date <span className="required">*</span></label><input required type="date" value={form.start_date} onChange={e=>setForm({...form,start_date:e.target.value})}/></div>
         <div className="form-group"><label>End date <span className="required">*</span></label><input required type="date" min={form.start_date||undefined} value={form.end_date} onChange={e=>setForm({...form,end_date:e.target.value})}/></div>
         <div className="form-group"><label>Fulfillment</label><select value={form.fulfillment} onChange={e=>setForm({...form,fulfillment:e.target.value})}><option value="delivery">Delivery</option><option value="pickup">Pickup</option></select></div>
         <div className="form-group"><label>Payment method</label><select value={form.payment_method} onChange={e=>setForm({...form,payment_method:e.target.value})}><option value="cash">Cash</option><option value="gcash">GCash</option><option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select></div>
-      </div></section>
-      <section className="admin-card form-section"><div className="form-section-title"><span>3</span><div><h2>Rental Items</h2><p>Delivery fees are entered and stored per piece for each item.</p></div></div>
+      </div></div>}</section>
+      <section className={`admin-card form-section ${openSections.items?"is-open":"is-collapsed"}`}><button type="button" className="form-section-toggle" onClick={()=>toggleSection("items")} aria-expanded={openSections.items}><div className="form-section-title"><span>3</span><div><h2>Rental Items</h2><p>{openSections.items?"Delivery fees are entered and stored per piece for each item.":`${details.filter(x=>x.item).length} item type${details.filter(x=>x.item).length===1?"":"s"} · ${items.reduce((sum,x)=>sum+(Number(x.quantity)||0),0)} pieces`}</p></div></div><span className="section-chevron">⌄</span></button>{openSections.items&&<div className="form-section-content">
         <div className="admin-booking-items">{details.map((row,index)=><article className="admin-booking-item" key={index}><div className="item-row-head">{row.item?.image_url?<img src={row.item.image_url} alt=""/>:<span className="item-image-placeholder">B</span>}<div className="form-group grow"><label>Rental item <span className="required">*</span></label><select required value={row.item_id} onChange={e=>updateItem(index,"item_id",e.target.value)}><option value="">Select item</option>{inventory.map(x=><option key={x.id} value={x.id}>{x.name} — {peso(Number(x.daily_price))}/day</option>)}</select></div>{items.length>1&&<button type="button" className="mini-button danger" onClick={()=>setItems(v=>v.filter((_,i)=>i!==index))}>Remove</button>}</div>
           <div className="item-input-grid"><div className="form-group"><label>Quantity / pieces</label><input required min="1" step="1" type="number" value={row.quantity} onChange={e=>updateItem(index,"quantity",e.target.value)}/></div><div className="form-group"><label>Rental duration</label><input readOnly value={`${days} day${days===1?"":"s"}`}/></div><div className="form-group"><label>Delivery fee / piece</label><input required min="0" step="0.01" disabled={form.fulfillment!=="delivery"} type="number" value={row.delivery_fee_per_piece} onChange={e=>updateItem(index,"delivery_fee_per_piece",e.target.value)}/></div><div className="form-group"><label>Availability</label><div className={`availability-box ${availability[row.item_id]?.available?"ok":availability[row.item_id]?"bad":""}`}>{availability[row.item_id]?availability[row.item_id].available?`Available (${availability[row.item_id].available_quantity})`:`Only ${availability[row.item_id].available_quantity} available`:"Select dates and item"}</div></div></div>
           <div className="item-calculation"><span>Rental <b>{peso(row.rental)}</b></span><span>Delivery <b>{peso(row.delivery)}</b></span><span>Deposit <b>{peso(row.deposit)}</b></span><span>Item total <b>{peso(row.total)}</b></span></div></article>)}</div>
-        <button type="button" className="secondary-button" onClick={()=>setItems(v=>[...v,{item_id:"",quantity:1,delivery_fee_per_piece:0}])}>+ Add another item</button>
+        <button type="button" className="secondary-button" onClick={()=>setItems(v=>[...v,{item_id:"",quantity:1,delivery_fee_per_piece:0}])}>+ Add another item</button></div>}
       </section>
-      <section className="admin-card form-section booking-review"><div className="form-section-title"><span>4</span><div><h2>Booking Summary</h2><p>Review all customer, rental, and fee details before saving.</p></div></div><div className="form-group"><label>Booking notes</label><textarea rows="3" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Optional internal or delivery notes"/></div><div className="review-total"><div><span>Rental subtotal</span><strong>{peso(totals.rental)}</strong></div><div><span>Security deposit</span><strong>{peso(totals.deposit)}</strong></div><div><span>Total delivery fee</span><strong>{peso(totals.delivery)}</strong></div><div className="grand"><span>Grand total</span><strong>{peso(totals.total)}</strong></div></div></section>
+      <section className={`admin-card form-section booking-review ${openSections.summary?"is-open":"is-collapsed"}`}><button type="button" className="form-section-toggle" onClick={()=>toggleSection("summary")} aria-expanded={openSections.summary}><div className="form-section-title"><span>4</span><div><h2>Booking Summary</h2><p>{openSections.summary?"Review all customer, rental, and fee details before saving.":`Grand total: ${peso(totals.total)}`}</p></div></div><span className="section-chevron">⌄</span></button>{openSections.summary&&<div className="form-section-content booking-review-content"><div className="form-group"><label>Booking notes</label><textarea rows="3" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Optional internal or delivery notes"/></div><div className="review-total"><div><span>Rental subtotal</span><strong>{peso(totals.rental)}</strong></div><div><span>Security deposit</span><strong>{peso(totals.deposit)}</strong></div><div><span>Total delivery fee</span><strong>{peso(totals.delivery)}</strong></div><div className="grand"><span>Grand total</span><strong>{peso(totals.total)}</strong></div></div></div>}</section>
       <div className="sticky-form-actions"><button type="button" className="secondary-button" onClick={()=>navigate("/admin/bookings")}>Cancel</button><button className="primary-button" disabled={saving}>{saving?"Creating booking…":"Create Pending Booking"}</button></div>
     </form>
   </AdminShell>;
@@ -2182,8 +2189,8 @@ function Bookings() {
             {detail.status==="pending"&&<><button className="primary-button" disabled={busy} onClick={()=>window.confirm("Approve this booking?")&&act(`/admin/bookings/${detail.id}/status`,{status:"confirmed"})}>Approve Booking</button><button className="secondary-button danger" onClick={()=>window.confirm("Reject this booking? This ends its workflow.")&&act(`/admin/bookings/${detail.id}/status`,{status:"rejected"})}>Reject Booking</button></>}
             {["pending","confirmed","ready"].includes(detail.status)&&<button className="secondary-button" onClick={reschedule}>Reschedule Date</button>}
             {detail.status==="confirmed"&&<button className="primary-button" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"ready"})}>Mark as Ready</button>}
-            {detail.status==="ready"&&detail.fulfillment==="pickup"&&<button className="primary-button" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"rented"})}>Confirm Pickup</button>}
-            {["rented","overdue","returned"].includes(detail.status)&&<button className="primary-button" onClick={openInspect}>Inspect & Return</button>}
+            {detail.status==="ready"&&<button className="primary-button" onClick={()=>window.confirm("Mark this booking as Rented? The items will remain reserved until they are returned.")&&act(`/admin/bookings/${detail.id}/status`,{status:"rented",note:detail.fulfillment==="pickup"?"Items picked up by customer":"Items delivered to customer"})}>{detail.fulfillment==="pickup"?"Confirm Pickup · Rented":"Mark as Rented"}</button>}
+            {["rented","overdue"].includes(detail.status)&&<button className="primary-button" onClick={openInspect}>Return Item</button>}
             {detail.status==="returned"&&detail.inspection&&<button className="primary-button" onClick={()=>api(`/admin/bookings/${detail.id}/complete`,{method:"POST",body:JSON.stringify({})}).then(()=>{open(detail.id);load()}).catch(e=>setError(e.message))}>Mark Complete</button>}
           </div>
         </div>
@@ -2261,7 +2268,7 @@ function Bookings() {
     {showInspectModal&&detail&&<div className="modal-backdrop" onClick={()=>setShowInspectModal(false)}><div className="modal inspect-modal" onClick={e=>e.stopPropagation()}>
       <button className="booking-modal-close" onClick={()=>setShowInspectModal(false)}>×</button>
       <div className="inspect-modal-header">
-        <span className="eyebrow">Inspect & Return</span>
+        <span className="eyebrow">Return Item</span>
         <h2>{detail.booking_no}</h2>
         <p>{detail.customer_name}</p>
       </div>
@@ -2300,7 +2307,6 @@ function Customers() {
   const [rows,setRows]=useState([]);
   const [error,setError]=useState("");
   const [search,setSearch]=useState("");
-  const [statusFilter,setStatusFilter]=useState("All");
   const [detail,setDetail]=useState(null);
   const [renterScore,setRenterScore]=useState(null);
   const [editing,setEditing]=useState(false);
@@ -2312,9 +2318,7 @@ function Customers() {
 
   const load=()=>api("/admin/customers").then(d=>setRows(d.customers||[])).catch(e=>setError(e.message));
   React.useEffect(()=>{load()},[]);
-  const toggle=async(c)=>{try{await api(`/admin/customers/${c.id}/status`,{method:"PATCH",body:JSON.stringify({status:c.status==="active"?"blocked":"active"})});if(detail&&detail.id===c.id)setDetail({...c,status:c.status==="active"?"blocked":"active"});load()}catch(e){setError(e.message)}};
   const del=async()=>{if(!deleteConfirm)return;setDeleting(true);try{await api(`/admin/customers/${deleteConfirm.id}`,{method:"DELETE"});setDeleteConfirm(null);setDetail(null);load()}catch(e){setError(e.message)}finally{setDeleting(false)}};
-  const clearAll=async()=>{if(!confirm("Delete ALL customers? This cannot be undone."))return;try{await api("/admin/customers",{method:"DELETE"});setDetail(null);load()}catch(e){setError(e.message)}};
   const startEdit=()=>{setEditForm({full_name:detail.full_name||"",email:detail.email||"",phone:detail.phone||"",city:detail.city||"",address:detail.address||"",province:detail.province||"",postal_code:detail.postal_code||""});setEditing(true);setEditError("")};
   const cancelEdit=()=>{setEditing(false);setEditError("")};
   const saveCustomer=async()=>{setSaving(true);setEditError("");try{const data=await api(`/admin/customers/${detail.id}`,{method:"PATCH",body:JSON.stringify(editForm)});setDetail({...detail,...data.customer});setEditing(false);load()}catch(e){setEditError(e.message)}finally{setSaving(false)}};
@@ -2331,12 +2335,11 @@ function Customers() {
     setRenterScore(null);
     loadScore(c);
   };
-  const approveBooking=async booking=>{if(!window.confirm(`Approve ${booking.booking_no}? Inventory will remain reserved for the selected dates.`))return;try{await api(`/admin/bookings/${booking.id}/status`,{method:"PATCH",body:JSON.stringify({status:"confirmed"})});await openDetail(detail);load()}catch(e){setError(e.message)}};
+  const openEdit=async c=>{try{const data=await api(`/admin/customers/${c.id}`);const d=data.customer;setDetail(d);setEditForm({full_name:d.full_name||"",email:d.email||"",phone:d.phone||"",city:d.city||"",address:d.address||"",province:d.province||"",postal_code:d.postal_code||""});setEditing(true);setEditError("")}catch(e){setError(e.message)}};
 
   const filtered=rows.filter(c=>{
     const matchSearch=(c.full_name||"").toLowerCase().includes(search.toLowerCase())||(c.email||"").toLowerCase().includes(search.toLowerCase())||(c.phone||"").includes(search);
-    const matchStatus=statusFilter==="All"||c.status===statusFilter;
-    return matchSearch&&matchStatus;
+    return matchSearch;
   });
   const sorts={
     created_at:{label:"Date joined",get:c=>Date.parse(c.created_at)||0},
@@ -2344,8 +2347,7 @@ function Customers() {
     email:{label:"Email",get:c=>c.email||""},
     booking_count:{label:"Bookings",get:c=>Number(c.booking_count)||0},
     lifetime_value:{label:"Lifetime value",get:c=>Number(c.lifetime_value)||0},
-    last_booking_at:{label:"Last booking",get:c=>Date.parse(c.last_booking_at)||0},
-    status:{label:"Status",get:c=>c.status||""}
+    last_booking_at:{label:"Last booking",get:c=>Date.parse(c.last_booking_at)||0}
   };
   const {sortKey,sortDir,setSort}=useSort("created_at","desc");
   const sorted=sortRows(filtered,sorts,sortKey,sortDir);
@@ -2353,19 +2355,17 @@ function Customers() {
 
   const stats={
     total:rows.length,
-    active:rows.filter(c=>c.status==="active").length,
-    blocked:rows.filter(c=>c.status!=="active").length,
+    bookings:rows.reduce((s,c)=>s+Number(c.booking_count||0),0),
     totalValue:rows.reduce((s,c)=>s+Number(c.lifetime_value||0),0)
   };
 
-  return <AdminShell title="Customer Management" subtitle="Customer profiles, booking activity, status, and lifetime value.">
+  return <AdminShell title="Customer Management" subtitle="Customer information and booking history.">
     {error&&<div className="login-error">{error}</div>}
 
     <section className="kpi-grid">
       <Kpi index={0} icon="👤" label="Total customers" value={stats.total} detail="All registered"/>
-      <Kpi index={1} icon="✓" label="Active" value={stats.active} detail="Allowed to book"/>
-      <Kpi index={2} icon="🚫" label="Blocked" value={stats.blocked} detail="Restricted accounts"/>
-      <Kpi index={3} icon="💰" label="Total value" value={peso(stats.totalValue)} detail="Lifetime revenue"/>
+      <Kpi index={1} icon="▣" label="Total bookings" value={stats.bookings} detail="Across all customers"/>
+      <Kpi index={2} icon="💰" label="Total value" value={peso(stats.totalValue)} detail="Lifetime revenue"/>
     </section>
 
     <div className="admin-page-toolbar">
@@ -2374,34 +2374,28 @@ function Customers() {
           <span>⌕</span>
           <input placeholder="Search by name, email, or phone..." value={search} onChange={e=>setSearch(e.target.value)}/>
         </div>
-        <select className="booking-status-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
-          <option value="All">All Status ({rows.length})</option>
-          <option value="active">Active ({rows.filter(c=>c.status==="active").length})</option>
-          <option value="blocked">Blocked ({rows.filter(c=>c.status!=="active").length})</option>
-        </select>
         <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={setSort}/>
         <ViewToggle view={view} onChange={setView}/>
       </div>
-      {rows.length>0&&<button className="toolbar-text-danger" onClick={clearAll}>Clear All Customers</button>}
     </div>
 
     <section className="admin-card">
       {filtered.length===0?<div className="inventory-empty">
         <span>👤</span>
         <h3>No customers found</h3>
-        <p>{search||statusFilter!=="All"?"Try adjusting your search or filter.":"No customers registered yet."}</p>
+        <p>{search?"Try adjusting your search.":"No customers registered yet."}</p>
       </div>:view==="table"?<div className="table-wrap"><table>
-        <thead><tr><th>Customer</th><th>Phone</th><th>City</th><th className="num">Bookings</th><th className="num">Lifetime value</th><th>Last booking</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Customer</th><th>Phone</th><th>Address</th><th className="num">Bookings</th><th className="num">Lifetime value</th><th>Last booking</th><th></th></tr></thead>
         <tbody>{sorted.map(c=><tr key={c.id} className="row-clickable" onClick={()=>openDetail(c)}>
           <td><strong>{c.full_name}</strong><br/><small>{c.email}</small></td>
           <td>{c.phone||"—"}</td>
-          <td>{c.city||"—"}</td>
+          <td className="cell-wrap">{[c.address,c.city,c.province].filter(Boolean).join(", ")||"—"}</td>
           <td className="num">{c.booking_count||0}</td>
           <td className="num">{peso(Number(c.lifetime_value||0))}</td>
           <td>{c.last_booking_at?new Date(c.last_booking_at).toLocaleDateString("en-PH",{month:"short",day:"numeric",year:"numeric"}):"—"}</td>
-          <td><span className={`status-pill ${c.status==="active"?"confirmed":"overdue"}`}>{c.status}</span></td>
           <td onClick={e=>e.stopPropagation()}><div className="table-actions">
-            <button className="mini-button" onClick={()=>toggle(c)}>{c.status==="active"?"Block":"Unblock"}</button>
+            <button className="mini-button" onClick={()=>openDetail(c)}>View Details</button>
+            <button className="mini-button" onClick={()=>openEdit(c)}>Edit</button>
             <button className="mini-button danger" onClick={()=>setDeleteConfirm(c)}>Delete</button>
           </div></td>
         </tr>)}</tbody>
@@ -2413,7 +2407,6 @@ function Customers() {
               <h3>{c.full_name}</h3>
               <small>{c.email}</small>
             </div>
-            <span className={`status-pill ${c.status==="active"?"confirmed":"overdue"}`}>{c.status}</span>
           </div>
           <div className="customer-card-body">
             <div className="customer-card-row"><span>📱</span><small>{c.phone||"No phone"}</small></div>
@@ -2425,8 +2418,8 @@ function Customers() {
             <div className="customer-stat-item"><span className="customer-stat-num">{peso(Number(c.lifetime_value||0))}</span><span className="customer-stat-label">Revenue</span></div>
           </div>
           <div className="customer-card-footer" onClick={e=>e.stopPropagation()}>
-            <button className={c.status==="active"?"danger-button":"secondary-button"} onClick={()=>toggle(c)}>{c.status==="active"?"Block":"Unblock"}</button>
-            <button className="danger-button" onClick={()=>del(c)}>Delete</button>
+            <button className="secondary-button" onClick={()=>openEdit(c)}>Edit</button>
+            <button className="danger-button" onClick={()=>setDeleteConfirm(c)}>Delete</button>
             <button className="secondary-button" onClick={()=>openDetail(c)}>View Details →</button>
           </div>
         </article>)}
@@ -2438,7 +2431,6 @@ function Customers() {
       <div className="customer-detail-header">
         <div className="customer-avatar-xl">{(editing?editForm.full_name:detail.full_name).split(" ").map(x=>x[0]).join("").slice(0,2)}</div>
         <div>
-          <span className={`status-pill ${detail.status==="active"?"confirmed":"overdue"}`}>{detail.status}</span>
           {editing?<input className="customer-edit-input" value={editForm.full_name} onChange={e=>setEditForm({...editForm,full_name:e.target.value})} placeholder="Full name"/>:<h2>{detail.full_name}</h2>}
           {editing?<input className="customer-edit-input" type="email" value={editForm.email} onChange={e=>setEditForm({...editForm,email:e.target.value})} placeholder="Email"/>:<p>{detail.email}</p>}
         </div>
@@ -2488,15 +2480,14 @@ function Customers() {
       <div className="booking-modal-section">
         <div className="booking-section-header"><strong>Recent Bookings</strong></div>
         {detail.recent_bookings&&detail.recent_bookings.length?detail.recent_bookings.map(b=><div className="customer-booking-row" key={b.id}>
-          <div className="customer-booking-info"><strong>{b.booking_no}</strong><small>{new Date(b.start_date).toLocaleDateString("en-PH",{month:"short",day:"numeric"})} → {new Date(b.end_date).toLocaleDateString("en-PH",{month:"short",day:"numeric",year:"numeric"})}</small></div>
-          <div className="customer-booking-meta"><span className={`status-pill ${b.status==="pending"?"pending":b.status==="overdue"?"overdue":"confirmed"}`}>{b.status}</span><strong>{peso(Number(b.grand_total))}</strong>{b.status==="pending"&&<button className="primary-button" onClick={()=>approveBooking(b)}>Approve</button>}</div>
+          <div className="customer-booking-info"><strong>{b.booking_no}</strong><small>{b.items||"No item details"}</small><small>{new Date(b.start_date).toLocaleDateString("en-PH",{month:"short",day:"numeric"})} → {new Date(b.end_date).toLocaleDateString("en-PH",{month:"short",day:"numeric",year:"numeric"})}</small></div>
+          <div className="customer-booking-meta"><span className={`status-pill ${b.status==="pending"?"pending":b.status==="overdue"?"overdue":"confirmed"}`}>{b.status}</span><strong>{peso(Number(b.grand_total))}</strong></div>
         </div>):<div className="booking-empty-state">No booking history.</div>}
       </div>
       {!editing&&<div className="booking-modal-section">
         <div className="booking-section-header"><strong>Actions</strong></div>
         <div className="booking-actions">
           <button className="primary-button" onClick={startEdit}>Edit Details</button>
-          <button className={detail.status==="active"?"danger-button":"primary-button"} onClick={()=>toggle(detail)}>{detail.status==="active"?"Block Customer":"Unblock Customer"}</button>
           <button className="danger-button" onClick={()=>setDeleteConfirm(detail)}>Delete Customer</button>
         </div>
       </div>}

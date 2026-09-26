@@ -436,11 +436,6 @@ app.post("/api/bookings/guest", parseBody(schemas.guestBooking), async (req,res,
     const [existingCustomer] = await conn.query("SELECT id,status FROM customers WHERE email=? LIMIT 1",[email]);
     let customerId;
     if (existingCustomer[0]) {
-      if (existingCustomer[0].status === "blocked") {
-        const error = new Error("We are unable to accept this booking online. Please contact us directly.");
-        error.statusCode = 403;
-        throw error;
-      }
       customerId = existingCustomer[0].id;
     } else {
       const [customerResult] = await conn.query("INSERT INTO customers(full_name,email,phone,city,address,province,postal_code,status) VALUES(?,?,?,?,?,?,?,'active')",[fullName,email,phone,city||null,address||null,province||null,postalCode||null]);
@@ -522,9 +517,19 @@ app.post("/api/admin/bookings", authenticate, requireRole("admin"), requireStaff
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
-    const [[customer]] = await conn.query("SELECT * FROM customers WHERE id=? FOR UPDATE",[req.body.customer_id]);
-    if (!customer) { const error=new Error("Customer not found."); error.statusCode=404; throw error; }
-    if (customer.status === "blocked") { const error=new Error("Blocked customers cannot receive new bookings."); error.statusCode=409; throw error; }
+    let customer;
+    if (req.body.customer_id) {
+      [[customer]] = await conn.query("SELECT * FROM customers WHERE id=? FOR UPDATE",[req.body.customer_id]);
+      if (!customer) { const error=new Error("Customer not found."); error.statusCode=404; throw error; }
+    } else {
+      const [[duplicate]] = await conn.query("SELECT id FROM customers WHERE email=? LIMIT 1 FOR UPDATE",[req.body.email]);
+      if (duplicate) { const error=new Error("A customer with this email already exists. Choose Existing Customer and select that record."); error.statusCode=409; throw error; }
+      const [customerResult] = await conn.query(`
+        INSERT INTO customers(full_name,email,phone,city,address,province,postal_code,status)
+        VALUES(?,?,?,?,?,?,?,'active')
+      `,[req.body.full_name,req.body.email,req.body.phone,req.body.city||null,req.body.address||null,req.body.province||null,req.body.postal_code||null]);
+      [[customer]] = await conn.query("SELECT * FROM customers WHERE id=?",[customerResult.insertId]);
+    }
     if (req.body.fulfillment === "delivery" && !String(customer.address||"").trim()) { const error=new Error("This customer needs a complete delivery address before booking."); error.statusCode=400; throw error; }
     if (new Set(req.body.items.map(x=>x.item_id)).size !== req.body.items.length) { const error=new Error("Add each rental item only once; adjust its quantity instead."); error.statusCode=400; throw error; }
 
@@ -1172,15 +1177,6 @@ app.get("/api/admin/customers/:id", authenticate, requireRole("admin"), async (r
     WHERE b.customer_id=? GROUP BY b.id ORDER BY b.created_at DESC
   `,[id]);
   res.json({customer:{...customer,recent_bookings:bookings}});
-});
-
-app.patch("/api/admin/customers/:id/status", authenticate, requireRole("admin"), async (req,res) => {
-  const status=req.body.status;
-  if(!["active","blocked"].includes(status)) return res.status(400).json({message:"Invalid customer status."});
-  const [[customer]]=await db.query("SELECT full_name,email,status FROM customers WHERE id=?",[Number(req.params.id)]);
-  await db.query("UPDATE customers SET status=? WHERE id=?",[status,Number(req.params.id)]);
-  await audit(req,status==="blocked"?"BLOCK_CUSTOMER":"UNBLOCK_CUSTOMER",null,{customer_id:Number(req.params.id),full_name:customer?.full_name,email:customer?.email,from:customer?.status,to:status});
-  res.json({ok:true});
 });
 
 app.patch("/api/admin/customers/:id", authenticate, requireRole("admin"), parseBody(schemas.updateCustomer), async (req,res) => {
