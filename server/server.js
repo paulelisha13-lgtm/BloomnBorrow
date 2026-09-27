@@ -443,7 +443,7 @@ app.post("/api/bookings/guest", parseBody(schemas.guestBooking), async (req,res,
     }
 
     const deliveryFeeSetting = Number(await getSetting("delivery_fee", "300"));
-    const deliveryFee = fulfillment === "delivery" ? deliveryFeeSetting : 0;
+    const deliveryFee = fulfillment === "delivery" ? normalized.reduce((sum,row)=>sum + deliveryFeeSetting * row.quantity,0) : 0;
     const grandTotal = rentalSubtotal + depositTotal + deliveryFee;
 
     const [bookingResult] = await conn.query(`
@@ -461,9 +461,9 @@ app.post("/api/bookings/guest", parseBody(schemas.guestBooking), async (req,res,
     for (const row of normalized) {
       await conn.query(`
         INSERT INTO booking_items
-          (booking_id,rental_item_id,item_name,quantity,daily_price,security_deposit,rental_days,line_rental_total,line_deposit_total)
-        VALUES (?,?,?,?,?,?,?,?,?)
-      `,[bookingId,row.item.id,row.item.name,row.quantity,row.dailyPrice,row.deposit,days,row.lineRental,row.lineDeposit]);
+          (booking_id,rental_item_id,item_name,quantity,daily_price,security_deposit,rental_days,line_rental_total,line_deposit_total,delivery_fee_per_piece,line_delivery_total)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+      `,[bookingId,row.item.id,row.item.name,row.quantity,row.dailyPrice,row.deposit,days,row.lineRental,row.lineDeposit,fulfillment === "delivery" ? deliveryFeeSetting : 0,fulfillment === "delivery" ? deliveryFeeSetting * row.quantity : 0]);
     }
 
     await conn.query("INSERT INTO booking_status_history(booking_id,from_status,to_status,note) VALUES(?,NULL,'pending','Guest booking submitted')",[bookingId]);

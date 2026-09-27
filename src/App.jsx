@@ -16,16 +16,45 @@ function escHtml(value) {
   ));
 }
 
-// Build and print an invoice in a new window. Every interpolated value is escaped.
-function openInvoice({ bookingNo, createdAt, customerName, customerEmail, customerPhone, method, type, status, amount, note }) {
+function paymentBreakdown(booking) {
+  const payments = booking?.payments || [];
+  const completed = payments.filter(p => p.status === "completed");
+  const sum = type => completed.filter(p => p.payment_type === type).reduce((n, p) => n + Number(p.amount || 0), 0);
+  const depositDue = Number(booking?.deposit_total || 0);
+  const rentalDue = Number(booking?.rental_subtotal || 0) + Number(booking?.delivery_fee || 0) + Number(booking?.other_charges || 0) - Number(booking?.discount_total || 0);
+  const depositPaid = sum("deposit");
+  const rentalPaid = sum("rental") + sum("delivery") + sum("other");
+  const refunded = sum("refund");
+  return {
+    rentalDue, depositDue, rentalPaid, depositPaid, refunded,
+    totalDue: rentalDue + depositDue,
+    totalPaid: rentalPaid + depositPaid,
+    rentalBalance: Math.max(0, rentalDue - rentalPaid),
+    depositBalance: Math.max(0, depositDue - depositPaid),
+    outstanding: Math.max(0, rentalDue + depositDue - rentalPaid - depositPaid)
+  };
+}
+
+const balanceStatus = (paid, due) => paid >= due && due > 0 ? "Paid" : paid > 0 ? "Partially paid" : due > 0 ? "Unpaid" : "Not required";
+
+// Build a complete transaction invoice. Every interpolated value is escaped.
+function openInvoice(booking) {
   const win = window.open("", "_blank", "width=800,height=600");
   if (!win) return;
   const e = escHtml;
-  const dateStr = createdAt
-    ? new Date(createdAt).toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" })
+  const dateStr = booking.created_at
+    ? new Date(booking.created_at).toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" })
     : "";
-  const contactLines = [customerEmail, customerPhone].filter(Boolean).map(e).join("<br/>");
-  win.document.write(`<!DOCTYPE html><html><head><title>Invoice ${e(bookingNo)}</title><style>
+  const contactLines = [booking.customer_email, booking.customer_phone].filter(Boolean).map(e).join("<br/>");
+  const money = value => e(peso(Number(value || 0)));
+  const b = paymentBreakdown(booking);
+  const items = booking.items || [];
+  const itemRows = items.map(item => `<tr><td><strong>${e(item.item_name)}</strong><br/><small>${e(item.quantity)} piece(s) &times; ${money(item.daily_price)} &times; ${e(item.rental_days)} day(s)</small></td><td class="amount">${money(item.line_rental_total)}</td></tr>`).join("");
+  const itemDeliveryRows = items.filter(item => Number(item.line_delivery_total || 0) > 0).map(item => `<tr><td>Delivery &mdash; ${e(item.item_name)}<br/><small>${money(item.delivery_fee_per_piece)} per piece &times; ${e(item.quantity)} piece(s)</small></td><td class="amount">${money(item.line_delivery_total)}</td></tr>`).join("");
+  const totalPieces = items.reduce((n,item)=>n + Number(item.quantity || 0),0);
+  const deliveryRows = itemDeliveryRows || (Number(booking.delivery_fee || 0) > 0 ? `<tr><td>Delivery<br/><small>${money(Number(booking.delivery_fee)/Math.max(1,totalPieces))} per piece &times; ${e(totalPieces)} piece(s)</small></td><td class="amount">${money(booking.delivery_fee)}</td></tr>` : "");
+  const paymentRows = (booking.payments || []).map(p => `<tr><td>${e(new Date(p.created_at).toLocaleDateString("en-PH"))} &middot; ${e(String(p.payment_type).toUpperCase())} &middot; ${e(String(p.method || "cash").replace("_", " "))}<br/><small>${e(p.status)}${p.notes ? ` &middot; ${e(p.notes)}` : ""}</small></td><td class="amount ${p.payment_type === "refund" ? "refund" : ""}">${p.payment_type === "refund" ? "&minus;" : ""}${money(p.amount)}</td></tr>`).join("");
+  win.document.write(`<!DOCTYPE html><html><head><title>Invoice ${e(booking.booking_no)}</title><style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:'Segoe UI',sans-serif;padding:40px;color:#1a1a1a}
     .invoice{max-width:600px;margin:auto}
@@ -45,22 +74,23 @@ function openInvoice({ bookingNo, createdAt, customerName, customerEmail, custom
     .totals{margin-left:auto;width:260px}
     .totals div{display:flex;justify-content:space-between;padding:8px 0;font-size:13px}
     .totals .total-row{border-top:2px solid #089b9d;padding-top:10px;margin-top:4px;font-size:16px;font-weight:800;color:#089b9d}
+    .section-title{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#089b9d;margin:22px 0 8px}.status-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}.status-card{border:1px solid #dcebea;border-radius:10px;padding:12px}.status-card small{display:block;color:#687b7b;margin-bottom:5px}.status-card strong{font-size:14px}.status-card span{display:block;font-size:11px;color:#687b7b;margin-top:4px}.refund{color:#b24350}.note{background:#f5fbfa;border-radius:8px;padding:10px 12px;font-size:11px;color:#536969;margin-top:18px}
     .footer{margin-top:40px;padding-top:16px;border-top:1px solid #ddd;text-align:center;font-size:11px;color:#888}
     @media print{body{padding:20px}}
   </style></head><body><div class="invoice">
     <div class="header">
       <div class="brand"><h1>Bloom &amp; Borrow</h1><p>Rental Business Management System</p></div>
-      <div class="invoice-title"><h2>INVOICE</h2><p>${e(bookingNo)}</p><p>${e(dateStr)}</p></div>
+      <div class="invoice-title"><h2>INVOICE</h2><p>${e(booking.booking_no)}</p><p>${e(dateStr)}</p></div>
     </div>
     <div class="info-grid">
-      <div class="info-box"><h3>Bill To</h3><p><strong>${e(customerName)}</strong>${contactLines ? "<br/>" + contactLines : ""}</p></div>
-      <div class="info-box"><h3>Payment Details</h3><p>Method: <strong>${e(String(method || "cash").toUpperCase())}</strong><br/>Type: <strong>${e(String(type || "rental").toUpperCase())}</strong><br/>Status: <strong>${e(String(status || "").toUpperCase())}</strong></p></div>
+      <div class="info-box"><h3>Bill To</h3><p><strong>${e(booking.customer_name)}</strong>${contactLines ? "<br/>" + contactLines : ""}</p></div>
+      <div class="info-box"><h3>Rental Period</h3><p>${e(new Date(booking.start_date).toLocaleDateString("en-PH"))} &ndash; ${e(new Date(booking.end_date).toLocaleDateString("en-PH"))}<br/>Fulfillment: <strong>${e(String(booking.fulfillment || "pickup").toUpperCase())}</strong></p></div>
     </div>
-    <table><thead><tr><th>Description</th><th class="amount">Amount</th></tr></thead><tbody>
-      <tr><td>Payment for ${e(type || "rental")} &mdash; ${e(bookingNo)}</td><td class="amount">${e(peso(Number(amount)))}</td></tr>
-      ${note ? `<tr><td>Note: ${e(note)}</td><td class="amount">&mdash;</td></tr>` : ""}
-    </tbody></table>
-    <div class="totals"><div class="total-row"><span>Total Paid</span><span>${e(peso(Number(amount)))}</span></div></div>
+    <div class="section-title">Charges</div><table><thead><tr><th>Description</th><th class="amount">Amount</th></tr></thead><tbody>${itemRows}${deliveryRows}<tr><td>Refundable rental deposit</td><td class="amount">${money(booking.deposit_total)}</td></tr>${Number(booking.other_charges||0)?`<tr><td>Other service charges</td><td class="amount">${money(booking.other_charges)}</td></tr>`:""}${Number(booking.discount_total||0)?`<tr><td>Discount</td><td class="amount">&minus;${money(booking.discount_total)}</td></tr>`:""}</tbody></table>
+    <div class="totals"><div><span>Total amount due</span><span>${money(b.totalDue)}</span></div><div><span>Amount paid</span><span>${money(b.totalPaid)}</span></div><div class="total-row"><span>Outstanding balance</span><span>${money(b.outstanding)}</span></div></div>
+    <div class="section-title">Payment schedule &amp; status</div><div class="status-grid"><div class="status-card"><small>Rental &amp; service fees</small><strong>${money(b.rentalDue)} &middot; ${e(balanceStatus(b.rentalPaid,b.rentalDue))}</strong><span>${money(b.rentalPaid)} paid &middot; ${money(b.rentalBalance)} due<br/>Due on or before rental start</span></div><div class="status-card"><small>Refundable deposit</small><strong>${money(b.depositDue)} &middot; ${e(balanceStatus(b.depositPaid,b.depositDue))}</strong><span>${money(b.depositPaid)} paid &middot; ${money(b.depositBalance)} due<br/>Due before item release; settled after return</span></div></div>
+    <div class="section-title">Payment activity</div><table><thead><tr><th>Transaction</th><th class="amount">Amount</th></tr></thead><tbody>${paymentRows || `<tr><td>No payments recorded</td><td class="amount">&mdash;</td></tr>`}</tbody></table>
+    ${b.refunded ? `<div class="note">Deposit refunds recorded: <strong>${money(b.refunded)}</strong>. Refunds are shown separately and do not reduce rental revenue.</div>` : ""}
     <div class="footer"><p>Thank you for your business! &middot; Bloom &amp; Borrow Rental System</p></div>
   </div></body></html>`);
   win.document.close();
@@ -432,7 +462,10 @@ function Checkout({ cart, clearCart }) {
   });
   const [touched,setTouched] = useState({});
   const [showLeaveConfirm,setShowLeaveConfirm] = useState(false);
+  const [deliveryFeePerPiece,setDeliveryFeePerPiece] = useState(300);
   const savedRef = useRef(false);
+
+  useEffect(()=>{ api("/settings/public").then(d=>setDeliveryFeePerPiece(Number(d.delivery_fee)||0)).catch(()=>{}); },[]);
 
   useEffect(()=>{
     try {
@@ -499,7 +532,8 @@ function Checkout({ cart, clearCart }) {
   const days = startDate && endDate ? Math.max(1,Math.floor((new Date(endDate+"T00:00:00")-new Date(startDate+"T00:00:00"))/86400000)+1) : 1;
   const rentalSubtotal = cart.reduce((s,x)=>s+x.price*x.qty*days,0);
   const deposit = cart.reduce((s,x)=>s+x.deposit*x.qty,0);
-  const deliveryFee = form.fulfillment === "delivery" ? 300 : 0;
+  const deliveryPieces = cart.reduce((s,x)=>s+x.qty,0);
+  const deliveryFee = form.fulfillment === "delivery" ? deliveryFeePerPiece * deliveryPieces : 0;
   const total = rentalSubtotal + deposit + deliveryFee;
 
   const validate = (field,value) => {
@@ -622,7 +656,7 @@ function Checkout({ cart, clearCart }) {
                   <input type="radio" name="fulfillment" checked={form.fulfillment==="delivery"} onChange={()=>setForm({...form,fulfillment:"delivery"})}/>
                   <div className="fulfillment-info">
                     <strong>Delivery</strong>
-                    <span>₱300 fee</span>
+                    <span>{peso(deliveryFeePerPiece)} per piece</span>
                   </div>
                   <div className="fulfillment-check">✓</div>
                 </label>
@@ -749,7 +783,7 @@ function Checkout({ cart, clearCart }) {
               <strong>{peso(deposit)}</strong>
             </div>
             <div className="summary-line">
-              <span>Delivery fee</span>
+              <span>Delivery ({peso(deliveryFeePerPiece)} × {deliveryPieces} piece{deliveryPieces===1?"":"s"})</span>
               <strong>{deliveryFee > 0 ? peso(deliveryFee) : "Free"}</strong>
             </div>
           </div>
@@ -2027,10 +2061,8 @@ function Bookings() {
   };
 
   const openPaymentModal=()=>{
-    const total=Number(detail?.grand_total||0);
-    const paid=(detail?.payments||[]).filter(p=>p.status==="completed").reduce((s,p)=>s+Number(p.amount||0),0);
-    const balance=total-paid;
-    setPaymentForm({amount:String(balance>0?balance:total),method:"cash",payment_type:"rental",notes:""});
+    const balances=paymentBreakdown(detail);
+    setPaymentForm({amount:String(balances.rentalBalance||balances.depositBalance||0),method:"cash",payment_type:balances.rentalBalance>0?"rental":"deposit",notes:""});
     setShowPaymentModal(true);
   };
 
@@ -2142,9 +2174,10 @@ function Bookings() {
     </section>
 
     {detail&&(()=>{
-      const totalPaid=(detail.payments||[]).filter(p=>p.status==="completed").reduce((s,p)=>s+Number(p.amount||0),0);
-      const grandTotal=Number(detail.grand_total||0);
-      const balance=grandTotal-totalPaid;
+      const money=paymentBreakdown(detail);
+      const totalPaid=money.totalPaid;
+      const grandTotal=money.totalDue;
+      const balance=money.outstanding;
       const isPaid=balance<=0;
       const isPartial=totalPaid>0&&!isPaid;
 
@@ -2170,10 +2203,12 @@ function Bookings() {
 
       <div className="booking-modal-section">
         <div className="booking-section-header"><strong>Payment Summary</strong></div>
-        <div className="booking-payment-summary">
-          <div className="payment-summary-row"><span>Total Amount</span><strong>{peso(grandTotal)}</strong></div>
-          <div className="payment-summary-row"><span>Amount Paid</span><strong className="paid-text">{peso(totalPaid)}</strong></div>
-          <div className={`payment-summary-row payment-summary-balance ${isPaid?"fully-paid":""}`}><span>{isPaid?"Status":"Balance Due"}</span><strong>{isPaid?"✓ PAID IN FULL":peso(balance)}</strong></div>
+        <div className="payment-ledger-grid">
+          <div className="payment-ledger-card rental-ledger"><div className="ledger-card-head"><div><small>Rental &amp; service fees</small><strong>{peso(money.rentalDue)}</strong></div><span className={`status-pill ${money.rentalBalance<=0?"confirmed":money.rentalPaid?"pending":"overdue"}`}>{balanceStatus(money.rentalPaid,money.rentalDue)}</span></div><div className="ledger-progress"><i style={{width:`${money.rentalDue?Math.min(100,money.rentalPaid/money.rentalDue*100):100}%`}}/></div><div className="ledger-facts"><span>Paid <b>{peso(money.rentalPaid)}</b></span><span>Due <b>{peso(money.rentalBalance)}</b></span></div><p>Due on or before {new Date(detail.start_date).toLocaleDateString("en-PH",{month:"short",day:"numeric",year:"numeric"})}</p></div>
+          <div className="payment-ledger-card deposit-ledger"><div className="ledger-card-head"><div><small>Refundable rental deposit</small><strong>{peso(money.depositDue)}</strong></div><span className={`status-pill ${money.depositBalance<=0?"confirmed":money.depositPaid?"pending":"overdue"}`}>{balanceStatus(money.depositPaid,money.depositDue)}</span></div><div className="ledger-progress"><i style={{width:`${money.depositDue?Math.min(100,money.depositPaid/money.depositDue*100):100}%`}}/></div><div className="ledger-facts"><span>Held <b>{peso(Math.max(0,money.depositPaid-money.refunded))}</b></span><span>Due <b>{peso(money.depositBalance)}</b></span></div><p>Due before item release · refunded or applied after return</p></div>
+        </div>
+        <div className="booking-payment-summary payment-total-strip">
+          <div className="payment-summary-row"><span>Total amount due</span><strong>{peso(grandTotal)}</strong></div><div className="payment-summary-row"><span>Amount paid</span><strong className="paid-text">{peso(totalPaid)}</strong></div><div className={`payment-summary-row payment-summary-balance ${isPaid?"fully-paid":""}`}><span>Outstanding balance</span><strong>{peso(balance)}</strong></div>
         </div>
       </div>
 
@@ -2210,7 +2245,7 @@ function Bookings() {
       </div>
       <div className="booking-modal-section">
         <div className="booking-section-header"><strong>Payments</strong></div>
-        {detail.payments.length?<div className="booking-payments-list">{detail.payments.map(p=><div className="booking-payment-row" key={p.id}><div className="booking-payment-info"><strong>{peso(Number(p.amount))}</strong><small>{p.payment_type} · {p.method}{p.notes?` · ${p.notes}`:""}</small></div><div className="booking-payment-actions"><span className={`status-pill ${p.status==="completed"?"confirmed":"pending"}`}>{p.status}</span><button className="mini-button" onClick={()=>openInvoice({bookingNo:detail.booking_no,createdAt:p.created_at,customerName:detail.customer_name,customerEmail:detail.customer_email,customerPhone:detail.customer_phone,method:p.method,type:p.payment_type,status:p.status,amount:p.amount,note:p.notes})}>Print</button></div></div>)}</div>:<div className="booking-empty-state">No payments recorded yet.</div>}
+        {detail.payments.length?<div className="booking-payments-list">{detail.payments.map(p=><div className="booking-payment-row" key={p.id}><div className="booking-payment-info"><strong>{p.payment_type==="refund"?"−":""}{peso(Number(p.amount))}</strong><small>{p.payment_type} · {p.method}{p.notes?` · ${p.notes}`:""}</small></div><div className="booking-payment-actions"><span className={`status-pill ${p.status==="completed"?"confirmed":"pending"}`}>{p.status}</span><button className="mini-button" onClick={()=>openInvoice(detail)}>Invoice</button></div></div>)}</div>:<div className="booking-empty-state">No payments recorded yet.</div>}
       </div>
       <div className="booking-modal-section">
         <div className="booking-section-header"><strong>Status History</strong></div>
@@ -2233,7 +2268,7 @@ function Bookings() {
       <div className="payment-modal-form">
         <label className="payment-label">Payment type
           <div className="payment-type-grid">
-            {[{id:"rental",label:"Rental"},{id:"deposit",label:"Deposit"},{id:"refund",label:"Refund"}].map(t=><button type="button" key={t.id} className={`payment-type-btn ${paymentForm.payment_type===t.id?"active":""}`} onClick={()=>setPaymentForm({...paymentForm,payment_type:t.id})}><strong>{t.label}</strong></button>)}
+            {[{id:"rental",label:"Rental fee"},{id:"deposit",label:"Rental deposit"},{id:"delivery",label:"Delivery"},{id:"other",label:"Other"},{id:"refund",label:"Deposit refund"}].map(t=><button type="button" key={t.id} className={`payment-type-btn ${paymentForm.payment_type===t.id?"active":""}`} onClick={()=>{const m=paymentBreakdown(detail);setPaymentForm({...paymentForm,payment_type:t.id,amount:String(t.id==="deposit"?m.depositBalance:t.id==="rental"?m.rentalBalance:paymentForm.amount)})}}><strong>{t.label}</strong></button>)}
           </div>
         </label>
         <label className="payment-label">Payment method
@@ -2576,16 +2611,12 @@ function Payments() {
     pending:rows.filter(x=>x.status==="pending").length
   };
 
-  const printInvoice=(p)=>openInvoice({
-    bookingNo:p.booking_no,
-    createdAt:p.created_at,
-    customerName:p.customer_name,
-    method:p.method,
-    type:p.payment_type,
-    status:p.status,
-    amount:p.amount,
-    note:p.notes
-  });
+  const printInvoice=async(p)=>{
+    try {
+      const data=await api(`/admin/bookings/${p.booking_id}`);
+      openInvoice(data.booking);
+    } catch(e) { setError(`Could not prepare invoice: ${e.message}`); }
+  };
 
   return <AdminShell title="Payments" subtitle="Payment, deposit and refund transaction history with invoicing.">
     {error&&<div className="login-error">{error}</div>}
