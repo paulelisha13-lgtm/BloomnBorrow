@@ -43,3 +43,33 @@ test("payments must be positive", () => {
   assert.equal(schemas.recordPayment.safeParse({ amount: 0 }).success, false);
   assert.equal(schemas.recordPayment.safeParse({ amount: 100 }).success, true);
 });
+
+const calendar = { title: "Wedding set reservation", entry_date: "2026-12-05", entry_type: "reservation" };
+
+test("a calendar entry needs a title, a valid date and a known type", () => {
+  assert.equal(schemas.calendarEntry.safeParse(calendar).success, true);
+  assert.equal(schemas.calendarEntry.safeParse({ ...calendar, title: "" }).success, false);
+  assert.equal(schemas.calendarEntry.safeParse({ ...calendar, entry_date: "05-12-2026" }).success, false);
+  assert.equal(schemas.calendarEntry.safeParse({ ...calendar, entry_type: "task" }).success, false);
+  assert.equal(schemas.calendarEntry.safeParse({ ...calendar, status: "archived" }).success, false);
+});
+
+test("a calendar entry cannot end before it starts", () => {
+  assert.equal(schemas.calendarEntry.safeParse({ ...calendar, start_time: "14:00", end_time: "09:00" }).success, false);
+  assert.equal(schemas.calendarEntry.safeParse({ ...calendar, start_time: "09:00", end_time: "14:00" }).success, true);
+  assert.equal(schemas.calendarEntry.safeParse({ ...calendar, start_time: "9:00" }).success, false, "24h time only");
+});
+
+test("a blank calendar time or reminder becomes null, not an empty string", () => {
+  const r = schemas.calendarEntry.safeParse({ ...calendar, start_time: "", end_time: "", reminder_at: "" });
+  assert.equal(r.success, true);
+  assert.equal(r.data.start_time, null);
+  assert.equal(r.data.end_time, null);
+  assert.equal(r.data.reminder_at, null);
+});
+
+test("a calendar email is optional but must be valid when given", () => {
+  assert.equal(schemas.calendarEntry.safeParse({ ...calendar, customer_email: "" }).success, true);
+  assert.equal(schemas.calendarEntry.safeParse({ ...calendar, customer_email: "not-an-email" }).success, false);
+  assert.equal(schemas.calendarEntry.safeParse({ ...calendar, customer_email: "Party@Example.com" }).data.customer_email, "party@example.com");
+});

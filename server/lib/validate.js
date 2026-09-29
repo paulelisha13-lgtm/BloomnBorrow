@@ -22,6 +22,18 @@ const password = z.string().max(200, "is too long").superRefine((value, ctx) => 
   else if (/admin123|password|bloom_borrow|changeme/i.test(value)) ctx.addIssue({ code: "custom", message: "is too predictable." });
 });
 const dateOnly = z.string().trim().regex(DATE_RE, "must be in YYYY-MM-DD format");
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const DATETIME_RE = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?$/;
+// "" / null / undefined -> null, so a cleared time or reminder is stored as NULL
+// rather than an empty string the MySQL TIME/DATETIME columns would reject.
+const optTime = z.preprocess(
+  (v) => (v === "" || v === undefined || v === null ? null : v),
+  z.string().trim().regex(TIME_RE, "must be in HH:MM format").nullable()
+);
+const optDateTime = z.preprocess(
+  (v) => (v === "" || v === undefined || v === null ? null : v),
+  z.string().trim().regex(DATETIME_RE, "must be in YYYY-MM-DDTHH:MM format").nullable()
+);
 const positiveId = z.coerce.number().int("must be a whole number").positive("must be a positive id");
 
 // "" / null / undefined -> null, otherwise a positive integer id.
@@ -38,6 +50,16 @@ function rangeWithinAYear(obj, ctx) {
     ctx.addIssue({ code: "custom", path: ["end_date"], message: "must be on or after the start date" });
   } else if (end - start > 366 * DAY_MS) {
     ctx.addIssue({ code: "custom", path: ["end_date"], message: "rental period cannot exceed 366 days" });
+  }
+}
+
+// The end of a calendar entry cannot be before its start. A cross-midnight
+// range is rejected rather than silently re-ordered, because an overnight
+// booking is far more likely to be a typo than an intent.
+function calendarTimesInOrder(obj, ctx) {
+  if (!obj.start_time || !obj.end_time) return;
+  if (obj.end_time < obj.start_time) {
+    ctx.addIssue({ code: "custom", path: ["end_time"], message: "must not be before the start time" });
   }
 }
 
@@ -134,19 +156,31 @@ export const schemas = {
     image_url: optText(500),
   }),
 
-  createIncident: z.object({
-    rental_item_id: positiveId,
-    booking_id: optionalId,
-    customer_id: optionalId,
-    incident_type: z
-      .enum(["lost", "damaged_minor", "damaged_major", "partially_missing", "other"])
-      .optional()
-      .default("damaged_minor"),
-    description: z.string().trim().min(1, "is required").max(2000, "is too long"),
-    replacement_cost: money.optional().default(0),
-    charge_amount: money.optional().default(0),
-    insurance_claim_amount: money.optional().default(0),
-  }),
+  // Calendar Reservation & Booking module. One shape covers bookings,
+  // reservations, events and notes; the fields that do not apply to a type are
+  // simply left blank. Times are "HH:MM" and must not end before they start.
+  calendarEntry: z
+    .object({
+      entry_type: z.enum(["booking", "reservation", "note", "event"]).optional().default("reservation"),
+      title: z.string().trim().min(1, "is required").max(160, "is too long"),
+      customer_name: optText(160),
+      customer_email: z
+        .union([z.literal(""), email])
+        .optional()
+        .default(""),
+      customer_phone: optText(50),
+      entry_date: dateOnly,
+      start_time: optTime,
+      end_time: optTime,
+      guests: z.coerce.number().int("must be a whole number").min(0, "cannot be negative").max(10000, "is too large").optional().default(0),
+      location: optText(160),
+      status: z.enum(["pending", "confirmed", "cancelled", "completed"]).optional().default("pending"),
+      category: optText(40),
+      reminder_at: optDateTime,
+      details: optText(2000),
+      notes: optText(2000),
+    })
+    .superRefine(calendarTimesInOrder),
 
   updateCustomer: z.object({
     full_name: name,

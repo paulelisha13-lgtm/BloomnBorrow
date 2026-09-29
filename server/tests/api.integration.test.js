@@ -108,12 +108,21 @@ test("API workflow and permissions", { skip }, async (t) => {
 
   await t.test("staff can do day-to-day work", async () => {
     assert.equal((await staff("/auth/login", { method: "POST", body: { email: staffEmail, password: staffPassword } })).status, 200);
-    for (const path of ["/admin/dashboard", "/admin/inventory", "/admin/bookings", "/admin/customers", "/admin/payments", "/admin/incidents", "/admin/maintenance"]) {
+    for (const path of ["/admin/dashboard", "/admin/inventory", "/admin/bookings", "/admin/customers", "/admin/payments", "/admin/calendar?from=2026-12-01&to=2026-12-31", "/admin/maintenance"]) {
       assert.equal((await staff(path)).status, 200, path);
     }
+    assert.equal((await staff("/admin/calendar")).status, 400, "calendar needs a from/to range");
     const b = await newBooking("2026-12-20", "2026-12-21");
     assert.equal((await staff(`/admin/bookings/${b.id}/status`, { method: "PATCH", body: { status: "confirmed" } })).status, 200);
     assert.equal((await staff(`/admin/bookings/${b.id}/payments`, { method: "POST", body: { amount: 50, method: "gcash" } })).status, 201);
+
+    // Staff keep the calendar up to date, but deleting stays admin-only.
+    const entry = await staff("/admin/calendar", { method: "POST", body: { title: "E2E reservation", entry_date: "2026-12-20", entry_type: "reservation" } });
+    assert.equal(entry.status, 201, entry.data.message);
+    const entryId = entry.data.id;
+    assert.equal((await staff(`/admin/calendar/${entryId}`, { method: "PATCH", body: { title: "E2E reservation", entry_date: "2026-12-20", status: "cancelled" } })).status, 200);
+    assert.equal((await staff(`/admin/calendar/${entryId}`, { method: "DELETE" })).status, 403, "staff cannot delete");
+    assert.equal((await admin(`/admin/calendar/${entryId}`, { method: "DELETE" })).status, 200);
   });
 
   await t.test("staff cannot do admin-only actions", async () => {
@@ -121,7 +130,7 @@ test("API workflow and permissions", { skip }, async (t) => {
     const blocked = [
       ["PATCH", "/admin/payments/1/void", { reason: "x" }], ["DELETE", "/admin/bookings/1"], ["POST", "/admin/inventory", item],
       ["PATCH", "/admin/inventory/1", item], ["DELETE", "/admin/inventory/1"], ["DELETE", "/admin/customers/1"],
-      ["GET", "/admin/reports"], ["GET", "/admin/settings"], ["PUT", "/admin/settings", { delivery_fee: 1 }],
+      ["DELETE", "/admin/calendar/1"], ["GET", "/admin/reports"], ["GET", "/admin/settings"], ["PUT", "/admin/settings", { delivery_fee: 1 }],
       ["GET", "/users"], ["GET", "/access/audit"]
     ];
     for (const [method, path, body] of blocked) {

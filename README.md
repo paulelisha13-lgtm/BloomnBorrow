@@ -31,7 +31,7 @@ BloomnBorrow/
 │   ├── main.jsx                  Mounts the app
 │   ├── App.jsx                   All routes (which page each URL shows, and who may open it)
 │   ├── pages/                    One file per screen: Dashboard, Inventory, Bookings, AddBooking,
-│   │                             Customers, Payments, Incidents, Maintenance, Reports, Settings,
+│   │                             Customers, Payments, Calendar, Maintenance, Reports, Settings,
 │   │                             AccessManagement, AuditLog, AccountSettings, Login
 │   ├── components/               Shared UI (Kpi, SortControls, ViewToggle, ProtectedRoute, ...)
 │   │   └── layout/               Admin shell: sidebar, top bar search, notifications, profile menu
@@ -42,7 +42,7 @@ BloomnBorrow/
 ├── server/
 │   ├── server.js                 API entry: security middleware, mounts routes/, starts jobs/
 │   ├── routes/                   One file per area: auth, users, bookings, inventory, customers,
-│   │                             payments, incidents, maintenance, reports, settings, notifications
+│   │                             payments, calendar, maintenance, reports, settings, notifications
 │   ├── lib/                      db, auth, validate, audit, dates, bookings, settings, ...
 │   ├── jobs/                     Background tasks: overdue check (hourly), audit-log cleanup (daily)
 │   ├── scripts/                  Command-line tools run with npm (migrate, seed, reset-password, ...)

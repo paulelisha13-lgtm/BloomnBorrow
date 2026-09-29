@@ -1021,3 +1021,88 @@ tr.table-subrow .payment-transaction-row{border:0}
 .password-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:var(--brand);font-size:12px;font-weight:750;padding:6px 8px;border-radius:8px;cursor:pointer}
 .password-toggle:hover{background:var(--brand-soft)}
 .password-toggle:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
+
+
+/* ---------------------------------------------------------------- Calendar */
+/* Calendar Reservation & Booking module. Everything here is prefixed cal- and
+   only used by src/pages/Calendar.jsx, so no existing rule had to change. */
+.cal-shell{padding:0;overflow:hidden}
+.cal-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 16px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.5)}
+.cal-bar-nav{display:flex;gap:6px}
+.cal-arrow{font-size:15px;line-height:1;padding:8px 12px}
+.cal-period{display:flex;gap:6px;align-items:center}
+.cal-select{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:9px;padding:7px 9px;font-size:12px;font-weight:700;cursor:pointer}
+.cal-select:hover{border-color:var(--brand)}
+.cal-year{min-width:74px}
+.cal-range-note{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.2px}
+.cal-weekdays{display:grid;grid-template-columns:repeat(7,1fr);background:var(--brand-soft);border-bottom:1px solid var(--line)}
+.cal-weekdays span{padding:9px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--brand-dark)}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:minmax(104px,auto)}
+.cal-cell{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:6px;display:flex;flex-direction:column;gap:5px;min-width:0;background:rgba(255,255,255,.35)}
+.cal-cell:nth-child(7n){border-right:0}
+.cal-cell-outside{background:rgba(226,236,235,.35)}
+.cal-cell-outside .cal-daynum{color:#a9bfbe}
+.cal-cell-today{background:rgba(223,245,243,.75);box-shadow:inset 0 0 0 1px var(--brand)}
+.cal-daynum{align-self:flex-start;border:0;background:transparent;color:var(--ink);font-size:13px;font-weight:700;line-height:1.2;padding:2px 6px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:5px}
+.cal-daynum:hover{background:var(--brand);color:#fff}
+.cal-today-tag{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--brand-dark)}
+.cal-daynum:hover .cal-today-tag{color:#fff}
+.cal-items{display:flex;flex-direction:column;gap:4px;min-width:0}
+.cal-pill{display:block;width:100%;text-align:left;border:0;border-left:3px solid var(--brand);border-radius:5px;padding:4px 7px;font-size:11px;font-weight:600;line-height:1.4;color:var(--ink);background:rgba(255,255,255,.85);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cal-pill em{font-style:normal;font-weight:700;font-size:10px;color:var(--brand-dark);margin-right:4px}
+.cal-pill-booking{border-left-color:#5360a9;background:rgba(233,236,251,.8)}
+.cal-pill-reservation{border-left-color:var(--brand)}
+.cal-pill-event{border-left-color:#15758a;background:rgba(228,245,247,.8)}
+.cal-pill-note{border-left-color:#ad751e;background:rgba(255,243,216,.75)}
+.cal-pill-completed{opacity:.7}
+.cal-pill-cancelled{opacity:.65;text-decoration:line-through}
+.cal-more{border:0;background:transparent;color:var(--brand-dark);font-size:10px;font-weight:700;text-align:left;padding:2px 6px;cursor:pointer;text-decoration:underline}
+.cal-more:hover{color:var(--ink)}
+.cal-add{margin-top:auto;align-self:flex-start;border:1px dashed var(--line);background:transparent;color:var(--muted);font-size:10px;font-weight:700;padding:3px 7px;border-radius:6px;cursor:pointer;opacity:0;transition:opacity .12s}
+.cal-cell:hover .cal-add{opacity:1}
+.cal-add:hover{border-color:var(--brand);color:var(--brand-dark)}
+.cal-filter-note{margin:0;padding:11px 16px;font-size:11px;font-weight:600;color:var(--muted);border-top:1px solid var(--line)}
+.cal-modal{width:min(720px,100%)}
+.cal-day-list{display:flex;flex-direction:column;gap:10px;max-height:60vh;overflow:auto}
+.cal-day-item{border:1px solid var(--line);border-radius:14px;padding:13px;background:rgba(255,255,255,.6)}
+.cal-day-item-booking{border-left:3px solid #5360a9}
+.cal-day-item-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:9px}
+.cal-day-item-head strong{font-size:14px;font-weight:700;color:var(--ink)}
+.cal-day-item .detail-grid{grid-template-columns:1fr 1fr;gap:15px 20px;margin-top:0}
+/* The shared .detail-grid has no rule for its children, so <small> and <strong>
+   would sit inline and run together ("CustomerPaul Rosald"). Stack them here. */
+.cal-day-item .detail-grid>div{min-width:0;display:flex;flex-direction:column;gap:3px}
+.cal-day-item .detail-grid small{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;line-height:1.3;color:var(--muted)}
+.cal-day-item .detail-grid strong{display:block;font-size:13px;font-weight:600;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
+.cal-day-text{margin:10px 0 0;font-size:13px;line-height:1.6;color:var(--ink)}
+.cal-day-actions{margin-top:11px}
+.cal-readonly{margin-left:auto;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
+.cal-kind{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;padding:4px 8px;border-radius:20px;background:var(--brand-soft);color:var(--brand-dark)}
+.cal-kind-booking{background:#e9ecfb;color:#5360a9}
+.cal-kind-event{background:#e4f5f7;color:#15758a}
+.cal-kind-note{background:#fff3d8;color:#ad751e}
+.cal-status-pending{background:#fff3d8;color:#ad751e}
+.cal-status-cancelled{background:#fdeaea;color:#bd4c58}
+[data-theme="dark"] .cal-bar{background:rgba(0,0,0,.18)}
+[data-theme="dark"] .cal-select{background:#0e2e2e}
+[data-theme="dark"] .cal-cell{background:rgba(255,255,255,.02)}
+[data-theme="dark"] .cal-cell-outside{background:rgba(0,0,0,.22)}
+[data-theme="dark"] .cal-cell-outside .cal-daynum{color:#5f7878}
+[data-theme="dark"] .cal-cell-today{background:rgba(20,194,196,.1)}
+[data-theme="dark"] .cal-pill{background:rgba(255,255,255,.07);color:var(--ink)}
+[data-theme="dark"] .cal-pill em{color:var(--brand)}
+[data-theme="dark"] .cal-pill-booking{background:rgba(83,96,169,.22)}
+[data-theme="dark"] .cal-pill-event{background:rgba(21,117,138,.25)}
+[data-theme="dark"] .cal-pill-note{background:rgba(173,117,30,.25)}
+[data-theme="dark"] .cal-day-item{background:rgba(255,255,255,.04)}
+[data-theme="dark"] .cal-status-pending{background:#2e2a10;color:#e8c84a}
+[data-theme="dark"] .cal-status-cancelled{background:#2e1418;color:#e88b93}
+@media (hover:none),(max-width:900px){
+  /* No hover on touch, so the per-day add button must stay visible. */
+  .cal-add{opacity:1}
+}
+@media (max-width:900px){
+  .cal-grid{grid-auto-rows:minmax(78px,auto)}
+  .cal-pill{font-size:10px}
+  .cal-day-item .detail-grid{grid-template-columns:1fr}
+}

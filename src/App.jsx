@@ -6,9 +6,9 @@ import { AccountSettings } from "./pages/AccountSettings";
 import { AddBooking } from "./pages/AddBooking";
 import { AuditLog } from "./pages/AuditLog";
 import { Bookings } from "./pages/Bookings";
+import { Calendar } from "./pages/Calendar";
 import { Customers } from "./pages/Customers";
 import { AdminDashboard } from "./pages/Dashboard";
-import { Incidents } from "./pages/Incidents";
 import { Inventory } from "./pages/Inventory";
 import { AccessLogin } from "./pages/Login";
 import { Maintenance } from "./pages/Maintenance";
@@ -26,7 +26,7 @@ function AdminRoutes() {
     <Route path="/admin/bookings/new" element={<ProtectedRoute roles={["admin","staff"]}><AddBooking/></ProtectedRoute>}/>
     <Route path="/admin/customers" element={<ProtectedRoute roles={["admin","staff"]}><Customers/></ProtectedRoute>}/>
     <Route path="/admin/payments" element={<ProtectedRoute roles={["admin","staff"]}><Payments/></ProtectedRoute>}/>
-    <Route path="/admin/incidents" element={<ProtectedRoute roles={["admin","staff"]}><Incidents/></ProtectedRoute>}/>
+    <Route path="/admin/calendar" element={<ProtectedRoute roles={["admin","staff"]}><Calendar/></ProtectedRoute>}/>
     <Route path="/admin/reports" element={<ProtectedRoute roles={["admin"]}><Reports/></ProtectedRoute>}/>
     <Route path="/admin/maintenance" element={<ProtectedRoute roles={["admin","staff"]}><Maintenance/></ProtectedRoute>}/>
     <Route path="/admin/access" element={<ProtectedRoute roles={["admin"]}><AccessManagement/></ProtectedRoute>}/>

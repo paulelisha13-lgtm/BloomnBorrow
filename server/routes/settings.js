@@ -5,10 +5,7 @@ import { audit, changedFields } from "../lib/audit.js";
 
 const router = Router();
 
-// Readable by staff too: the print invoice renders the same business branding
-// as the emailed one, and staff are allowed to send invoices. No credentials
-// live in business_settings, and the write route below stays admin-only.
-router.get("/api/admin/settings", authenticate, requireRole("admin","staff"), async (_req,res) => {
+router.get("/api/admin/settings", authenticate, requireRole("admin"), async (_req,res) => {
   const [rows]=await db.query("SELECT setting_key,setting_value FROM business_settings ORDER BY setting_key");
   res.json({settings:Object.fromEntries(rows.map(x=>[x.setting_key,x.setting_value]))});
 });
