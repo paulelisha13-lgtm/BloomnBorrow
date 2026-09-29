@@ -6,6 +6,7 @@ import { SortControls } from "../components/SortControls";
 import { ViewToggle } from "../components/ViewToggle";
 import { sortRows, useSort } from "../hooks/useSort";
 import { useViewMode } from "../hooks/useViewMode";
+import { useBusinessProfile } from "../hooks/useBusinessProfile";
 import { peso } from "../lib/format";
 import { openInvoice } from "../lib/invoice";
 import { isAdminUser } from "../lib/roles";
@@ -22,6 +23,7 @@ export function Payments() {
   const [voiding,setVoiding]=useState(false);
   const [sendingInvoice,setSendingInvoice]=useState(null);
   const [sentInvoiceId,setSentInvoiceId]=useState(null);
+  const business=useBusinessProfile();
   const canVoid=isAdminUser();
 
   const load=()=>api("/admin/payments").then(d=>setRows(d.payments||[])).catch(e=>setError(e.message));
@@ -88,7 +90,7 @@ export function Payments() {
   const printInvoice=async(p)=>{
     try {
       const data=await api(`/admin/bookings/${p.booking_id}`);
-      openInvoice(data.booking);
+      openInvoice(data.booking,business);
     } catch(e) { setError(`Could not prepare invoice: ${e.message}`); }
   };
 

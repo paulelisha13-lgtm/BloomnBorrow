@@ -8,8 +8,8 @@ import { getAvailability, bookingDetailById, validTransitions, recalcPaymentStat
 import { lateDaysSince, parseDateOnly, rentalDays, toDateOnly } from "../lib/dates.js";
 import { generateIncidentNo } from "../lib/incidents.js";
 import { addNotification } from "../lib/notifications.js";
-import { getSetting } from "../lib/settings.js";
-import { renderInvoiceHtml } from "../lib/invoiceTemplate.js";
+import { getSetting, getSettings } from "../lib/settings.js";
+import { INVOICE_BRANDING_KEYS, renderInvoiceHtml, renderInvoiceText } from "../lib/invoiceTemplate.js";
 import { sendMail } from "../lib/mailer.js";
 
 const router = Router();
@@ -325,10 +325,12 @@ router.post("/api/admin/bookings/:id/send-invoice", authenticate, requireRole("a
   const to = req.body.email || booking.customer_email;
   if (!to) return res.status(400).json({message:"This booking has no customer email on file. Add one or send to a specific address."});
   try {
+    const business = await getSettings(INVOICE_BRANDING_KEYS);
     await sendMail({
       to,
-      subject: `Invoice ${booking.booking_no} — Bloom & Borrow`,
-      html: renderInvoiceHtml(booking)
+      subject: `Invoice ${booking.booking_no} — ${business.business_name || "Bloom & Borrow"}`,
+      html: renderInvoiceHtml(booking, business),
+      text: renderInvoiceText(booking, business)
     });
   } catch (error) {
     return res.status(502).json({message:`Could not send the invoice email: ${error.message}`});

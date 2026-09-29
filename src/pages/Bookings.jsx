@@ -7,6 +7,7 @@ import { SortControls } from "../components/SortControls";
 import { ViewToggle } from "../components/ViewToggle";
 import { sortRows, useSort } from "../hooks/useSort";
 import { useViewMode } from "../hooks/useViewMode";
+import { useBusinessProfile } from "../hooks/useBusinessProfile";
 import { peso } from "../lib/format";
 import { balanceStatus, openInvoice, paymentBreakdown } from "../lib/invoice";
 import { isAdminUser } from "../lib/roles";
@@ -29,6 +30,7 @@ export function Bookings() {
   const [inspectSubmitting,setInspectSubmitting]=useState(false);
   const [sendingInvoice,setSendingInvoice]=useState(false);
   const [invoiceSent,setInvoiceSent]=useState(false);
+  const business=useBusinessProfile();
 
   const load=()=>api("/admin/bookings").then(d=>setRows(d.bookings||[])).catch(e=>setError(e.message));
   React.useEffect(()=>{load()},[]);
@@ -243,7 +245,7 @@ export function Bookings() {
       </div>
       <div className="booking-modal-section">
         <div className="booking-section-header"><strong>Payments</strong></div>
-        {detail.payments.length?<div className="booking-payments-list">{detail.payments.map(p=><div className="booking-payment-row" key={p.id}><div className="booking-payment-info"><strong>{p.payment_type==="refund"?"−":""}{peso(Number(p.amount))}</strong><small>{p.payment_type} · {p.method}{p.notes?` · ${p.notes}`:""}</small></div><div className="booking-payment-actions"><span className={`status-pill ${p.status==="completed"?"confirmed":"pending"}`}>{p.status}</span><button className="mini-button" onClick={()=>openInvoice(detail)}>Invoice</button></div></div>)}</div>:<div className="booking-empty-state">No payments recorded yet.</div>}
+        {detail.payments.length?<div className="booking-payments-list">{detail.payments.map(p=><div className="booking-payment-row" key={p.id}><div className="booking-payment-info"><strong>{p.payment_type==="refund"?"−":""}{peso(Number(p.amount))}</strong><small>{p.payment_type} · {p.method}{p.notes?` · ${p.notes}`:""}</small></div><div className="booking-payment-actions"><span className={`status-pill ${p.status==="completed"?"confirmed":"pending"}`}>{p.status}</span><button className="mini-button" onClick={()=>openInvoice(detail,business)}>Invoice</button></div></div>)}</div>:<div className="booking-empty-state">No payments recorded yet.</div>}
       </div>
       <div className="booking-modal-section">
         <div className="booking-section-header"><strong>Status History</strong></div>

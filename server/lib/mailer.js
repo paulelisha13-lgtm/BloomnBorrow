@@ -24,12 +24,27 @@ function getTransporter() {
   return transporter;
 }
 
-export async function sendMail({ to, subject, html }) {
-  const fromName = process.env.SMTP_FROM_NAME || "Bloom & Borrow";
-  await getTransporter().sendMail({
-    from: `"${fromName}" <${process.env.SMTP_USER}>`,
+// Gmail's SMTP server replaces the From display name with the sending
+// account's own name, so SMTP_FROM_NAME is a hint, not a guarantee. Strip any
+// address syntax from it: pasting a whole "From:" header in (which carries an
+// angle-bracketed address) would otherwise produce a doubled, malformed header
+// that shows up as garbage in the recipient's sender line.
+export function fromDisplayName(value) {
+  const cleaned = String(value ?? "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || "Bloom & Borrow";
+}
+
+export async function sendMail({ to, subject, html, text }) {
+  const message = {
+    from: `"${fromDisplayName(process.env.SMTP_FROM_NAME)}" <${process.env.SMTP_USER}>`,
     to,
-    subject,
-    html
-  });
+    subject
+  };
+  if (html) message.html = html;
+  if (text) message.text = text;
+  await getTransporter().sendMail(message);
 }
