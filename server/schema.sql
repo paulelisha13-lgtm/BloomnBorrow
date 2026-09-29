@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(190) NOT NULL UNIQUE,
   phone VARCHAR(40) NULL,
   password_hash VARCHAR(255) NOT NULL,
-  role ENUM('admin','driver') NOT NULL DEFAULT 'driver',
+  role ENUM('admin','staff') NOT NULL DEFAULT 'staff',
   status ENUM('active','disabled') NOT NULL DEFAULT 'active',
   failed_login_attempts INT NOT NULL DEFAULT 0,
   locked_until DATETIME NULL,
@@ -211,40 +211,6 @@ CREATE TABLE IF NOT EXISTS business_settings (
   setting_key VARCHAR(100) PRIMARY KEY,
   setting_value TEXT NULL,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
-
-
-CREATE TABLE IF NOT EXISTS customer_accounts (
-  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  customer_id BIGINT UNSIGNED NOT NULL UNIQUE,
-  email VARCHAR(190) NOT NULL UNIQUE,
-  password_hash VARCHAR(255) NOT NULL,
-  status ENUM('active','disabled') NOT NULL DEFAULT 'active',
-  last_login_at DATETIME NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  CONSTRAINT fk_customer_account_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS customer_favorites (
-  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  customer_account_id BIGINT UNSIGNED NOT NULL,
-  rental_item_id INT UNSIGNED NOT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_customer_favorite (customer_account_id,rental_item_id),
-  CONSTRAINT fk_favorite_account FOREIGN KEY (customer_account_id) REFERENCES customer_accounts(id) ON DELETE CASCADE,
-  CONSTRAINT fk_favorite_item FOREIGN KEY (rental_item_id) REFERENCES rental_items(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS customer_saved_addresses (
-  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  customer_account_id BIGINT UNSIGNED NOT NULL,
-  label VARCHAR(80) NOT NULL DEFAULT 'Home',
-  address TEXT NOT NULL,
-  city VARCHAR(120) NULL,
-  is_default TINYINT(1) NOT NULL DEFAULT 0,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT fk_saved_address_account FOREIGN KEY (customer_account_id) REFERENCES customer_accounts(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS item_conditions (

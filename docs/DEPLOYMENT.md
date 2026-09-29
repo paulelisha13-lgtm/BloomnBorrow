@@ -197,4 +197,4 @@ App service → **Settings** → **Networking** → **Custom Domain** → add
 
 ---
 
-For local development, see [README.md](README.md).
+For local development, see [README.md](../README.md).

@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "dev:server": "npm --prefix server run dev",
-    "server": "npm --prefix server start"
+    "server": "npm --prefix server start",
+    "test": "node --test \"tests/*.test.js\" && npm --prefix server test"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.3.4",

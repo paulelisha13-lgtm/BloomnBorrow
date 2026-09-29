@@ -6,13 +6,16 @@
   "scripts": {
     "dev": "node --watch server.js",
     "start": "node server.js",
-    "seed": "node seed.js",
-    "migrate": "node migrate.js",
-    "bootstrap-admin": "node bootstrap-admin.js",
-    "security:check": "node security-check.js",
     "start:production": "node production-start.js",
-    "preflight": "node production-preflight.js",
-    "release:check": "node release-check.js"
+    "migrate": "node scripts/migrate.js",
+    "seed": "node scripts/seed.js",
+    "bootstrap-admin": "node scripts/bootstrap-admin.js",
+    "reset-password": "node scripts/reset-admin-password.js",
+    "security:check": "node scripts/security-check.js",
+    "preflight": "node scripts/production-preflight.js",
+    "release:check": "node scripts/release-check.js",
+    "test": "node --test \"tests/*.test.js\"",
+    "test:api": "node --test tests/api.integration.test.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

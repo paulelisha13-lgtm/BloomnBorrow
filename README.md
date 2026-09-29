@@ -1,20 +1,14 @@
-# Bloom&Borrow — Complete Rental Management System
+# Bloom&Borrow — Inventory Management System
 
-This build completes the end-to-end rental workflow using React + Express + MySQL.
-
-## Customer Website
-- Browse live rental inventory from MySQL
-- Guest checkout (no account required)
-- Date + quantity availability engine
-- Overbooking protection with MySQL transaction/row lock
-- Delivery or pickup
-- Cash / GCash selection
-- Automatic booking number
-- Booking tracking by booking number + email
+An admin-only inventory and rental management system built with React + Express + MySQL.
+There is no public customer website: every page requires an admin sign-in, and
+bookings are entered by staff from **Add Booking**.
 
 ## Admin
 - Live dashboard
 - Full inventory CRUD
+- Manual booking entry with date + quantity availability check
+- Overbooking protection with MySQL transaction/row lock
 - Booking approval / rejection / cancellation
 - Reschedule / extend booking
 - Ready / Rented / Returned / Completed workflow
@@ -27,6 +21,58 @@ This build completes the end-to-end rental workflow using React + Express + MySQ
 - Maintenance
 - Business settings
 - Admin access management
+
+## Project structure
+
+```
+BloomnBorrow/
+├── index.html, package.json      Frontend (Vite + React) entry and dependencies
+├── src/
+│   ├── main.jsx                  Mounts the app
+│   ├── App.jsx                   All routes (which page each URL shows, and who may open it)
+│   ├── pages/                    One file per screen: Dashboard, Inventory, Bookings, AddBooking,
+│   │                             Customers, Payments, Incidents, Maintenance, Reports, Settings,
+│   │                             AccessManagement, AuditLog, AccountSettings, Login
+│   ├── components/               Shared UI (Kpi, SortControls, ViewToggle, ProtectedRoute, ...)
+│   │   └── layout/               Admin shell: sidebar, top bar search, notifications, profile menu
+│   ├── hooks/                    useSort, useViewMode
+│   ├── lib/                      api.js (server calls), format.js, invoice.js, roles.js
+│   ├── assets/                   logo.png
+│   └── styles.css
+├── server/
+│   ├── server.js                 API entry: security middleware, mounts routes/, starts jobs/
+│   ├── routes/                   One file per area: auth, users, bookings, inventory, customers,
+│   │                             payments, incidents, maintenance, reports, settings, notifications
+│   ├── lib/                      db, auth, validate, audit, dates, bookings, settings, ...
+│   ├── jobs/                     Background tasks: overdue check (hourly), audit-log cleanup (daily)
+│   ├── scripts/                  Command-line tools run with npm (migrate, seed, reset-password, ...)
+│   ├── migrations/               Database changes, applied in order by `npm run migrate`
+│   └── schema.sql                Base database schema
+└── docs/                         DEPLOYMENT.md, SECURITY.md, brand/ (full-size logo)
+```
+
+Useful server commands (run inside `server/`):
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Start the API and restart it on file changes |
+| `npm run migrate` | Create/update database tables (safe to re-run) |
+| `npm run reset-password -- <email> <newPassword>` | Set a new password for a staff/admin account and clear any lock |
+
+## Tests
+
+```bash
+npm test          # from the project root: frontend helpers + server unit tests (no database needed)
+```
+
+The API test suite runs the real workflow (bookings, late fees, payments/voids, staff vs admin
+permissions) against a running server and database. It is skipped unless you give it an admin login,
+and it deletes everything it creates (all test records use `e2e-*@example.com` emails):
+
+```bash
+cd server
+BB_TEST_ADMIN_EMAIL=you@example.com BB_TEST_ADMIN_PASSWORD='...' npm run test:api
+```
 
 ## Main database tables
 - users
@@ -76,7 +122,7 @@ npm run dev
 ```
 
 ### 4. Login
-`http://localhost:5173/access/login`
+`http://localhost:5173` (redirects to the sign-in page)
 
 Seeded Admin:
 - Local-development sign-in details printed once by `npm run seed`
@@ -85,39 +131,17 @@ Save the printed password immediately. Later seed runs preserve the existing adm
 
 ## Recommended test flow
 1. Admin creates/edits inventory.
-2. Customer browses `/rentals`.
-3. Customer adds an item and completes Guest Checkout.
-4. Admin opens `/admin/bookings`.
-5. Approve → Ready.
-6. Admin records payments.
-7. Record return inspection.
-8. Enter damage/late charges if needed.
-9. Complete rental and record deposit refund.
-10. Review reports and maintenance.
+2. Admin opens **Add Booking** (`/admin/bookings/new`) and enters the customer's booking.
+3. Admin opens `/admin/bookings`.
+4. Approve → Ready.
+5. Admin records payments.
+6. Record return inspection.
+7. Enter damage/late charges if needed.
+8. Complete rental and record deposit refund.
+9. Review reports and maintenance.
 
 ## Production notes
 This is a complete functional foundation. Before a public production launch, add your real payment gateway, email/SMS provider, persistent image storage, HTTPS deployment secrets, automated backups, and integration tests.
-
-
-## App.jsx hotfix
-Fixed the malformed multiline JavaScript string in the Admin Booking Management functions.
-
-
-## Customer Account Fix
-The previous "Create account" and "Sign in" buttons were UI placeholders only. This build adds a real optional customer account module.
-
-New endpoints:
-- `POST /api/customer-auth/register`
-- `POST /api/customer-auth/login`
-- `GET /api/customer-account/me`
-- saved-address and favorites endpoints
-
-New tables:
-- `customer_accounts`
-- `customer_saved_addresses`
-- `customer_favorites`
-
-For local development, run `npm run seed` again from `server` so the new tables are created. Do not run it in production.
 
 
 # Production release
@@ -136,4 +160,4 @@ npm run preflight
 npm run start:production
 ```
 
-Read [SECURITY.md](SECURITY.md) and [DEPLOYMENT.md](DEPLOYMENT.md) before launch. The frontend must also be built with a production `VITE_API_URL`; see the deployment guide.
+Read [docs/SECURITY.md](docs/SECURITY.md) and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) before launch. The frontend must also be built with a production `VITE_API_URL`; see the deployment guide.

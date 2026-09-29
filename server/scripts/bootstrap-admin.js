@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import dotenv from "dotenv";
 import fs from "fs";
 import readline from "readline";
-import { db } from "./db.js";
+import { db } from "../lib/db.js";
 
 if (fs.existsSync(".env")) {
   dotenv.config({ path: ".env" });

@@ -1,12 +1,12 @@
 import bcrypt from "bcryptjs";
 import "dotenv/config";
-import { db } from "./db.js";
+import { db } from "../lib/db.js";
 
 const email = (process.argv[2] || "admin@bloom-borrow.local").toLowerCase();
 const password = process.argv[3];
 
 if (!password) {
-  console.error('Usage: node reset-admin-password.js <email> <newPassword>');
+  console.error('Usage: npm run reset-password -- <email> <newPassword>');
   process.exit(1);
 }
 

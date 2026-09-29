@@ -70,7 +70,7 @@ try {
   });
 
   console.log("[seed] Applying database schema...");
-  let schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
+  let schema = fs.readFileSync(path.join(__dirname, "..", "schema.sql"), "utf8");
 
   // schema.sql contains CREATE DATABASE / USE for manual execution.
   // Remove them here because this connection already selected DB_NAME.

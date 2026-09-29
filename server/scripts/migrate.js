@@ -1,8 +1,11 @@
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import mysql from "mysql2/promise";
 import "dotenv/config";
 
+// schema.sql and migrations/ live in server/, one level above this script.
+const serverDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const database = process.env.DB_NAME || "bloom_borrow";
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -30,12 +33,12 @@ const conn = await mysql.createConnection({
 await conn.query(`CREATE DATABASE IF NOT EXISTS \`${database.replace(/`/g, "")}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
 await conn.query(`USE \`${database.replace(/`/g, "")}\``);
 
-let sql = fs.readFileSync(path.resolve("schema.sql"), "utf8");
+let sql = fs.readFileSync(path.join(serverDir, "schema.sql"), "utf8");
 sql = sql.replace(/CREATE DATABASE IF NOT EXISTS[\s\S]*?;\s*USE\s+\w+\s*;/i, "");
 await conn.query(sql);
 console.log("Base schema applied.");
 
-const migrationsDir = path.resolve("migrations");
+const migrationsDir = path.join(serverDir, "migrations");
 if (fs.existsSync(migrationsDir)) {
   const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith(".sql")).sort();
   for (const file of files) {

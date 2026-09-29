@@ -1,15 +1,16 @@
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 
 const failures = [];
-const root = path.resolve("..");
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+// Every frontend source file, plus the release docs.
+const walk = dir => fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }).flatMap(e =>
+  e.isDirectory() ? walk(path.join(dir, e.name)) : /\.jsx?$/.test(e.name) ? [path.join(dir, e.name)] : []) : [];
 const targets = [
-  "src/App.jsx",
-  "src/api.js",
-  "README.md",
-  "CLIENT-RELEASE.md",
-  "FINAL-GO-LIVE.md"
-].map(x => path.join(root, x));
+  ...walk(path.join(root, "src")),
+  ...["README.md", "CLIENT-RELEASE.md", "FINAL-GO-LIVE.md"].map(x => path.join(root, x))
+];
 
 const forbidden = [
   "admin@bloom-borrow.local",
@@ -31,11 +32,11 @@ for (const file of targets) {
   }
 }
 
-const apiPath = path.join(root, "src", "api.js");
+const apiPath = path.join(root, "src", "lib", "api.js");
 if (fs.existsSync(apiPath)) {
   const api = fs.readFileSync(apiPath, "utf8");
   if (!api.includes('credentials: "include"')) {
-    failures.push("src/api.js is not sending cookie credentials.");
+    failures.push("src/lib/api.js is not sending cookie credentials.");
   }
 }
 

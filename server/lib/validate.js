@@ -51,7 +51,7 @@ export const schemas = {
     full_name: name,
     email,
     phone: z.string().trim().max(32).optional().default(""),
-    role: z.enum(["admin"]),
+    role: z.enum(["admin", "staff"]),
     password,
   }),
 
@@ -69,32 +69,6 @@ export const schemas = {
     current_password: z.string().min(1, "is required").max(200),
     new_password: password,
   }),
-
-  guestBooking: z
-    .object({
-      full_name: name,
-      email,
-      phone,
-      city: optText(120),
-      address: optText(500),
-      province: optText(120),
-      postal_code: optText(20),
-      notes: optText(1000),
-      start_date: dateOnly,
-      end_date: dateOnly,
-      fulfillment: z.enum(["pickup", "delivery"]).optional().default("delivery"),
-      payment_method: z.enum(["cash", "gcash", "bank_transfer", "other"]).optional().default("cash"),
-      items: z
-        .array(
-          z.object({
-            item_id: positiveId,
-            quantity: z.coerce.number().int().min(1, "must be at least 1").max(1000, "is too large"),
-          })
-        )
-        .min(1, "at least one item is required")
-        .max(50, "has too many items"),
-    })
-    .superRefine(rangeWithinAYear),
 
   adminBooking: z
     .object({
@@ -126,8 +100,8 @@ export const schemas = {
       }
     }),
 
-  // Public pre-check before booking: same date/item bounds as guestBooking so an
-  // anonymous caller cannot make the server run an unbounded number of queries.
+  // Stock pre-check for the Add Booking form: bounded item list and date range
+  // so one request cannot make the server run an unbounded number of queries.
   availabilityCheck: z
     .object({
       start_date: dateOnly,
