@@ -106,6 +106,22 @@ JWT_SECRET=use-a-long-random-secret-at-least-32-characters
 JWT_EXPIRES_IN=8h
 ```
 
+To let staff email invoices to customers from Payments/Bookings ("Send Invoice"), also set:
+```env
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_USER=your-business-account@gmail.com
+SMTP_PASS=your-16-character-app-password
+SMTP_FROM_NAME=Bloom & Borrow
+```
+`SMTP_HOST`/`SMTP_PORT` default to Gmail's SMTP server if left unset, so with a Gmail
+address you only need `SMTP_USER`/`SMTP_PASS`. `SMTP_PASS` is not your Gmail login
+password — turn on 2-Step Verification on the Gmail account, then generate an App
+Password at https://myaccount.google.com/apppasswords and use that instead. To send
+through a different provider (SendGrid, Amazon SES, a relay, ...), set `SMTP_HOST`/
+`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS` to that provider's values. Without `SMTP_USER`/
+`SMTP_PASS` set, "Send Invoice" will return an error instead of sending mail.
+
 ### 2. Create a local database and start the API
 ```bash
 cd server

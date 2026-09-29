@@ -27,11 +27,23 @@ export function Bookings() {
   const [showInspectModal,setShowInspectModal]=useState(false);
   const [inspectForm,setInspectForm]=useState({condition:"Good",damage_charge:"0",maintenance_required:false});
   const [inspectSubmitting,setInspectSubmitting]=useState(false);
+  const [sendingInvoice,setSendingInvoice]=useState(false);
+  const [invoiceSent,setInvoiceSent]=useState(false);
 
   const load=()=>api("/admin/bookings").then(d=>setRows(d.bookings||[])).catch(e=>setError(e.message));
   React.useEffect(()=>{load()},[]);
-  const open=async(id)=>{setError("");try{setDetail((await api(`/admin/bookings/${id}`)).booking)}catch(e){setError(e.message)}};
+  const open=async(id)=>{setError("");setInvoiceSent(false);try{setDetail((await api(`/admin/bookings/${id}`)).booking)}catch(e){setError(e.message)}};
   const act=async(path,body={})=>{setBusy(true);setError("");try{await api(path,{method:"PATCH",body:JSON.stringify(body)});if(detail)await open(detail.id);load()}catch(e){setError(e.message)}finally{setBusy(false)}};
+
+  const sendInvoice=async()=>{
+    setSendingInvoice(true);setError("");
+    try{
+      await api(`/admin/bookings/${detail.id}/send-invoice`,{method:"POST",body:JSON.stringify({})});
+      setInvoiceSent(true);
+      setTimeout(()=>setInvoiceSent(false),3000);
+    }catch(e){setError(`Could not send invoice: ${e.message}`)}
+    finally{setSendingInvoice(false)}
+  };
 
   const deleteBooking=async()=>{
     if(!deleteBookingTarget)return;
@@ -218,6 +230,7 @@ export function Bookings() {
           <div className="booking-actions-label">Payments</div>
           <div className="booking-actions">
             <button className="primary-button" onClick={openPaymentModal}>Add Payment</button>
+            <button className="secondary-button" disabled={sendingInvoice||!detail.customer_email} title={detail.customer_email?"":"This booking has no customer email on file"} onClick={sendInvoice}>{sendingInvoice?"Sending...":invoiceSent?"Sent ✓":"Email Invoice"}</button>
           </div>
         </div>
         <div className="booking-actions-group">

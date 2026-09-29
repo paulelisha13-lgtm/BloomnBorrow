@@ -165,6 +165,12 @@ export const schemas = {
     reference_no: optText(80),
     notes: optText(500),
   }),
+
+  sendInvoice: z.object({
+    // Defaults to the booking's customer_email when omitted; only present to
+    // let staff redirect a resend to a corrected address.
+    email: z.string().trim().toLowerCase().max(160).regex(EMAIL_RE, "must be a valid email address").optional(),
+  }),
 };
 
 // Express middleware: validate + normalise req.body, or reply 400 with the first

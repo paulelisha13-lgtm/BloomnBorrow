@@ -9,6 +9,8 @@ import { lateDaysSince, parseDateOnly, rentalDays, toDateOnly } from "../lib/dat
 import { generateIncidentNo } from "../lib/incidents.js";
 import { addNotification } from "../lib/notifications.js";
 import { getSetting } from "../lib/settings.js";
+import { renderInvoiceHtml } from "../lib/invoiceTemplate.js";
+import { sendMail } from "../lib/mailer.js";
 
 const router = Router();
 
@@ -314,6 +316,25 @@ router.post("/api/admin/bookings/:id/complete", authenticate, requireRole("admin
   await recalcPaymentStatus(id);
   await audit(req,"COMPLETE_BOOKING",null,{booking_id:id,booking_no:booking.booking_no,deposit_refund:booking.inspection?.deposit_refund||0});
   res.json({ok:true});
+});
+
+router.post("/api/admin/bookings/:id/send-invoice", authenticate, requireRole("admin","staff"), requireStaffCsrf, parseBody(schemas.sendInvoice), async (req,res) => {
+  const id = Number(req.params.id);
+  const booking = await bookingDetailById(id);
+  if (!booking) return res.status(404).json({message:"Booking not found."});
+  const to = req.body.email || booking.customer_email;
+  if (!to) return res.status(400).json({message:"This booking has no customer email on file. Add one or send to a specific address."});
+  try {
+    await sendMail({
+      to,
+      subject: `Invoice ${booking.booking_no} — Bloom & Borrow`,
+      html: renderInvoiceHtml(booking)
+    });
+  } catch (error) {
+    return res.status(502).json({message:`Could not send the invoice email: ${error.message}`});
+  }
+  await audit(req,"SEND_INVOICE_EMAIL",null,{booking_id:id,booking_no:booking.booking_no,to});
+  res.json({ok:true, sent_to: to});
 });
 
 router.post("/api/admin/overdue-check", authenticate, requireRole("admin"), async (req,res) => {

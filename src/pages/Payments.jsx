@@ -20,6 +20,8 @@ export function Payments() {
   const [voidTarget,setVoidTarget]=useState(null);
   const [voidReason,setVoidReason]=useState("");
   const [voiding,setVoiding]=useState(false);
+  const [sendingInvoice,setSendingInvoice]=useState(null);
+  const [sentInvoiceId,setSentInvoiceId]=useState(null);
   const canVoid=isAdminUser();
 
   const load=()=>api("/admin/payments").then(d=>setRows(d.payments||[])).catch(e=>setError(e.message));
@@ -90,6 +92,16 @@ export function Payments() {
     } catch(e) { setError(`Could not prepare invoice: ${e.message}`); }
   };
 
+  const sendInvoice=async(p)=>{
+    setSendingInvoice(p.booking_id);setError("");
+    try {
+      await api(`/admin/bookings/${p.booking_id}/send-invoice`,{method:"POST",body:JSON.stringify({})});
+      setSentInvoiceId(p.booking_id);
+      setTimeout(()=>setSentInvoiceId(id=>id===p.booking_id?null:id),3000);
+    } catch(e) { setError(`Could not send invoice: ${e.message}`); }
+    finally { setSendingInvoice(null); }
+  };
+
   return <AdminShell title="Payments" subtitle="Payment, deposit and refund transaction history with invoicing.">
     {error&&<div className="login-error">{error}</div>}
 
@@ -142,6 +154,7 @@ export function Payments() {
             <td onClick={e=>e.stopPropagation()}><div className="table-actions">
               <button className="mini-button" onClick={()=>setExpanded(expanded===g.booking_id?null:g.booking_id)}>{expanded===g.booking_id?"Hide":"Details"}</button>
               <button className="mini-button" onClick={()=>printInvoice(g.payments[0])}>Invoice</button>
+              <button className="mini-button" disabled={sendingInvoice===g.booking_id} onClick={()=>sendInvoice(g.payments[0])}>{sendingInvoice===g.booking_id?"Sending...":sentInvoiceId===g.booking_id?"Sent ✓":"Email"}</button>
             </div></td>
           </tr>,
           expanded===g.booking_id&&<tr key={g.booking_id+"-x"} className="table-subrow"><td colSpan="8">
@@ -202,6 +215,7 @@ export function Payments() {
           <div className="payment-card-footer">
             <button className="secondary-button" onClick={()=>setExpanded(expanded===g.booking_id?null:g.booking_id)}>{expanded===g.booking_id?"Hide Details":"View Details"}</button>
             <button className="secondary-button" onClick={()=>printInvoice(g.payments[0])}>Print Invoice</button>
+            <button className="secondary-button" disabled={sendingInvoice===g.booking_id} onClick={()=>sendInvoice(g.payments[0])}>{sendingInvoice===g.booking_id?"Sending...":sentInvoiceId===g.booking_id?"Sent ✓":"Email Invoice"}</button>
           </div>
         </article>)}
       </div>}
