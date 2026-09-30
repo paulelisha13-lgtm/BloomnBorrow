@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CustomerShell } from "../../components/customer/CustomerShell";
 import { FilterSidebar } from "../../components/customer/FilterSidebar";
+import { CartContents } from "../../components/customer/CartContents";
 import { useCart } from "../../context/CartContext";
 import { publicApi } from "../../lib/publicApi";
 import { peso } from "../../lib/format";
@@ -13,7 +14,7 @@ const readBrowseState = () => {
 
 export function CustomerCatalog() {
   const navigate = useNavigate();
-  const { addItem } = useCart();
+  const { addItem, items: cartItems, count } = useCart();
   const [items, setItems] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -88,6 +89,17 @@ export function CustomerCatalog() {
             </article>;
           })}
         </div>}
+
+      <aside className="shop-cart-panel">
+        <div className="shop-cart-panel-head">
+          <strong>Your cart</strong>
+          {count > 0 && <span className="shop-cart-panel-count">{count} {count === 1 ? "item" : "items"}</span>}
+        </div>
+        {cartItems.length === 0 ? <div className="shop-cart-panel-empty">
+          <strong>Your cart is empty</strong>
+          <p>Add items and they'll appear here before you proceed to rental.</p>
+        </div> : <CartContents showContinue={false} />}
+      </aside>
     </div>
   </CustomerShell>;
 }

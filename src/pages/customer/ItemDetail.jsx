@@ -54,6 +54,7 @@ export function CustomerItemDetail() {
 
   return <CustomerShell>
     {toast && <div className="shop-toast">✓ Added to cart</div>}
+    <button type="button" className="shop-back-link" onClick={() => navigate(-1)}>← Back</button>
     <div className="shop-item-layout">
       <div className="shop-item-media admin-card">
         {item.image_url ? <img src={item.image_url} alt={item.name} /> : <div className="inventory-card-noimage">🌸</div>}

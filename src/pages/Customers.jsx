@@ -200,7 +200,6 @@ export function Customers() {
     </div></div>}
 
     {deleteConfirm&&<div className="modal-backdrop" onClick={()=>setDeleteConfirm(null)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
-      <div className="confirm-modal-icon">🗑</div>
       <h3>Delete Customer</h3>
       <p>Are you sure you want to delete <strong>{deleteConfirm.full_name}</strong>?</p>
       <small>This will permanently remove the customer and their data. This action cannot be undone.</small>

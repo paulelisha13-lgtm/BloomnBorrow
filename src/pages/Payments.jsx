@@ -225,7 +225,6 @@ export function Payments() {
     </section>
 
     {voidTarget&&<div className="modal-backdrop" onClick={()=>setVoidTarget(null)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
-      <div className="confirm-modal-icon">⊘</div>
       <h3>Void Payment</h3>
       <p>Void this <strong>{voidTarget.payment_type}</strong> payment of <strong>{peso(Number(voidTarget.amount))}</strong>?</p>
       <small>It will no longer count toward totals, but the record stays in the history.</small>
@@ -237,7 +236,6 @@ export function Payments() {
     </div></div>}
 
     {invoiceConfirm&&<div className="modal-backdrop" onClick={()=>setInvoiceConfirm(null)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
-      <div className="confirm-modal-icon">📧</div>
       <h3>Send Invoice Email</h3>
       {invoiceConfirm.customer_email?<p>Send the invoice for <strong>{invoiceConfirm.booking_no}</strong> to <strong>{invoiceConfirm.customer_email}</strong>?</p>
         :<p>This booking has no customer email on file. Add one before sending.</p>}

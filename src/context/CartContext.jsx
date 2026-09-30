@@ -23,11 +23,12 @@ export function CartProvider({ children }) {
   }, [items]);
 
   const addItem = (item, quantity = 1) => setItems(prev => {
+    const cap = item.available_quantity ?? Infinity;
     const existing = prev.find(x => x.item_id === item.id);
-    if (existing) return prev.map(x => x.item_id === item.id ? { ...x, quantity: x.quantity + quantity } : x);
-    return [...prev, { item_id: item.id, name: item.name, category: item.category, image_url: item.image_url, daily_price: Number(item.daily_price), security_deposit: Number(item.security_deposit), quantity }];
+    if (existing) return prev.map(x => x.item_id === item.id ? { ...x, available_quantity: cap, quantity: Math.min(cap, x.quantity + quantity) } : x);
+    return [...prev, { item_id: item.id, name: item.name, category: item.category, image_url: item.image_url, daily_price: Number(item.daily_price), security_deposit: Number(item.security_deposit), available_quantity: cap, quantity: Math.min(cap, quantity) }];
   });
-  const setQuantity = (itemId, quantity) => setItems(prev => prev.map(x => x.item_id === itemId ? { ...x, quantity: Math.max(1, quantity) } : x));
+  const setQuantity = (itemId, quantity) => setItems(prev => prev.map(x => x.item_id === itemId ? { ...x, quantity: Math.max(1, Math.min(x.available_quantity ?? Infinity, quantity)) } : x));
   const removeItem = itemId => setItems(prev => prev.filter(x => x.item_id !== itemId));
   const clear = () => setItems([]);
   const count = items.reduce((sum, x) => sum + x.quantity, 0);

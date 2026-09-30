@@ -298,7 +298,6 @@ export function Bookings() {
     </div></div>}
 
     {deleteBookingTarget&&<div className="modal-backdrop" onClick={()=>setDeleteBookingTarget(null)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
-      <div className="confirm-modal-icon">🗑</div>
       <h3>Delete Booking</h3>
       <p>Are you sure you want to delete <strong>{deleteBookingTarget.booking_no}</strong>?</p>
       <small>This will permanently remove the booking, all its payments, and status history. This action cannot be undone.</small>
@@ -309,7 +308,6 @@ export function Bookings() {
     </div></div>}
 
     {invoiceConfirm&&detail&&<div className="modal-backdrop" onClick={()=>setInvoiceConfirm(false)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
-      <div className="confirm-modal-icon">📧</div>
       <h3>Send Invoice Email</h3>
       <p>Send the invoice for <strong>{detail.booking_no}</strong> to <strong>{detail.customer_email}</strong>?</p>
       <div className="confirm-modal-actions">
@@ -319,7 +317,6 @@ export function Bookings() {
     </div></div>}
 
     {rentConfirm&&detail&&<div className="modal-backdrop" onClick={()=>setRentConfirm(false)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
-      <div className="confirm-modal-icon">🔑</div>
       <h3>Mark as Rented</h3>
       <p>Mark <strong>{detail.booking_no}</strong> as Rented? The items will remain reserved until they are returned.</p>
       <div className="confirm-modal-actions">
