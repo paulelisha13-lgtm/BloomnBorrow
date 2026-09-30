@@ -11,7 +11,7 @@ router.get("/api/admin/settings", authenticate, requireRole("admin"), async (_re
 });
 
 router.put("/api/admin/settings", authenticate, requireRole("admin"), async (req,res) => {
-  const allowed=["business_name","business_email","business_phone","business_address","delivery_fee","late_fee_per_day","currency","cancellation_policy","notification_email_enabled","notification_sms_enabled"];
+  const allowed=["business_name","business_email","business_phone","business_address","business_facebook","business_instagram","delivery_fee","late_fee_per_day","currency","cancellation_policy","notification_email_enabled","notification_sms_enabled"];
   const [beforeRows]=await db.query("SELECT setting_key,setting_value FROM business_settings");
   const before=Object.fromEntries(beforeRows.map(x=>[x.setting_key,x.setting_value]));
   const after={...before};
