@@ -1,8 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CustomerShell } from "../../components/customer/CustomerShell";
-import { FilterSidebar } from "../../components/customer/FilterSidebar";
-import { CartContents } from "../../components/customer/CartContents";
 import { useCart } from "../../context/CartContext";
 import { publicApi } from "../../lib/publicApi";
 import { peso } from "../../lib/format";
@@ -14,13 +12,12 @@ const readBrowseState = () => {
 
 export function CustomerCatalog() {
   const navigate = useNavigate();
-  const { addItem, items: cartItems, count } = useCart();
+  const { addItem } = useCart();
   const [items, setItems] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState(() => readBrowseState().search || "");
   const [category, setCategory] = useState(() => readBrowseState().category || "");
-  const [filterOpen, setFilterOpen] = useState(false);
   const [added, setAdded] = useState(null);
 
   useEffect(() => {
@@ -53,7 +50,7 @@ export function CustomerCatalog() {
     setTimeout(() => setAdded(id => id === item.id ? null : id), 900);
   };
 
-  return <CustomerShell title="Browse rentals" subtitle="Available items, pulled live from our current inventory.">
+  return <CustomerShell title="Browse Rentals" subtitle="Available items from our current inventory.">
     {error && <div className="login-error">{error}</div>}
 
     <div className="shop-toolbar">
@@ -61,45 +58,36 @@ export function CustomerCatalog() {
         <span>⌕</span>
         <input placeholder="Search items…" value={search} onChange={e => setSearch(e.target.value)} />
       </div>
-      <button type="button" className="secondary-button shop-filter-toggle" onClick={() => setFilterOpen(true)}>Filter{category && ` · ${category}`}</button>
     </div>
 
-    <div className="shop-catalog-layout">
-      <FilterSidebar categories={categories} selected={category} onSelect={c => { setCategory(c); setFilterOpen(false); }} open={filterOpen} onClose={() => setFilterOpen(false)} />
+    <nav className="shop-category-nav" aria-label="Categories">
+      <button type="button" className={`shop-chip ${!category ? "active" : ""}`} onClick={() => setCategory("")}>All</button>
+      {categories.map(cat => <button type="button" key={cat} className={`shop-chip ${category === cat ? "active" : ""}`} onClick={() => setCategory(cat)}>{cat}</button>)}
+    </nav>
 
-      {loading ? <div className="admin-card inventory-empty">Loading items…</div> :
-        filtered.length === 0 ? <div className="admin-card inventory-empty"><h3>No items found</h3><p>{search || category ? "Try adjusting your search or filters." : "Please check back soon."}</p></div> :
-        <div className="shop-item-grid">
-          {filtered.map(item => {
-            const out = item.available_quantity < 1;
-            return <article className={`shop-item-card ${out ? "is-unavailable" : ""}`} onClick={() => navigate(`/shop/${item.id}`)} key={item.id}>
-              <div className="shop-item-card-image">
-                {item.image_url ? <img src={item.image_url} alt={item.name} /> : <div className="inventory-card-noimage">🌸</div>}
-                {out && <span className="shop-item-out-badge">Unavailable</span>}
-              </div>
-              <div className="shop-item-card-body">
-                <small>{item.category}</small>
-                <h3>{item.name}</h3>
-                <div className="shop-item-card-meta">
+    {loading ? <div className="admin-card inventory-empty">Loading items…</div> :
+      filtered.length === 0 ? <div className="admin-card inventory-empty"><h3>No items found</h3><p>{search || category ? "Try adjusting your search or filters." : "Please check back soon."}</p></div> :
+      <div className="shop-item-grid">
+        {filtered.map(item => {
+          const out = item.available_quantity < 1;
+          return <article className={`shop-item-card ${out ? "is-unavailable" : ""}`} onClick={() => navigate(`/shop/${item.id}`)} key={item.id}>
+            <div className="shop-item-card-image">
+              {item.image_url ? <img src={item.image_url} alt={item.name} /> : <div className="inventory-card-noimage">🌸</div>}
+              {out && <span className="shop-item-out-badge">Unavailable</span>}
+            </div>
+            <div className="shop-item-card-body">
+              <small className="shop-item-card-cat">{item.category}</small>
+              <h3>{item.name}</h3>
+              <div className="shop-item-card-foot">
+                <div className="shop-item-card-price">
                   <strong>{peso(Number(item.daily_price))}<span>/day</span></strong>
                   <small className={out ? "shop-qty-zero" : ""}>{out ? "Unavailable" : `Available: ${item.available_quantity}`}</small>
                 </div>
-                <button type="button" className="primary-button shop-add-btn" disabled={out} onClick={e => quickAdd(e, item)}>{added === item.id ? "Added ✓" : "Add to Cart"}</button>
+                <button type="button" className={`primary-button shop-add-btn ${added === item.id ? "is-added" : ""}`} disabled={out} onClick={e => quickAdd(e, item)}>{added === item.id ? "Added ✓" : "Add to Cart"}</button>
               </div>
-            </article>;
-          })}
-        </div>}
-
-      <aside className="shop-cart-panel">
-        <div className="shop-cart-panel-head">
-          <strong>Your cart</strong>
-          {count > 0 && <span className="shop-cart-panel-count">{count} {count === 1 ? "item" : "items"}</span>}
-        </div>
-        {cartItems.length === 0 ? <div className="shop-cart-panel-empty">
-          <strong>Your cart is empty</strong>
-          <p>Add items and they'll appear here before you proceed to rental.</p>
-        </div> : <CartContents showContinue={false} />}
-      </aside>
-    </div>
+            </div>
+          </article>;
+        })}
+      </div>}
   </CustomerShell>;
 }

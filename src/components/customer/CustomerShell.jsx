@@ -4,7 +4,9 @@ import { Logo } from "../Logo";
 import { useCart } from "../../context/CartContext";
 import { publicApi } from "../../lib/publicApi";
 
-function CartBadge() {
+// Floating cart access (removed from the navbar to keep it minimal) -- always
+// reachable so Browse -> Add to Cart -> Cart -> Proceed to Rental still works.
+function CartFab() {
   const { count } = useCart();
   const [bump, setBump] = useState(false);
   const prev = useRef(count);
@@ -16,8 +18,13 @@ function CartBadge() {
       return () => clearTimeout(t);
     }
   }, [count]);
-  return <NavLink to="/shop/cart" className="shop-cart-link">
-    Cart{count > 0 && <span className={`shop-cart-count ${bump ? "bump" : ""}`}>{count}</span>}
+  return <NavLink to="/shop/cart" className="shop-float-cart" aria-label={`Cart, ${count} item${count === 1 ? "" : "s"}`}>
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" />
+      <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+    </svg>
+    <span>Cart</span>
+    <span className={`shop-cart-count ${bump ? "bump" : ""}`}>{count}</span>
   </NavLink>;
 }
 
@@ -52,7 +59,8 @@ function CustomerFooter() {
 
       <div className="shop-footer-col">
         <strong>Quick Links</strong>
-        <NavLink to="/shop">Browse Items</NavLink>
+        <NavLink to="/shop" end>Home</NavLink>
+        <NavLink to="/shop/browse">Browse Items</NavLink>
         <NavLink to="/shop/cart">Cart</NavLink>
         <NavLink to="/shop/status">Check Status</NavLink>
       </div>
@@ -77,17 +85,20 @@ function CustomerFooter() {
 // Note: CartProvider is NOT mounted here. Pages call useCart() themselves
 // before they render <CustomerShell>, so the provider has to be an ancestor
 // of the page component -- it's mounted once per route in App.jsx instead.
-export function CustomerShell({ title, subtitle, children }) {
+export function CustomerShell({ title, subtitle, hero, children }) {
   return (
     <div className="shop-shell">
       <header className="shop-header">
-        <Logo to="/shop" />
-        <nav className="shop-nav">
-          <NavLink to="/shop" end>Browse</NavLink>
-          <NavLink to="/shop/status">Check Status</NavLink>
-          <CartBadge />
-        </nav>
+        <div className="shop-header-inner">
+          <Logo to="/shop" />
+          <nav className="shop-nav">
+            <NavLink to="/shop" end>Home</NavLink>
+            <NavLink to="/shop/browse">Browse</NavLink>
+            <NavLink to="/shop/status">Check Status</NavLink>
+          </nav>
+        </div>
       </header>
+      {hero}
       <main className="shop-main">
         {(title || subtitle) && <div className="shop-page-head">
           {title && <h1>{title}</h1>}
@@ -96,6 +107,7 @@ export function CustomerShell({ title, subtitle, children }) {
         {children}
       </main>
       <CustomerFooter />
+      <CartFab />
     </div>
   );
 }

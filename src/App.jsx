@@ -15,6 +15,7 @@ import { Maintenance } from "./pages/Maintenance";
 import { Payments } from "./pages/Payments";
 import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
+import { CustomerHome } from "./pages/customer/Home";
 import { CustomerCatalog } from "./pages/customer/Catalog";
 import { CustomerItemDetail } from "./pages/customer/ItemDetail";
 import { CustomerCart } from "./pages/customer/Cart";
@@ -26,7 +27,8 @@ function AdminRoutes() {
   return <Routes>
     <Route path="/access/login" element={<AccessLogin/>}/>
     <Route path="/admin/login" element={<Navigate to="/access/login" replace/>}/>
-    <Route path="/shop" element={<CartProvider><CustomerCatalog/></CartProvider>}/>
+    <Route path="/shop" element={<CartProvider><CustomerHome/></CartProvider>}/>
+    <Route path="/shop/browse" element={<CartProvider><CustomerCatalog/></CartProvider>}/>
     <Route path="/shop/cart" element={<CartProvider><CustomerCart/></CartProvider>}/>
     <Route path="/shop/checkout" element={<CartProvider><CustomerRentalForm/></CartProvider>}/>
     <Route path="/shop/status" element={<CartProvider><CustomerBookingStatus/></CartProvider>}/>
@@ -48,7 +50,7 @@ function AdminRoutes() {
   </Routes>
 }
 
-// /shop/* is the public Customer Side (browse, request a rental, check status) --
+// /shop/* is the public Customer Side (home, browse, request a rental, check status) --
 // everything else stays admin/staff-only, and unknown paths fall back to the
 // dashboard (or login if signed out).
 export default function App() {

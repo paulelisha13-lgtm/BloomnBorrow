@@ -111,7 +111,7 @@ export function CustomerRentalForm() {
       <h2>{result.booking_no}</h2>
       <p>Your rental request has been submitted and is now waiting for Admin approval.</p>
       <div className="shop-success-actions">
-        <Link className="secondary-button" to="/shop">Browse more items</Link>
+        <Link className="secondary-button" to="/shop/browse">Browse more items</Link>
         <Link className="primary-button" to="/shop/status">Check status</Link>
       </div>
     </div>

@@ -33,7 +33,7 @@ export function CustomerItemDetail() {
   }, [id]);
 
   if (loading) return <CustomerShell><div className="admin-card inventory-empty">Loading item…</div></CustomerShell>;
-  if (loadError || !item) return <CustomerShell><div className="admin-card inventory-empty"><h3>Item not found</h3><p>{loadError || "This item may no longer be available."}</p><Link className="secondary-button" to="/shop">Back to browsing</Link></div></CustomerShell>;
+  if (loadError || !item) return <CustomerShell><div className="admin-card inventory-empty"><h3>Item not found</h3><p>{loadError || "This item may no longer be available."}</p><Link className="secondary-button" to="/shop/browse">Back to browsing</Link></div></CustomerShell>;
 
   const out = item.available_quantity < 1;
 
@@ -41,7 +41,7 @@ export function CustomerItemDetail() {
     if (out) return;
     addItem(item, Math.min(item.available_quantity, Math.max(1, Number(quantity) || 1)));
     setToast(true);
-    setTimeout(() => navigate("/shop"), 800);
+    setTimeout(() => navigate("/shop/browse"), 800);
   };
 
   const quickAddRelated = (e, r) => {
@@ -62,11 +62,13 @@ export function CustomerItemDetail() {
       <div className="shop-item-info">
         <span className="eyebrow">{item.category}</span>
         <h1>{item.name}</h1>
-        <div className="review-total">
-          <div><span>Price / day</span><strong>{peso(Number(item.daily_price))}</strong></div>
-          <div><span>Security deposit</span><strong>{peso(Number(item.security_deposit))}</strong></div>
-          <div><span>Available</span><strong className={out ? "shop-qty-zero" : ""}>{out ? "Unavailable" : item.available_quantity}</strong></div>
+        <div className="shop-item-price">
+          <strong>{peso(Number(item.daily_price))}</strong><span>/day</span>
         </div>
+        <ul className="shop-item-facts">
+          <li><span>Security deposit</span><strong>{peso(Number(item.security_deposit))}</strong></li>
+          <li><span>Available</span><strong className={out ? "shop-qty-zero" : ""}>{out ? "Unavailable" : item.available_quantity}</strong></li>
+        </ul>
 
         <div className="shop-add-form">
           <label>Qty<input type="number" min="1" max={item.available_quantity || 1} value={quantity} disabled={out} onChange={e => setQuantity(e.target.value)} /></label>
@@ -75,9 +77,9 @@ export function CustomerItemDetail() {
       </div>
     </div>
 
-    {item.description && <section className="admin-card shop-details-section">
-      <h2>Details</h2>
-      <p className="muted">{item.description}</p>
+    {item.description && <section className="shop-details-section">
+      <h2>Description</h2>
+      <p>{item.description}</p>
     </section>}
 
     {related.length > 0 && <section className="shop-related-section">
@@ -89,13 +91,15 @@ export function CustomerItemDetail() {
             {r.available_quantity < 1 && <span className="shop-item-out-badge">Unavailable</span>}
           </div>
           <div className="shop-item-card-body">
-            <small>{r.category}</small>
+            <small className="shop-item-card-cat">{r.category}</small>
             <h3>{r.name}</h3>
-            <div className="shop-item-card-meta">
-              <strong>{peso(Number(r.daily_price))}<span>/day</span></strong>
-              <small className={r.available_quantity < 1 ? "shop-qty-zero" : ""}>{r.available_quantity < 1 ? "Unavailable" : `Available: ${r.available_quantity}`}</small>
+            <div className="shop-item-card-foot">
+              <div className="shop-item-card-price">
+                <strong>{peso(Number(r.daily_price))}<span>/day</span></strong>
+                <small className={r.available_quantity < 1 ? "shop-qty-zero" : ""}>{r.available_quantity < 1 ? "Unavailable" : `Available: ${r.available_quantity}`}</small>
+              </div>
+              <button type="button" className={`primary-button shop-add-btn ${relatedAdded === r.id ? "is-added" : ""}`} disabled={r.available_quantity < 1} onClick={e => quickAddRelated(e, r)}>{relatedAdded === r.id ? "Added ✓" : "Add to Cart"}</button>
             </div>
-            <button type="button" className="primary-button shop-add-btn" disabled={r.available_quantity < 1} onClick={e => quickAddRelated(e, r)}>{relatedAdded === r.id ? "Added ✓" : "Add to Cart"}</button>
           </div>
         </article>)}
       </div>
