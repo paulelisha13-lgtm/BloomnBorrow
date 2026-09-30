@@ -25,7 +25,7 @@ router.patch("/api/admin/payments/:id/void", authenticate, requireRole("admin"),
 
 router.get("/api/admin/payments", authenticate, requireRole("admin","staff"), async (_req,res) => {
   const [payments]=await db.query(`
-    SELECT p.*,b.booking_no,b.customer_name,u.full_name recorded_by
+    SELECT p.*,b.booking_no,b.customer_name,b.customer_email,u.full_name recorded_by
     FROM payments p JOIN bookings b ON b.id=p.booking_id
     LEFT JOIN users u ON u.id=p.recorded_by_user_id
     ORDER BY p.created_at DESC LIMIT 300

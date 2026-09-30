@@ -23,6 +23,7 @@ export function Payments() {
   const [voiding,setVoiding]=useState(false);
   const [sendingInvoice,setSendingInvoice]=useState(null);
   const [sentInvoiceId,setSentInvoiceId]=useState(null);
+  const [invoiceConfirm,setInvoiceConfirm]=useState(null);
   const business=useBusinessProfile();
   const canVoid=isAdminUser();
 
@@ -53,7 +54,7 @@ export function Payments() {
     filtered.forEach(p=>{
       const key=p.booking_id;
       if(!map.has(key)){
-        map.set(key,{booking_id:key,booking_no:p.booking_no,customer_name:p.customer_name,payments:[],totalPaid:0,latestDate:p.created_at,hasPending:false,hasRefund:false,primaryMethod:p.method});
+        map.set(key,{booking_id:key,booking_no:p.booking_no,customer_name:p.customer_name,customer_email:p.customer_email,payments:[],totalPaid:0,latestDate:p.created_at,hasPending:false,hasRefund:false,primaryMethod:p.method});
       }
       const g=map.get(key);
       g.payments.push(p);
@@ -156,7 +157,7 @@ export function Payments() {
             <td onClick={e=>e.stopPropagation()}><div className="table-actions">
               <button className="mini-button" onClick={()=>setExpanded(expanded===g.booking_id?null:g.booking_id)}>{expanded===g.booking_id?"Hide":"Details"}</button>
               <button className="mini-button" onClick={()=>printInvoice(g.payments[0])}>Invoice</button>
-              <button className="mini-button" disabled={sendingInvoice===g.booking_id} onClick={()=>sendInvoice(g.payments[0])}>{sendingInvoice===g.booking_id?"Sending...":sentInvoiceId===g.booking_id?"Sent ✓":"Email"}</button>
+              <button className="mini-button" disabled={sendingInvoice===g.booking_id} onClick={()=>setInvoiceConfirm(g)}>{sendingInvoice===g.booking_id?"Sending...":sentInvoiceId===g.booking_id?"Sent ✓":"Email"}</button>
             </div></td>
           </tr>,
           expanded===g.booking_id&&<tr key={g.booking_id+"-x"} className="table-subrow"><td colSpan="8">
@@ -193,9 +194,9 @@ export function Payments() {
             </div>
           </div>
           <div className="payment-card-body">
-            <div className="payment-card-detail"><span>📋</span><small>{g.payments.length} payment{g.payments.length>1?"s":""}</small></div>
-            <div className="payment-card-detail"><span>💳</span><small>Method: {(g.primaryMethod||"cash").replace("_"," ")}</small></div>
-            <div className="payment-card-detail"><span>📅</span><small>{new Date(g.latestDate).toLocaleDateString("en-PH",{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</small></div>
+            <div className="payment-card-detail"><small>{g.payments.length} payment{g.payments.length>1?"s":""}</small></div>
+            <div className="payment-card-detail"><small>Method: {(g.primaryMethod||"cash").replace("_"," ")}</small></div>
+            <div className="payment-card-detail"><small>{new Date(g.latestDate).toLocaleDateString("en-PH",{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</small></div>
           </div>
           {expanded===g.booking_id&&<div className="payment-card-transactions">
             {g.payments.map(p=><div className="payment-transaction-row" key={p.id}>
@@ -217,7 +218,7 @@ export function Payments() {
           <div className="payment-card-footer">
             <button className="secondary-button" onClick={()=>setExpanded(expanded===g.booking_id?null:g.booking_id)}>{expanded===g.booking_id?"Hide Details":"View Details"}</button>
             <button className="secondary-button" onClick={()=>printInvoice(g.payments[0])}>Print Invoice</button>
-            <button className="secondary-button" disabled={sendingInvoice===g.booking_id} onClick={()=>sendInvoice(g.payments[0])}>{sendingInvoice===g.booking_id?"Sending...":sentInvoiceId===g.booking_id?"Sent ✓":"Email Invoice"}</button>
+            <button className="secondary-button" disabled={sendingInvoice===g.booking_id} onClick={()=>setInvoiceConfirm(g)}>{sendingInvoice===g.booking_id?"Sending...":sentInvoiceId===g.booking_id?"Sent ✓":"Email Invoice"}</button>
           </div>
         </article>)}
       </div>}
@@ -232,6 +233,17 @@ export function Payments() {
       <div className="confirm-modal-actions">
         <button className="secondary-button" onClick={()=>setVoidTarget(null)}>Cancel</button>
         <button className="danger-button" disabled={voiding||!voidReason.trim()} onClick={voidPayment}>{voiding?"Voiding...":"Void Payment"}</button>
+      </div>
+    </div></div>}
+
+    {invoiceConfirm&&<div className="modal-backdrop" onClick={()=>setInvoiceConfirm(null)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+      <div className="confirm-modal-icon">📧</div>
+      <h3>Send Invoice Email</h3>
+      {invoiceConfirm.customer_email?<p>Send the invoice for <strong>{invoiceConfirm.booking_no}</strong> to <strong>{invoiceConfirm.customer_email}</strong>?</p>
+        :<p>This booking has no customer email on file. Add one before sending.</p>}
+      <div className="confirm-modal-actions">
+        <button className="secondary-button" onClick={()=>setInvoiceConfirm(null)}>Cancel</button>
+        <button className="primary-button" disabled={!invoiceConfirm.customer_email} onClick={()=>{sendInvoice(invoiceConfirm.payments[0]);setInvoiceConfirm(null)}}>Send</button>
       </div>
     </div></div>}
   </AdminShell>

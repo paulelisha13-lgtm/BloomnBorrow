@@ -95,19 +95,15 @@ export function AdminDashboard() {
         <section className="admin-card inventory-card"><div className="card-heading"><div><span>Operations</span><h2>Attention needed</h2></div></div><div className="ops-summary"><span><b>{s.unavailable_items ?? 0}</b> unavailable / maintenance items</span><span><b>{s.pending_payments ?? 0}</b> bookings with balance</span><span><b>{s.overdue_rentals ?? 0}</b> overdue rentals</span></div></section>
         <section className="admin-card upcoming-card"><div className="card-heading"><div><span>Workflow</span><h2>Quick actions</h2></div></div><div className="quick-actions">
           <Link className="quick-action-card" to="/admin/bookings">
-            <span className="quick-action-icon">📅</span>
             <span>Manage bookings</span>
           </Link>
           <Link className="quick-action-card" to="/admin/inventory">
-            <span className="quick-action-icon">🛒</span>
             <span>Manage inventory</span>
           </Link>
           <Link className="quick-action-card" to="/admin/payments">
-            <span className="quick-action-icon">🧾</span>
             <span>Payments</span>
           </Link>
           <Link className="quick-action-card" to="/admin/maintenance">
-            <span className="quick-action-icon">🔧</span>
             <span>Maintenance</span>
           </Link>
         </div></section>

@@ -30,6 +30,8 @@ export function Bookings() {
   const [inspectSubmitting,setInspectSubmitting]=useState(false);
   const [sendingInvoice,setSendingInvoice]=useState(false);
   const [invoiceSent,setInvoiceSent]=useState(false);
+  const [invoiceConfirm,setInvoiceConfirm]=useState(false);
+  const [rentConfirm,setRentConfirm]=useState(false);
   const business=useBusinessProfile();
 
   const load=()=>api("/admin/bookings").then(d=>setRows(d.bookings||[])).catch(e=>setError(e.message));
@@ -223,7 +225,7 @@ export function Bookings() {
             {detail.status==="pending"&&<><button className="primary-button" disabled={busy} onClick={()=>window.confirm("Approve this booking?")&&act(`/admin/bookings/${detail.id}/status`,{status:"confirmed"})}>Approve Booking</button><button className="secondary-button danger" onClick={()=>window.confirm("Reject this booking? This ends its workflow.")&&act(`/admin/bookings/${detail.id}/status`,{status:"rejected"})}>Reject Booking</button></>}
             {["pending","confirmed","ready"].includes(detail.status)&&<button className="secondary-button" onClick={reschedule}>Reschedule Date</button>}
             {detail.status==="confirmed"&&<button className="primary-button" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"ready"})}>Mark as Ready</button>}
-            {detail.status==="ready"&&<button className="primary-button" onClick={()=>window.confirm("Mark this booking as Rented? The items will remain reserved until they are returned.")&&act(`/admin/bookings/${detail.id}/status`,{status:"rented",note:detail.fulfillment==="pickup"?"Items picked up by customer":"Items delivered to customer"})}>{detail.fulfillment==="pickup"?"Confirm Pickup · Rented":"Mark as Rented"}</button>}
+            {detail.status==="ready"&&<button className="primary-button" onClick={()=>setRentConfirm(true)}>{detail.fulfillment==="pickup"?"Confirm Pickup · Rented":"Mark as Rented"}</button>}
             {["rented","overdue"].includes(detail.status)&&<button className="primary-button" onClick={openInspect}>Return Item</button>}
             {detail.status==="returned"&&detail.inspection&&<button className="primary-button" onClick={()=>api(`/admin/bookings/${detail.id}/complete`,{method:"POST",body:JSON.stringify({})}).then(()=>{open(detail.id);load()}).catch(e=>setError(e.message))}>Mark Complete</button>}
           </div>
@@ -232,7 +234,7 @@ export function Bookings() {
           <div className="booking-actions-label">Payments</div>
           <div className="booking-actions">
             <button className="primary-button" onClick={openPaymentModal}>Add Payment</button>
-            <button className="secondary-button" disabled={sendingInvoice||!detail.customer_email} title={detail.customer_email?"":"This booking has no customer email on file"} onClick={sendInvoice}>{sendingInvoice?"Sending...":invoiceSent?"Sent ✓":"Email Invoice"}</button>
+            <button className="secondary-button" disabled={sendingInvoice||!detail.customer_email} title={detail.customer_email?"":"This booking has no customer email on file"} onClick={()=>setInvoiceConfirm(true)}>{sendingInvoice?"Sending...":invoiceSent?"Sent ✓":"Email Invoice"}</button>
           </div>
         </div>
         <div className="booking-actions-group">
@@ -297,6 +299,26 @@ export function Bookings() {
       <div className="confirm-modal-actions">
         <button className="secondary-button" onClick={()=>setDeleteBookingTarget(null)}>Cancel</button>
         <button className="danger-button" disabled={deletingBooking} onClick={deleteBooking}>{deletingBooking?"Deleting...":"Delete Booking"}</button>
+      </div>
+    </div></div>}
+
+    {invoiceConfirm&&detail&&<div className="modal-backdrop" onClick={()=>setInvoiceConfirm(false)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+      <div className="confirm-modal-icon">📧</div>
+      <h3>Send Invoice Email</h3>
+      <p>Send the invoice for <strong>{detail.booking_no}</strong> to <strong>{detail.customer_email}</strong>?</p>
+      <div className="confirm-modal-actions">
+        <button className="secondary-button" onClick={()=>setInvoiceConfirm(false)}>Cancel</button>
+        <button className="primary-button" onClick={()=>{setInvoiceConfirm(false);sendInvoice()}}>Send</button>
+      </div>
+    </div></div>}
+
+    {rentConfirm&&detail&&<div className="modal-backdrop" onClick={()=>setRentConfirm(false)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+      <div className="confirm-modal-icon">🔑</div>
+      <h3>Mark as Rented</h3>
+      <p>Mark <strong>{detail.booking_no}</strong> as Rented? The items will remain reserved until they are returned.</p>
+      <div className="confirm-modal-actions">
+        <button className="secondary-button" onClick={()=>setRentConfirm(false)}>Cancel</button>
+        <button className="primary-button" disabled={busy} onClick={()=>{setRentConfirm(false);act(`/admin/bookings/${detail.id}/status`,{status:"rented",note:detail.fulfillment==="pickup"?"Items picked up by customer":"Items delivered to customer"})}}>Confirm</button>
       </div>
     </div></div>}
 

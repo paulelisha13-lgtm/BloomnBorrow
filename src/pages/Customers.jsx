@@ -115,8 +115,8 @@ export function Customers() {
             </div>
           </div>
           <div className="customer-card-body">
-            <div className="customer-card-row"><span>📱</span><small>{c.phone||"No phone"}</small></div>
-            <div className="customer-card-row"><span>📍</span><small>{c.city||"No city"}</small></div>
+            <div className="customer-card-row"><small>{c.phone||"No phone"}</small></div>
+            <div className="customer-card-row"><small>{c.city||"No city"}</small></div>
           </div>
           <div className="customer-card-stats">
             <div className="customer-stat-item"><span className="customer-stat-num">{c.booking_count||0}</span><span className="customer-stat-label">Bookings</span></div>

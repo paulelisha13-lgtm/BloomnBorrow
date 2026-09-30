@@ -34,7 +34,7 @@ const longDate=key=>{
 const blankForm=date=>({
   entry_type:"reservation",title:"",customer_name:"",customer_email:"",customer_phone:"",
   entry_date:date,start_time:"",end_time:"",guests:"",location:"",
-  status:"pending",category:"",reminder_at:"",details:"",notes:""
+  status:"pending",reminder_at:"",details:"",notes:""
 });
 const entryToForm=entry=>({
   entry_type:entry.entry_type||"reservation",
@@ -48,7 +48,6 @@ const entryToForm=entry=>({
   guests:entry.guests==null?"":String(entry.guests),
   location:entry.location||"",
   status:entry.status||"pending",
-  category:entry.category||"",
   reminder_at:reminderToForm(entry.reminder_at),
   details:entry.details||"",
   notes:entry.notes||""
@@ -314,14 +313,13 @@ export function Calendar() {
       <div className="modal-actions"><button className="secondary-button" onClick={()=>openNew(openDay)}>+ Add on this day</button><button className="primary-button" onClick={()=>setOpenDay(null)}>Close</button></div>
     </div></div>}
 
-    {editor&&<div className="modal-backdrop" onClick={()=>setEditor(null)}><div className="modal" onClick={e=>e.stopPropagation()}>
+    {editor&&<div className="modal-backdrop" onClick={()=>setEditor(null)}><div className="modal cal-entry-modal" onClick={e=>e.stopPropagation()}>
       <div className="modal-head"><div><span className="eyebrow">{editor.id?"Edit Entry":"New Entry"}</span><h2>{editor.id?"Update Calendar Entry":TYPE_LABELS[editor.form.entry_type]}</h2></div><button type="button" onClick={()=>setEditor(null)}>×</button></div>
       <div className="form-grid">
         <label>Type<select value={editor.form.entry_type} onChange={e=>setEditor({...editor,form:{...editor.form,entry_type:e.target.value}})}>{Object.entries(TYPE_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>
         <label>Status<select value={editor.form.status} onChange={e=>setEditor({...editor,form:{...editor.form,status:e.target.value}})}>{Object.entries(ENTRY_STATUS_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>
         <label className="span-2">Title<input required value={editor.form.title} onChange={e=>setEditor({...editor,form:{...editor.form,title:e.target.value}})} placeholder="What is scheduled?"/></label>
-        <label>Date<input type="date" required value={editor.form.entry_date} onChange={e=>setEditor({...editor,form:{...editor.form,entry_date:e.target.value}})}/></label>
-        <label>Category<input value={editor.form.category} onChange={e=>setEditor({...editor,form:{...editor.form,category:e.target.value}})} placeholder="Optional"/></label>
+        <label className="span-2">Date<input type="date" required value={editor.form.entry_date} onChange={e=>setEditor({...editor,form:{...editor.form,entry_date:e.target.value}})}/></label>
         <label>Start time<input type="time" value={editor.form.start_time} onChange={e=>setEditor({...editor,form:{...editor.form,start_time:e.target.value}})}/></label>
         <label>End time<input type="time" value={editor.form.end_time} onChange={e=>setEditor({...editor,form:{...editor.form,end_time:e.target.value}})}/></label>
         <label>Customer name<input value={editor.form.customer_name} onChange={e=>setEditor({...editor,form:{...editor.form,customer_name:e.target.value}})} placeholder="Optional"/></label>

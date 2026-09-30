@@ -57,19 +57,19 @@ export function AdminSearch() {
       !hasResults ? <div className="search-empty">No results for "{query}"</div> :
       <>
         {results.bookings.length > 0 && <div className="search-section">
-          <span className="search-section-label">📋 Bookings</span>
+          <span className="search-section-label">Bookings</span>
           {results.bookings.map(b => <div className="search-item" key={`b-${b.id}`} onClick={() => { setOpen(false); setQuery(""); navigate("/admin/bookings"); }}>
             <strong>{b.booking_no}</strong><small>{b.customer_name} · {peso(Number(b.grand_total))}</small>
           </div>)}
         </div>}
         {results.inventory.length > 0 && <div className="search-section">
-          <span className="search-section-label">📦 Inventory</span>
+          <span className="search-section-label">Inventory</span>
           {results.inventory.map(i => <div className="search-item" key={`i-${i.id}`} onClick={() => { setOpen(false); setQuery(""); navigate("/admin/inventory"); }}>
             <strong>{i.name}</strong><small>{i.sku} · {peso(Number(i.daily_price))}/day</small>
           </div>)}
         </div>}
         {results.customers.length > 0 && <div className="search-section">
-          <span className="search-section-label">👤 Customers</span>
+          <span className="search-section-label">Customers</span>
           {results.customers.map(c => <div className="search-item" key={`c-${c.id}`} onClick={() => { setOpen(false); setQuery(""); navigate("/admin/customers"); }}>
             <strong>{c.full_name}</strong><small>{c.email}</small>
           </div>)}
