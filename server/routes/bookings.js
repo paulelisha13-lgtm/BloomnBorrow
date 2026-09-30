@@ -4,7 +4,10 @@ import { parseBody, schemas } from "../lib/validate.js";
 import { db } from "../lib/db.js";
 import { checkOverdueBookings } from "../jobs/overdueCheck.js";
 import { audit } from "../lib/audit.js";
-import { getAvailability, bookingDetailById, validTransitions, recalcPaymentStatus } from "../lib/bookings.js";
+import { getAvailability, bookingDetailById, createBooking, validTransitions, recalcPaymentStatus } from "../lib/bookings.js";
+import fs from "fs";
+import path from "path";
+import { ID_DOCUMENTS_DIR } from "../lib/upload.js";
 import { lateDaysSince, parseDateOnly, rentalDays, toDateOnly } from "../lib/dates.js";
 import { generateIncidentNo } from "../lib/incidents.js";
 import { addNotification } from "../lib/notifications.js";
@@ -54,66 +57,10 @@ router.post("/api/admin/bookings", authenticate, requireRole("admin","staff"), r
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
-    let customer;
-    if (req.body.customer_id) {
-      [[customer]] = await conn.query("SELECT * FROM customers WHERE id=? FOR UPDATE",[req.body.customer_id]);
-      if (!customer) { const error=new Error("Customer not found."); error.statusCode=404; throw error; }
-    } else {
-      const [[duplicate]] = await conn.query("SELECT id FROM customers WHERE email=? LIMIT 1 FOR UPDATE",[req.body.email]);
-      if (duplicate) { const error=new Error("A customer with this email already exists. Choose Existing Customer and select that record."); error.statusCode=409; throw error; }
-      const [customerResult] = await conn.query(`
-        INSERT INTO customers(full_name,email,phone,city,address,province,postal_code,status)
-        VALUES(?,?,?,?,?,?,?,'active')
-      `,[req.body.full_name,req.body.email,req.body.phone,req.body.city||null,req.body.address||null,req.body.province||null,req.body.postal_code||null]);
-      [[customer]] = await conn.query("SELECT * FROM customers WHERE id=?",[customerResult.insertId]);
-    }
-    if (req.body.fulfillment === "delivery" && !String(customer.address||"").trim()) { const error=new Error("This customer needs a complete delivery address before booking."); error.statusCode=400; throw error; }
-    if (new Set(req.body.items.map(x=>x.item_id)).size !== req.body.items.length) { const error=new Error("Add each rental item only once; adjust its quantity instead."); error.statusCode=400; throw error; }
-
-    const start = parseDateOnly(req.body.start_date);
-    const end = parseDateOnly(req.body.end_date);
-    const days = rentalDays(start,end);
-    const normalized = [];
-    let rentalSubtotal = 0;
-    let depositTotal = 0;
-    let deliveryFee = 0;
-
-    for (const row of req.body.items) {
-      const [[item]] = await conn.query("SELECT * FROM rental_items WHERE id=? FOR UPDATE",[row.item_id]);
-      if (!item || item.status !== "active") {
-        const error = new Error("One of the selected rental items is unavailable."); error.statusCode=409; throw error;
-      }
-      const availability = await getAvailability(conn,row.item_id,req.body.start_date,req.body.end_date);
-      if (availability.available_quantity < row.quantity) {
-        const error = new Error(`${item.name} only has ${availability.available_quantity} available for the selected dates.`); error.statusCode=409; throw error;
-      }
-      const dailyPrice = Number(item.daily_price);
-      const deposit = Number(item.security_deposit);
-      const feePerPiece = req.body.fulfillment === "delivery" ? Number(row.delivery_fee_per_piece) : 0;
-      const lineRental = dailyPrice * row.quantity * days;
-      const lineDeposit = deposit * row.quantity;
-      const lineDelivery = feePerPiece * row.quantity;
-      rentalSubtotal += lineRental; depositTotal += lineDeposit; deliveryFee += lineDelivery;
-      normalized.push({item,quantity:row.quantity,dailyPrice,deposit,feePerPiece,lineRental,lineDeposit,lineDelivery});
-    }
-
-    const grandTotal = rentalSubtotal + depositTotal + deliveryFee;
-    const [result] = await conn.query(`
-      INSERT INTO bookings
-        (customer_id,customer_name,customer_email,customer_phone,city,delivery_address,province,postal_code,start_date,end_date,
-         fulfillment,payment_method,payment_status,status,rental_subtotal,deposit_total,delivery_fee,grand_total,notes)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'unpaid','pending',?,?,?,?,?)
-    `,[customer.id,customer.full_name,customer.email,customer.phone,customer.city,customer.address,customer.province,customer.postal_code,
-       req.body.start_date,req.body.end_date,req.body.fulfillment,req.body.payment_method,rentalSubtotal,depositTotal,deliveryFee,grandTotal,req.body.notes||null]);
-    const bookingId=result.insertId;
-    const bookingNo=`RF-${String(bookingId).padStart(6,"0")}`;
-    await conn.query("UPDATE bookings SET booking_no=? WHERE id=?",[bookingNo,bookingId]);
-    for (const row of normalized) await conn.query(`
-      INSERT INTO booking_items
-        (booking_id,rental_item_id,item_name,quantity,daily_price,security_deposit,rental_days,line_rental_total,line_deposit_total,delivery_fee_per_piece,line_delivery_total)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)
-    `,[bookingId,row.item.id,row.item.name,row.quantity,row.dailyPrice,row.deposit,days,row.lineRental,row.lineDeposit,row.feePerPiece,row.lineDelivery]);
-    await conn.query("INSERT INTO booking_status_history(booking_id,from_status,to_status,changed_by_user_id,note) VALUES(?,NULL,'pending',?,'Admin booking created')",[bookingId,req.user.id]);
+    const { bookingId, bookingNo, customer, grandTotal } = await createBooking(conn, req.body, {
+      historyNote: "Admin booking created",
+      changedByUserId: req.user.id
+    });
     await conn.commit();
     await audit(req,"CREATE_BOOKING",null,{booking_id:bookingId,booking_no:bookingNo,customer_id:customer.id,grand_total:grandTotal});
     res.status(201).json({booking:await bookingDetailById(bookingId)});
@@ -128,6 +75,17 @@ router.get("/api/admin/bookings/:id", authenticate, requireRole("admin","staff")
   const booking=await bookingDetailById(Number(req.params.id));
   if(!booking) return res.status(404).json({message:"Booking not found."});
   res.json({booking});
+});
+
+// Serves the customer's uploaded ID document. Never web-accessible on its
+// own (the file lives outside dist/ and is not registered with
+// express.static) — this authenticated route is the only way to reach it.
+router.get("/api/admin/bookings/:id/id-document", authenticate, requireRole("admin","staff"), async (req,res) => {
+  const [[booking]] = await db.query("SELECT id_document_path,id_document_original_name FROM bookings WHERE id=?",[Number(req.params.id)]);
+  if (!booking || !booking.id_document_path) return res.status(404).json({message:"No ID document on file for this booking."});
+  const filePath = path.join(ID_DOCUMENTS_DIR, path.basename(booking.id_document_path));
+  if (!fs.existsSync(filePath)) return res.status(404).json({message:"No ID document on file for this booking."});
+  res.download(filePath, booking.id_document_original_name || path.basename(filePath));
 });
 
 router.delete("/api/admin/bookings/:id", authenticate, requireRole("admin"), async (req,res) => {

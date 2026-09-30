@@ -25,6 +25,7 @@ import customersRoutes from "./routes/customers.js";
 import maintenanceRoutes from "./routes/maintenance.js";
 import settingsRoutes from "./routes/settings.js";
 import notificationsRoutes from "./routes/notifications.js";
+import publicRoutes from "./routes/public.js";
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
@@ -106,6 +107,7 @@ app.use("/api/admin", authenticate, requireStaffCsrf);
 app.use("/api/notifications", authenticate, requireStaffCsrf);
 
 app.use(usersRoutes);
+app.use(publicRoutes);
 app.use(bookingsRoutes);
 app.use(reportsRoutes);
 app.use(inventoryRoutes);

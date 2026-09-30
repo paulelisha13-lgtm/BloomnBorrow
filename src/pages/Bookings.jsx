@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../lib/api";
+import { api, API_BASE } from "../lib/api";
 import { Kpi } from "../components/Kpi";
 import { AdminShell } from "../components/layout/AdminShell";
 import { SortControls } from "../components/SortControls";
@@ -162,9 +162,9 @@ export function Bookings() {
             <span className={`status-pill ${b.status==="pending"?"pending":b.status==="overdue"?"overdue":b.status==="cancelled"||b.status==="rejected"?"overdue":"confirmed"}`}>{b.status}</span>
           </div>
           <div className="booking-card-body">
-            <div className="booking-card-info"><span>📦</span><small>{b.items||"—"}</small></div>
-            <div className="booking-card-info"><span>📅</span><small>{new Date(b.start_date).toLocaleDateString("en-PH",{month:"short",day:"numeric"})} → {new Date(b.end_date).toLocaleDateString("en-PH",{month:"short",day:"numeric",year:"numeric"})}</small></div>
-            <div className={`booking-card-info ${b.payment_status==="paid"?"payment-paid":b.payment_status==="partial"?"payment-partial":""}`}><span>{b.payment_status==="paid"?"✅":b.payment_status==="partial"?"⏳":"💳"}</span><small>{b.payment_status==="paid"?"Paid in full":b.payment_status==="partial"?"Partial payment":b.payment_status||"Unpaid"}</small></div>
+            <div className="booking-card-info"><small>{b.items||"—"}</small></div>
+            <div className="booking-card-info"><small>{new Date(b.start_date).toLocaleDateString("en-PH",{month:"short",day:"numeric"})} → {new Date(b.end_date).toLocaleDateString("en-PH",{month:"short",day:"numeric",year:"numeric"})}</small></div>
+            <div className={`booking-card-info ${b.payment_status==="paid"?"payment-paid":b.payment_status==="partial"?"payment-partial":""}`}><small>{b.payment_status==="paid"?"Paid in full":b.payment_status==="partial"?"Partial payment":b.payment_status||"Unpaid"}</small></div>
           </div>
           <div className="booking-card-footer">
             <span className="booking-card-total">{peso(Number(b.grand_total))}</span>
@@ -187,7 +187,7 @@ export function Bookings() {
       <div className="booking-modal-header">
         <div className="booking-modal-customer">
           <div className="booking-avatar">{detail.customer_name.split(" ").map(x=>x[0]).join("").slice(0,2)}</div>
-          <div><span className="eyebrow">{detail.booking_no}</span><h2>{detail.customer_name}</h2><p>{detail.customer_email} · {detail.customer_phone}</p></div>
+          <div><span className="eyebrow">{detail.booking_no}{detail.id_document_path&&" · Customer request"}</span><h2>{detail.customer_name}</h2><p>{detail.customer_email} · {detail.customer_phone}</p></div>
         </div>
       </div>
 
@@ -237,6 +237,12 @@ export function Bookings() {
             <button className="secondary-button" disabled={sendingInvoice||!detail.customer_email} title={detail.customer_email?"":"This booking has no customer email on file"} onClick={()=>setInvoiceConfirm(true)}>{sendingInvoice?"Sending...":invoiceSent?"Sent ✓":"Email Invoice"}</button>
           </div>
         </div>
+        {detail.id_document_path&&<div className="booking-actions-group">
+          <div className="booking-actions-label">Verification</div>
+          <div className="booking-actions">
+            <a className="secondary-button" href={`${API_BASE}/admin/bookings/${detail.id}/id-document`} target="_blank" rel="noreferrer">View Uploaded ID</a>
+          </div>
+        </div>}
         <div className="booking-actions-group">
           <div className="booking-actions-label">Manage</div>
           <div className="booking-actions">

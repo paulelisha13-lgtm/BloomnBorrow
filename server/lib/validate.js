@@ -122,6 +122,31 @@ export const schemas = {
       }
     }),
 
+  // Customer Side self-service booking. Same shape/limits as adminBooking's
+  // items/dates, but there is no customer_id branch: a guest cannot assert an
+  // existing DB id, so full_name/phone/email/address are always required.
+  customerBooking: z
+    .object({
+      full_name: z.string().trim().min(1, "is required").max(120, "is too long"),
+      email: z.string().trim().toLowerCase().max(160).regex(EMAIL_RE, "must be a valid email address"),
+      phone: z.string().trim().min(5, "must be a valid contact number").max(32, "is too long"),
+      address: z.string().trim().min(1, "is required").max(500, "is too long"),
+      city: optText(120),
+      province: optText(120),
+      postal_code: optText(20),
+      start_date: dateOnly,
+      end_date: dateOnly,
+      fulfillment: z.enum(["pickup", "delivery"]),
+      payment_method: z.enum(["cash", "gcash", "bank_transfer", "other"]).optional().default("cash"),
+      notes: optText(1000),
+      items: z.array(z.object({
+        item_id: positiveId,
+        quantity: z.coerce.number().int().min(1).max(1000),
+        delivery_fee_per_piece: money,
+      })).min(1).max(50),
+    })
+    .superRefine(rangeWithinAYear),
+
   // Stock pre-check for the Add Booking form: bounded item list and date range
   // so one request cannot make the server run an unbounded number of queries.
   availabilityCheck: z

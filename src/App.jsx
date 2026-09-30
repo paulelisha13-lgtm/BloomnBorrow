@@ -15,11 +15,22 @@ import { Maintenance } from "./pages/Maintenance";
 import { Payments } from "./pages/Payments";
 import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
+import { CustomerCatalog } from "./pages/customer/Catalog";
+import { CustomerItemDetail } from "./pages/customer/ItemDetail";
+import { CustomerCart } from "./pages/customer/Cart";
+import { CustomerRentalForm } from "./pages/customer/RentalForm";
+import { CustomerBookingStatus } from "./pages/customer/BookingStatus";
+import { CartProvider } from "./context/CartContext";
 
 function AdminRoutes() {
   return <Routes>
     <Route path="/access/login" element={<AccessLogin/>}/>
     <Route path="/admin/login" element={<Navigate to="/access/login" replace/>}/>
+    <Route path="/shop" element={<CartProvider><CustomerCatalog/></CartProvider>}/>
+    <Route path="/shop/cart" element={<CartProvider><CustomerCart/></CartProvider>}/>
+    <Route path="/shop/checkout" element={<CartProvider><CustomerRentalForm/></CartProvider>}/>
+    <Route path="/shop/status" element={<CartProvider><CustomerBookingStatus/></CartProvider>}/>
+    <Route path="/shop/:id" element={<CartProvider><CustomerItemDetail/></CartProvider>}/>
     <Route path="/admin" element={<ProtectedRoute roles={["admin","staff"]}><AdminDashboard/></ProtectedRoute>}/>
     <Route path="/admin/inventory" element={<ProtectedRoute roles={["admin","staff"]}><Inventory/></ProtectedRoute>}/>
     <Route path="/admin/bookings" element={<ProtectedRoute roles={["admin","staff"]}><Bookings/></ProtectedRoute>}/>
@@ -37,8 +48,9 @@ function AdminRoutes() {
   </Routes>
 }
 
-// Admin-only system: there is no public customer site, so every path is part of
-// the admin area and unknown paths go to the dashboard (or login if signed out).
+// /shop/* is the public Customer Side (browse, request a rental, check status) --
+// everything else stays admin/staff-only, and unknown paths fall back to the
+// dashboard (or login if signed out).
 export default function App() {
   return <AdminRoutes/>;
 }
