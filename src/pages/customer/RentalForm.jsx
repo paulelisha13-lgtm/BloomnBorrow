@@ -212,7 +212,7 @@ export function CustomerRentalForm() {
       <div className="sticky-form-actions"><Link className="secondary-button" to="/shop/cart">Back to Cart</Link><button className="primary-button" onClick={openConfirm}>Review &amp; Request to Rent</button></div>
     </div>
 
-    {confirming && <div className="modal-backdrop" onClick={() => !submitting && setConfirming(false)}><div className="modal confirm-modal" onClick={e => e.stopPropagation()}>
+    {confirming && <div className="modal-backdrop" onClick={() => !submitting && setConfirming(false)}><div className="modal confirm-modal confirm-modal-review" onClick={e => e.stopPropagation()}>
       <h3>Confirm your rental request</h3>
       <div className="shop-review-list">
         {lines.map(x => <div key={x.item_id}><span>{x.name} × {x.quantity}</span><strong>{peso(x.rental)}</strong></div>)}

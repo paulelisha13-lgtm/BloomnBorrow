@@ -32,6 +32,8 @@ export function Bookings() {
   const [invoiceSent,setInvoiceSent]=useState(false);
   const [invoiceConfirm,setInvoiceConfirm]=useState(false);
   const [rentConfirm,setRentConfirm]=useState(false);
+  const [approveConfirm,setApproveConfirm]=useState(false);
+  const [rejectConfirm,setRejectConfirm]=useState(false);
   const business=useBusinessProfile();
 
   const load=()=>api("/admin/bookings").then(d=>setRows(d.bookings||[])).catch(e=>setError(e.message));
@@ -222,7 +224,7 @@ export function Bookings() {
         <div className="booking-actions-group">
           <div className="booking-actions-label">Workflow</div>
           <div className="booking-actions">
-            {detail.status==="pending"&&<><button className="primary-button" disabled={busy} onClick={()=>window.confirm("Approve this booking?")&&act(`/admin/bookings/${detail.id}/status`,{status:"confirmed"})}>Approve Booking</button><button className="secondary-button danger" onClick={()=>window.confirm("Reject this booking? This ends its workflow.")&&act(`/admin/bookings/${detail.id}/status`,{status:"rejected"})}>Reject Booking</button></>}
+            {detail.status==="pending"&&<><button className="primary-button" disabled={busy} onClick={()=>setApproveConfirm(true)}>Approve Booking</button><button className="secondary-button danger" onClick={()=>setRejectConfirm(true)}>Reject Booking</button></>}
             {["pending","confirmed","ready"].includes(detail.status)&&<button className="secondary-button" onClick={reschedule}>Reschedule Date</button>}
             {detail.status==="confirmed"&&<button className="primary-button" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"ready"})}>Mark as Ready</button>}
             {detail.status==="ready"&&<button className="primary-button" onClick={()=>setRentConfirm(true)}>{detail.fulfillment==="pickup"?"Confirm Pickup · Rented":"Mark as Rented"}</button>}
@@ -322,6 +324,24 @@ export function Bookings() {
       <div className="confirm-modal-actions">
         <button className="secondary-button" onClick={()=>setRentConfirm(false)}>Cancel</button>
         <button className="primary-button" disabled={busy} onClick={()=>{setRentConfirm(false);act(`/admin/bookings/${detail.id}/status`,{status:"rented",note:detail.fulfillment==="pickup"?"Items picked up by customer":"Items delivered to customer"})}}>Confirm</button>
+      </div>
+    </div></div>}
+
+    {approveConfirm&&detail&&<div className="modal-backdrop" onClick={()=>setApproveConfirm(false)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+      <h3>Approve Rental</h3>
+      <p>Approve this rental request?</p>
+      <div className="confirm-modal-actions">
+        <button className="secondary-button" onClick={()=>setApproveConfirm(false)}>Cancel</button>
+        <button className="primary-button" disabled={busy} onClick={()=>{setApproveConfirm(false);act(`/admin/bookings/${detail.id}/status`,{status:"confirmed"})}}>Approve</button>
+      </div>
+    </div></div>}
+
+    {rejectConfirm&&detail&&<div className="modal-backdrop" onClick={()=>setRejectConfirm(false)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+      <h3>Reject Rental</h3>
+      <p>Reject this rental request?</p>
+      <div className="confirm-modal-actions">
+        <button className="secondary-button" onClick={()=>setRejectConfirm(false)}>Cancel</button>
+        <button className="danger-button" disabled={busy} onClick={()=>{setRejectConfirm(false);act(`/admin/bookings/${detail.id}/status`,{status:"rejected"})}}>Reject</button>
       </div>
     </div></div>}
 

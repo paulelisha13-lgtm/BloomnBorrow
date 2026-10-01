@@ -64,10 +64,10 @@ export function AdminDashboard() {
 
   return <AdminShell title="Dashboard" subtitle="Live overview of your rental business.">
     <section className="kpi-grid">
-      <Kpi index={0} icon="▣" label="Today's bookings" value={s.today_bookings ?? 0} detail={`${s.upcoming_reservations ?? 0} upcoming`}/>
-      <Kpi index={1} icon="↗" label="Active rentals" value={s.active_rentals ?? 0} detail="Currently rented"/>
-      <Kpi index={2} icon="!" pulseIcon label="Overdue rentals" value={s.overdue_rentals ?? 0} detail="Needs attention"/>
-      <Kpi index={3} icon="₱" currency label="Revenue today" value={Number(s.revenue_today ?? 0)} detail={`${s.pending_payments ?? 0} pending payments`}/>
+      <Kpi index={0} icon="▣" label="Today's bookings" value={s.today_bookings ?? 0} detail={`${s.upcoming_reservations ?? 0} upcoming`} to="/admin/bookings"/>
+      <Kpi index={1} icon="↗" label="Active rentals" value={s.active_rentals ?? 0} detail="Currently rented" to="/admin/bookings"/>
+      <Kpi index={2} icon="!" pulseIcon label="Overdue rentals" value={s.overdue_rentals ?? 0} detail="Needs attention" to="/admin/bookings"/>
+      <Kpi index={3} icon="₱" currency label="Revenue today" value={Number(s.revenue_today ?? 0)} detail={`${s.pending_payments ?? 0} pending payments`} to="/admin/payments"/>
     </section>
 
     <div className="dashboard-layout">

@@ -226,7 +226,7 @@ textarea{min-height:90px;resize:vertical}
 .table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;white-space:nowrap}th{text-align:left;color:#819493;font-size:9px;text-transform:uppercase;letter-spacing:.7px;padding:8px 9px;border-bottom:1px solid #e5efee}td{padding:12px 9px;border-bottom:1px solid #edf3f2;font-size:11px}.status-pill{display:inline-flex;align-items:center;padding:5px 8px;border-radius:20px;font-size:9px;font-weight:800}.confirmed,.completed{background:#e5f7f0;color:#23805d}.ready{background:#e4f5f7;color:#15758a}.rented{background:#e9ecfb;color:#5360a9}.overdue{background:#fdeaea;color:#bd4c58}.pending{background:#fff3d8;color:#ad751e}
 .admin-page-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:13px;gap:12px}
 .admin-page-toolbar .toolbar-left{display:flex;align-items:center;gap:8px;flex:1;min-width:0}.admin-search{width:280px;background:#fff;border:1px solid #d7e8e7;border-radius:11px;padding-left:11px;align-items:center}.admin-search input{border:0;background:transparent;box-shadow:none;padding:10px}.admin-page-toolbar select{width:auto;background:#fff}
-.modal-backdrop{position:fixed;inset:0;background:rgba(11,42,44,.45);z-index:80;display:grid;place-items:center;padding:20px;backdrop-filter:blur(3px)}.modal{width:min(610px,100%);background:#fff;border-radius:20px;padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.2)}.modal-head{display:flex;justify-content:space-between;align-items:start;margin-bottom:20px}.modal-head h2{margin:4px 0}.modal-head button{border:0;background:#eef5f4;width:32px;height:32px;border-radius:9px;font-size:21px}.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+.modal-backdrop{position:fixed;inset:0;background:rgba(11,42,44,.45);z-index:80;display:grid;place-items:center;padding:20px}.modal{width:min(610px,100%);background:#fff;border-radius:20px;padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.2)}.modal-head{display:flex;justify-content:space-between;align-items:start;margin-bottom:20px}.modal-head h2{margin:4px 0}.modal-head button{border:0;background:#eef5f4;width:32px;height:32px;border-radius:9px;font-size:21px}.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
 .reports-grid{grid-template-columns:1.1fr .9fr}.rank-row{display:grid;grid-template-columns:28px 45px 1fr auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid #eef4f3}.rank-row>span{color:#8da09f;font-weight:750}.rank-row img{width:45px;height:37px;border-radius:8px;object-fit:cover}.rank-row>div{display:grid}.rank-row small{color:var(--muted);font-size:9px}.rank-row b{font-size:10px}
 
 @media(max-width:1050px){
@@ -444,6 +444,14 @@ textarea{min-height:90px;resize:vertical}
 @keyframes kpiValueSettle{0%{opacity:.45;transform:scale(.96)}100%{opacity:1;transform:scale(1)}}
 @media (prefers-reduced-motion:reduce){.kpi-card-animated,.kpi-animated-value{animation:none!important;opacity:1!important;transform:none!important}}
 
+.kpi-card-clickable{cursor:pointer;transition:transform .18s cubic-bezier(.2,.8,.2,1),box-shadow .18s ease;outline:none}
+.kpi-card-clickable:hover{transform:translateY(-3px);box-shadow:0 16px 34px rgba(34,83,84,.12)}
+.kpi-card-clickable:active{transform:translateY(-1px) scale(.97)}
+.kpi-card-clickable:focus-visible{box-shadow:0 0 0 3px var(--brand-soft),0 16px 34px rgba(34,83,84,.12)}
+.kpi-card-leaving{animation:kpiCardLeave .26s cubic-bezier(.4,0,.2,1) forwards;pointer-events:none}
+@keyframes kpiCardLeave{0%{transform:translateY(-3px) scale(1);opacity:1}45%{transform:translateY(-3px) scale(1.035);opacity:1}100%{transform:translateY(-3px) scale(.92);opacity:0}}
+@media (prefers-reduced-motion:reduce){.kpi-card-leaving{animation:none!important}}
+
 /* v1.2.5 dashboard layout + sidebar + chart refinement */
 .dashboard-layout{display:grid;gap:18px}
 .dashboard-analytics-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
@@ -585,10 +593,6 @@ textarea{min-height:90px;resize:vertical}
 .inventory-empty span{font-size:48px;display:block;margin-bottom:16px}
 .inventory-empty h3{margin:0 0 8px;color:var(--ink)}
 .inventory-empty p{margin:0;font-size:13px}
-.delete-confirm-modal{max-width:480px}
-.delete-confirm-body{padding:20px 0;text-align:center}
-.delete-warning-icon{width:56px;height:56px;border-radius:50%;background:#fef3cd;display:grid;place-items:center;margin:0 auto 16px;font-size:24px}
-.delete-confirm-body p{color:var(--muted);line-height:1.6;margin:0}
 
 @media(max-width:1050px){
   .inventory-grid{grid-template-columns:repeat(2,1fr)}
@@ -901,7 +905,8 @@ textarea{min-height:90px;resize:vertical}
 .tx-delete-btn:hover{opacity:1;background:#fde8e8}
 .status-tiny{font-size:8px;padding:3px 6px}
 .refund-amount{color:#b54b57}
-.confirm-modal{text-align:center;padding:32px 28px}
+.confirm-modal{width:min(400px,92vw);text-align:center;padding:26px 24px;border-radius:16px}
+.confirm-modal-review{width:min(480px,94vw)}
 .shop-privacy-modal{width:min(560px,100%);text-align:left}
 .shop-privacy-modal h3{text-align:center;margin-top:0}
 .shop-privacy-text{max-height:320px;overflow-y:auto;border:1px solid var(--line);border-radius:12px;padding:16px 18px;font-size:12px;line-height:1.7;color:var(--muted);background:#f9fdfc}
@@ -909,12 +914,11 @@ textarea{min-height:90px;resize:vertical}
 .shop-privacy-text strong:first-child{margin-top:0}
 .shop-privacy-text ul{margin:4px 0;padding-left:18px}
 .shop-privacy-hint{text-align:center;margin:10px 0 0;font-size:11px}
-.confirm-modal h3{margin:0 0 8px;font-size:20px}
-.confirm-modal p{margin:0 0 6px;font-size:14px;color:var(--ink);line-height:1.5}
-.confirm-modal small{display:block;margin-bottom:20px;font-size:12px;color:var(--muted)}
-.confirm-modal-actions{display:flex;gap:10px;justify-content:center}
-.confirm-modal-actions .secondary-button{padding:10px 24px;font-size:13px}
-.confirm-modal-actions .danger-button{padding:10px 24px;font-size:13px}
+.confirm-modal h3{margin:0 0 10px;font-size:17px;font-weight:700;letter-spacing:-.2px}
+.confirm-modal p{margin:0 0 4px;font-size:13.5px;color:var(--ink);line-height:1.55}
+.confirm-modal small{display:block;margin:6px 0 0;font-size:12px;color:var(--muted);line-height:1.5}
+.confirm-modal-actions{display:flex;gap:10px;justify-content:center;margin-top:22px}
+.confirm-modal-actions button{min-width:92px;padding:10px 20px;font-size:13px;font-weight:700;border-radius:11px}
 @media(max-width:1050px){
   .payment-card-grid{grid-template-columns:repeat(2,1fr)}
 }

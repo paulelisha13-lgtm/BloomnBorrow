@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { peso } from "../lib/format";
 
 function AnimatedKpiValue({ value=0, format=(n)=>String(n), delay=0, duration=850 }) {
@@ -28,10 +29,32 @@ function AnimatedKpiValue({ value=0, format=(n)=>String(n), delay=0, duration=85
   return <>{format(display)}</>;
 }
 
-export function Kpi({ label, value, detail, index=0, currency=false }) {
+export function Kpi({ label, value, detail, index=0, currency=false, to }) {
   const delay=index*110;
   const numeric=Number(value)||0;
-  return <article className="kpi-card kpi-card-animated" style={{"--kpi-delay":`${delay}ms`}}>
+  const navigate=useNavigate();
+  const [leaving,setLeaving]=useState(false);
+
+  const go=()=>{
+    if(!to||leaving) return;
+    const reduceMotion=window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches||false;
+    if(reduceMotion){navigate(to);return;}
+    setLeaving(true);
+    setTimeout(()=>navigate(to),260);
+  };
+  const onKeyDown=e=>{
+    if(!to) return;
+    if(e.key==="Enter"||e.key===" "){e.preventDefault();go()}
+  };
+
+  return <article
+    className={`kpi-card kpi-card-animated${to?" kpi-card-clickable":""}${leaving?" kpi-card-leaving":""}`}
+    style={{"--kpi-delay":`${delay}ms`}}
+    role={to?"button":undefined}
+    tabIndex={to?0:undefined}
+    onClick={go}
+    onKeyDown={onKeyDown}
+  >
     <div>
       <span>{label}</span>
       <strong className="kpi-animated-value"><AnimatedKpiValue value={numeric} delay={delay+80} format={currency?peso:(n)=>String(n)}/></strong>

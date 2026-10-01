@@ -175,13 +175,14 @@ export function Inventory() {
       </div><div className="modal-actions"><button type="button" className="secondary-button" onClick={()=>setModal(false)}>Cancel</button><button type="submit" className="primary-button">Save item</button></div>
     </form></div>}
 
-    {deleteModal&&<div className="modal-backdrop" onClick={()=>setDeleteModal(null)}><div className="modal delete-confirm-modal" onClick={e=>e.stopPropagation()}>
-      <div className="modal-head"><div><span className="eyebrow">Confirm deletion</span><h2>Delete {deleteModal.name}?</h2></div><button type="button" onClick={()=>setDeleteModal(null)}>×</button></div>
-      <div className="delete-confirm-body">
-        <div className="delete-warning-icon">⚠</div>
-        <p>This will permanently remove <strong>{deleteModal.name}</strong> ({deleteModal.sku}) from your inventory. This action cannot be undone.</p>
+    {deleteModal&&<div className="modal-backdrop" onClick={()=>setDeleteModal(null)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+      <h3>Delete Item</h3>
+      <p>Are you sure you want to delete <strong>{deleteModal.name}</strong> ({deleteModal.sku})?</p>
+      <small>This action cannot be undone.</small>
+      <div className="confirm-modal-actions">
+        <button className="secondary-button" onClick={()=>setDeleteModal(null)}>Cancel</button>
+        <button className="danger-button" onClick={remove} disabled={deleteLoading}>{deleteLoading?"Deleting...":"Delete"}</button>
       </div>
-      <div className="modal-actions"><button className="secondary-button" onClick={()=>setDeleteModal(null)}>Cancel</button><button className="danger-button" onClick={remove} disabled={deleteLoading}>{deleteLoading?"Deleting...":"Delete item"}</button></div>
     </div></div>}
 
     {conditionItem&&<div className="modal-backdrop" onClick={()=>{setConditionItem(null);setConditions([])}}><div className="modal condition-history-modal" onClick={e=>e.stopPropagation()}>

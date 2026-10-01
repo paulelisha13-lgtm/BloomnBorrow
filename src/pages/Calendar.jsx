@@ -65,6 +65,8 @@ export function Calendar() {
   const [openDay,setOpenDay]=useState(null);
   const [editor,setEditor]=useState(null);
   const [saving,setSaving]=useState(false);
+  const [deleteEntryTarget,setDeleteEntryTarget]=useState(null);
+  const [deletingEntry,setDeletingEntry]=useState(false);
 
   // Always six weeks so the month never changes height as you navigate, and
   // so leading/trailing days of the month are visible and clickable.
@@ -179,12 +181,14 @@ export function Calendar() {
     .catch(e=>setError(e.message));
 
   const remove=async entry=>{
-    if(!window.confirm(`Delete "${entry.title}" from the calendar? This cannot be undone.`)) return;
+    setDeletingEntry(true);
     setError("");
     try{
       await api(`/admin/calendar/${entry.id}`,{method:"DELETE"});
+      setDeleteEntryTarget(null);
       load(grid.from,grid.to);
     }catch(e){setError(e.message)}
+    finally{setDeletingEntry(false)}
   };
 
   const dayItems=openDay?(byDay.get(openDay)||[]):[];
@@ -306,7 +310,7 @@ export function Calendar() {
                 <button className="secondary-button" onClick={()=>openEdit(item.entry)}>Edit</button>
                 {item.entry.status!=="cancelled"&&<button className="secondary-button" onClick={()=>setStatus(item.entry,"cancelled")}>Cancel Entry</button>}
                 {item.entry.status==="cancelled"&&<button className="secondary-button" onClick={()=>setStatus(item.entry,"confirmed")}>Restore</button>}
-                {isAdminUser()&&<button className="secondary-button danger" onClick={()=>remove(item.entry)}>Delete</button>}
+                {isAdminUser()&&<button className="secondary-button danger" onClick={()=>setDeleteEntryTarget(item.entry)}>Delete</button>}
               </div>
             </article>)}
       </div>}
@@ -332,6 +336,16 @@ export function Calendar() {
         <label className="span-2">Notes<textarea value={editor.form.notes} onChange={e=>setEditor({...editor,form:{...editor.form,notes:e.target.value}})} placeholder="Optional"/></label>
       </div>
       <div className="modal-actions"><button className="secondary-button" onClick={()=>setEditor(null)}>Cancel</button><button className="primary-button" onClick={save} disabled={saving}>{saving?"Saving...":editor.id?"Save Changes":"Add to Calendar"}</button></div>
+    </div></div>}
+
+    {deleteEntryTarget&&<div className="modal-backdrop" onClick={()=>setDeleteEntryTarget(null)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+      <h3>Delete Entry</h3>
+      <p>Are you sure you want to delete <strong>{deleteEntryTarget.title}</strong>?</p>
+      <small>This action cannot be undone.</small>
+      <div className="confirm-modal-actions">
+        <button className="secondary-button" onClick={()=>setDeleteEntryTarget(null)}>Cancel</button>
+        <button className="danger-button" disabled={deletingEntry} onClick={()=>remove(deleteEntryTarget)}>{deletingEntry?"Deleting...":"Delete"}</button>
+      </div>
     </div></div>}
   </AdminShell>;
 }

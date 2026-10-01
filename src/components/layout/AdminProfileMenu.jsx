@@ -7,6 +7,7 @@ export function AdminProfileMenu() {
   const user = getStoredUser() || {};
   const [open,setOpen] = useState(false);
   const [signingOut,setSigningOut] = useState(false);
+  const [logoutConfirm,setLogoutConfirm] = useState(false);
   const menuRef = useRef(null);
   const initials = (user.full_name || "Admin User").split(" ").filter(Boolean).map(x=>x[0]).join("").slice(0,2).toUpperCase() || "AD";
 
@@ -40,9 +41,18 @@ export function AdminProfileMenu() {
         <span>⚙</span><div><strong>Account Settings</strong><small>Profile and password</small></div>
       </button>
       <div className="profile-menu-divider"/>
-      <button type="button" role="menuitem" className="profile-signout" disabled={signingOut} onClick={logout}>
-        <span>↪</span><div><strong>{signingOut?"Signing out…":"Sign Out"}</strong><small>End this session</small></div>
+      <button type="button" role="menuitem" className="profile-signout" disabled={signingOut} onClick={()=>{setOpen(false);setLogoutConfirm(true)}}>
+        <span>↪</span><div><strong>Sign Out</strong><small>End this session</small></div>
       </button>
     </div>}
+
+    {logoutConfirm && <div className="modal-backdrop" onClick={()=>!signingOut&&setLogoutConfirm(false)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+      <h3>Sign Out</h3>
+      <p>Are you sure you want to sign out?</p>
+      <div className="confirm-modal-actions">
+        <button className="secondary-button" disabled={signingOut} onClick={()=>setLogoutConfirm(false)}>Cancel</button>
+        <button className="primary-button" disabled={signingOut} onClick={logout}>{signingOut?"Signing out...":"Sign Out"}</button>
+      </div>
+    </div></div>}
   </div>;
 }
