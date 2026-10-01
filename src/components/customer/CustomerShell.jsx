@@ -85,7 +85,7 @@ function CustomerFooter() {
 // Note: CartProvider is NOT mounted here. Pages call useCart() themselves
 // before they render <CustomerShell>, so the provider has to be an ancestor
 // of the page component -- it's mounted once per route in App.jsx instead.
-export function CustomerShell({ title, subtitle, hero, children }) {
+export function CustomerShell({ title, subtitle, hero, children, hideFloatingCart }) {
   return (
     <div className="shop-shell">
       <header className="shop-header">
@@ -107,7 +107,7 @@ export function CustomerShell({ title, subtitle, hero, children }) {
         {children}
       </main>
       <CustomerFooter />
-      <CartFab />
+      {!hideFloatingCart && <CartFab />}
     </div>
   );
 }

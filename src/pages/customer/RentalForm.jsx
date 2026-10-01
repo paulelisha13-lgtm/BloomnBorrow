@@ -31,6 +31,7 @@ export function CustomerRentalForm() {
   const [availability, setAvailability] = useState({});
   const [error, setError] = useState("");
   const [confirming, setConfirming] = useState(false);
+  const [leaveConfirm, setLeaveConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
   const [business, setBusiness] = useState(null);
@@ -106,6 +107,14 @@ export function CustomerRentalForm() {
     }
   };
 
+  const confirmBackToCart = () => {
+    setForm(blankForm());
+    setIdFile(null);
+    setIdFileError("");
+    setLeaveConfirm(false);
+    navigate("/shop/cart");
+  };
+
   if (result) return <CustomerShell title="Request submitted">
     <div className="admin-card shop-success">
       <h2>{result.booking_no}</h2>
@@ -119,11 +128,11 @@ export function CustomerRentalForm() {
 
   if (items.length === 0) return null;
 
-  if (!agreed) return <CustomerShell title="Complete your rental request" subtitle="One request covers every item in your cart.">
+  if (!agreed) return <CustomerShell title="Complete your rental request" subtitle="One request covers every item in your cart." hideFloatingCart>
     <PrivacyConsentModal business={business} onAgree={() => setAgreed(true)} onDecline={() => navigate("/shop/cart")} />
   </CustomerShell>;
 
-  return <CustomerShell title="Complete your rental request" subtitle="One request covers every item in your cart.">
+  return <CustomerShell title="Complete your rental request" subtitle="One request covers every item in your cart." hideFloatingCart>
     <div className="admin-booking-form">
       {error && <div className="login-error">{error}</div>}
 
@@ -209,8 +218,17 @@ export function CustomerRentalForm() {
         </div>}
       </section>
 
-      <div className="sticky-form-actions"><Link className="secondary-button" to="/shop/cart">Back to Cart</Link><button className="primary-button" onClick={openConfirm}>Review &amp; Request to Rent</button></div>
+      <div className="sticky-form-actions"><button type="button" className="secondary-button" onClick={() => setLeaveConfirm(true)}>Back to Cart</button><button className="primary-button" onClick={openConfirm}>Request to Rent</button></div>
     </div>
+
+    {leaveConfirm && <div className="modal-backdrop" onClick={() => setLeaveConfirm(false)}><div className="modal confirm-modal" onClick={e => e.stopPropagation()}>
+      <h3>Leave Rental Request?</h3>
+      <p>Going back to the cart will clear everything you've entered in this rental request.</p>
+      <div className="confirm-modal-actions">
+        <button className="secondary-button" onClick={() => setLeaveConfirm(false)}>Cancel</button>
+        <button className="primary-button" onClick={confirmBackToCart}>Continue</button>
+      </div>
+    </div></div>}
 
     {confirming && <div className="modal-backdrop" onClick={() => !submitting && setConfirming(false)}><div className="modal confirm-modal confirm-modal-review" onClick={e => e.stopPropagation()}>
       <h3>Confirm your rental request</h3>
@@ -227,7 +245,7 @@ export function CustomerRentalForm() {
       <p className="muted">Confirming sends this request to our team. It will be marked as waiting for approval — this is not a confirmed booking yet.</p>
       <div className="confirm-modal-actions">
         <button className="secondary-button" disabled={submitting} onClick={() => setConfirming(false)}>Edit</button>
-        <button className="primary-button" disabled={submitting} onClick={submit}>{submitting ? "Confirming…" : "Confirm"}</button>
+        <button className="primary-button" disabled={submitting} onClick={submit}>{submitting ? "Confirming…" : "Continue to Confirm"}</button>
       </div>
     </div></div>}
   </CustomerShell>;
