@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { CustomerShell } from "../../components/customer/CustomerShell";
+import { PriceDisplay } from "../../components/PriceDisplay";
 import { useCart } from "../../context/CartContext";
 import { publicApi } from "../../lib/publicApi";
 import { peso } from "../../lib/format";
@@ -89,7 +90,7 @@ export function CustomerItemDetail() {
             {item.description && <p className="shop-detail-desc">{item.description}</p>}
 
             <div className="shop-detail-price-row">
-              <div className="shop-detail-price"><strong>{peso(Number(item.daily_price))}</strong><span>/day</span></div>
+              <PriceDisplay size="detail" price={item.daily_price} originalPrice={item.original_price} />
               <span className="shop-detail-deposit">+ {peso(Number(item.security_deposit))} security deposit</span>
             </div>
 
@@ -129,7 +130,7 @@ export function CustomerItemDetail() {
                 <h3>{r.name}</h3>
                 <div className="shop-item-card-foot">
                   <div className="shop-item-card-price">
-                    <strong>{peso(Number(r.daily_price))}<span>/day</span></strong>
+                    <PriceDisplay price={r.daily_price} originalPrice={r.original_price} />
                     <small className={r.available_quantity < 1 ? "shop-qty-zero" : ""}>{r.available_quantity < 1 ? "Unavailable" : `Available: ${r.available_quantity}`}</small>
                   </div>
                   <button type="button" className={`primary-button shop-add-btn ${relatedAdded === r.id ? "is-added" : ""}`} disabled={r.available_quantity < 1} onClick={e => quickAddRelated(e, r)}>{relatedAdded === r.id ? "Added ✓" : "Add to Cart"}</button>

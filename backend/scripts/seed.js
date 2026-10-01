@@ -116,25 +116,29 @@ try {
 
   console.log("[seed] Creating/updating rental catalog...");
 
+  // [sku,name,category,description,daily_price,original_price,security_deposit,total_quantity,image_url]
+  // original_price is the optional compare-at price for the "Save ₱X" badge
+  // (display-only); NULL means no discount.
   const rentalItems = [
-    ["RF-CAM-001","Canon EOS R50 Camera","Camera","Compact mirrorless camera package for events, content creation, and travel.",1200,3000,4,"https://images.unsplash.com/photo-1502920917128-1aa500764cbd?auto=format&fit=crop&w=900&q=80"],
-    ["RF-AUD-001","JBL PartyBox Speaker","Audio","Portable high-output speaker for birthdays, parties, and small outdoor events.",850,1800,6,"https://images.unsplash.com/photo-1545454675-3531b543be5d?auto=format&fit=crop&w=900&q=80"],
-    ["RF-EVT-001","Projector + Screen Set","Events","HD projector bundle ideal for presentations, movie nights, and events.",1500,2500,3,"https://images.unsplash.com/photo-1478720568477-152d9b164e26?auto=format&fit=crop&w=900&q=80"],
-    ["RF-OUT-001","Premium Camping Tent","Outdoor","Water-resistant four-person tent with quick setup and compact storage.",650,1000,8,"https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=900&q=80"],
-    ["RF-TOL-001","Makita Power Tool Kit","Tools","Multi-tool rental package for home improvement and professional projects.",900,2200,5,"https://images.unsplash.com/photo-1504148455328-c376907d081c?auto=format&fit=crop&w=900&q=80"],
-    ["RF-EVT-002","Folding Table & Chair Set","Events","Convenient event furniture set for parties, meetings, and gatherings.",500,900,12,"https://images.unsplash.com/photo-1507501336603-6e31db2be093?auto=format&fit=crop&w=900&q=80"]
+    ["RF-CAM-001","Canon EOS R50 Camera","Camera","Compact mirrorless camera package for events, content creation, and travel.",1200,1400,3000,4,"https://images.unsplash.com/photo-1502920917128-1aa500764cbd?auto=format&fit=crop&w=900&q=80"],
+    ["RF-AUD-001","JBL PartyBox Speaker","Audio","Portable high-output speaker for birthdays, parties, and small outdoor events.",850,null,1800,6,"https://images.unsplash.com/photo-1545454675-3531b543be5d?auto=format&fit=crop&w=900&q=80"],
+    ["RF-EVT-001","Projector + Screen Set","Events","HD projector bundle ideal for presentations, movie nights, and events.",1500,1800,2500,3,"https://images.unsplash.com/photo-1478720568477-152d9b164e26?auto=format&fit=crop&w=900&q=80"],
+    ["RF-OUT-001","Premium Camping Tent","Outdoor","Water-resistant four-person tent with quick setup and compact storage.",650,null,1000,8,"https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=900&q=80"],
+    ["RF-TOL-001","Makita Power Tool Kit","Tools","Multi-tool rental package for home improvement and professional projects.",900,null,2200,5,"https://images.unsplash.com/photo-1504148455328-c376907d081c?auto=format&fit=crop&w=900&q=80"],
+    ["RF-EVT-002","Folding Table & Chair Set","Events","Convenient event furniture set for parties, meetings, and gatherings.",500,null,900,12,"https://images.unsplash.com/photo-1507501336603-6e31db2be093?auto=format&fit=crop&w=900&q=80"]
   ];
 
   for (const item of rentalItems) {
     await db.execute(`
       INSERT INTO rental_items
-        (sku,name,category,description,daily_price,security_deposit,total_quantity,status,image_url)
-      VALUES (?,?,?,?,?,?,?,'active',?)
+        (sku,name,category,description,daily_price,original_price,security_deposit,total_quantity,status,image_url)
+      VALUES (?,?,?,?,?,?,?,?,'active',?)
       ON DUPLICATE KEY UPDATE
         name=VALUES(name),
         category=VALUES(category),
         description=VALUES(description),
         daily_price=VALUES(daily_price),
+        original_price=VALUES(original_price),
         security_deposit=VALUES(security_deposit),
         total_quantity=VALUES(total_quantity),
         status='active',

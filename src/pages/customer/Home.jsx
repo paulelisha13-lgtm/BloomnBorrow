@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { CustomerShell } from "../../components/customer/CustomerShell";
 import { useCart } from "../../context/CartContext";
 import { publicApi } from "../../lib/publicApi";
-import { peso } from "../../lib/format";
+import { PriceDisplay } from "../../components/PriceDisplay";
 
 function SearchIcon() {
   return <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>;
@@ -99,7 +99,7 @@ export function CustomerHome() {
             <h3>{item.name}</h3>
             <div className="shop-item-card-foot">
               <div className="shop-item-card-price">
-                <strong>{peso(Number(item.daily_price))}<span>/day</span></strong>
+                <PriceDisplay price={item.daily_price} originalPrice={item.original_price} />
                 <small>Available: {item.available_quantity}</small>
               </div>
               <button type="button" className={`primary-button shop-add-btn ${added === item.id ? "is-added" : ""}`} onClick={e => quickAdd(e, item)}>{added === item.id ? "Added ✓" : "Add to Cart"}</button>

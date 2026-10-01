@@ -1212,6 +1212,19 @@ tr.table-subrow .payment-transaction-row{border:0}
 .shop-item-card-price strong span{font-size:10.5px;color:var(--muted);font-weight:650;letter-spacing:0}
 .shop-item-card-price small{font-size:10.5px;color:var(--muted);white-space:nowrap}
 .shop-item-card-price small.shop-qty-zero{color:#bd4c58}
+/* Discounted price: struck-through compare-at price + green "Save ₱X" pill.
+   Used by PriceDisplay in the detail row and the grid cards. Display-only --
+   the current daily_price is always what gets charged. */
+.price-tag-sale{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.price-tag-original{font-weight:650;color:var(--muted);text-decoration:line-through}
+.price-tag-save{background:#2ebd72;color:#fff;font-weight:800;border-radius:999px;line-height:1;white-space:nowrap}
+.shop-detail-price .price-tag-sale{gap:8px}
+.shop-detail-price .price-tag-original{font-size:15px}
+.shop-detail-price .price-tag-save{font-size:11.5px;padding:6px 13px}
+.price-tag-card{display:grid;gap:2px;min-width:0}
+.price-tag-card .price-tag-sale{gap:5px}
+.price-tag-card .price-tag-original{font-size:10.5px}
+.price-tag-card .price-tag-save{font-size:9px;padding:3px 8px}
 .shop-item-card-body .shop-add-btn{flex:0 0 auto;padding:7px 13px;font-size:11.5px;border-radius:9px;white-space:nowrap}
 .shop-item-card-body .shop-add-btn.is-added{animation:shopBtnPop .32s ease}
 @keyframes shopBtnPop{0%{transform:scale(.94)}55%{transform:scale(1.05)}100%{transform:scale(1)}}
@@ -1322,6 +1335,8 @@ tr.table-subrow .payment-transaction-row{border:0}
   .shop-detail-media{height:230px;border-radius:14px}
   .shop-detail-info h1{font-size:23px;margin:6px 0 8px}
   .shop-detail-price strong{font-size:24px}
+  .shop-detail-price .price-tag-original{font-size:13.5px}
+  .shop-detail-price .price-tag-save{font-size:10.5px;padding:5px 11px}
   .shop-detail-actions{flex-wrap:wrap}
   .shop-item-grid{grid-template-columns:repeat(2,1fr);gap:14px}
   .shop-cart-row{grid-template-columns:52px 1fr;grid-template-areas:"thumb info" "thumb qty" "thumb total" "thumb remove";row-gap:6px;gap:12px}

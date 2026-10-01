@@ -24,7 +24,7 @@ export function Inventory() {
   const [conditionLoading,setConditionLoading]=useState(false);
   const [addConditionModal,setAddConditionModal]=useState(false);
   const [conditionForm,setConditionForm]=useState({condition_status:"good",condition_type:"after_return",notes:"",booking_id:""});
-  const blank={sku:"",name:"",category:"Events",description:"",daily_price:"",security_deposit:"",total_quantity:1,status:"active",image_url:""};
+  const blank={sku:"",name:"",category:"Events",description:"",daily_price:"",original_price:"",security_deposit:"",total_quantity:1,status:"active",image_url:""};
   const [form,setForm]=useState(blank);
 
   const load=()=>api("/admin/inventory").then(d=>setRows(d.items||[])).catch(e=>setError(e.message));
@@ -169,7 +169,7 @@ export function Inventory() {
       <div className="form-grid">
         <label>SKU<input required value={form.sku} onChange={e=>setForm({...form,sku:e.target.value})}/></label><label>Item name<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label>
         <label>Category<input required value={form.category} onChange={e=>setForm({...form,category:e.target.value})}/></label><label>Status<select value={form.status} onChange={e=>setForm({...form,status:e.target.value})}><option>active</option><option>inactive</option><option>maintenance</option></select></label>
-        <label>Daily price<input required type="number" min="0" value={form.daily_price} onChange={e=>setForm({...form,daily_price:e.target.value})}/></label><label>Security deposit<input required type="number" min="0" value={form.security_deposit} onChange={e=>setForm({...form,security_deposit:e.target.value})}/></label>
+        <label>Daily price<input required type="number" min="0" value={form.daily_price} onChange={e=>setForm({...form,daily_price:e.target.value})}/></label><label>Original price <small>(optional, shows “Save ₱X”)</small><input type="number" min="0" value={form.original_price??""} onChange={e=>setForm({...form,original_price:e.target.value})} placeholder="No discount"/></label><label>Security deposit<input required type="number" min="0" value={form.security_deposit} onChange={e=>setForm({...form,security_deposit:e.target.value})}/></label>
         <label>Quantity<input required type="number" min="1" value={form.total_quantity} onChange={e=>setForm({...form,total_quantity:e.target.value})}/></label><label>Image URL<input value={form.image_url||""} onChange={e=>setForm({...form,image_url:e.target.value})}/></label>
         <label className="span-2">Description<textarea value={form.description||""} onChange={e=>setForm({...form,description:e.target.value})}/></label>
       </div><div className="modal-actions"><button type="button" className="secondary-button" onClick={()=>setModal(false)}>Cancel</button><button type="submit" className="primary-button">Save item</button></div>

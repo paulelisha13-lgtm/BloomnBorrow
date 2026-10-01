@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { escHtml, peso } from "../src/lib/format.js";
+import { discountOf, escHtml, peso } from "../src/lib/format.js";
 import { sortRows } from "../src/hooks/useSort.js";
 
 test("escHtml neutralises HTML so printed invoices cannot run injected code", () => {
@@ -12,6 +12,17 @@ test("escHtml neutralises HTML so printed invoices cannot run injected code", ()
 test("peso formats whole Philippine pesos", () => {
   assert.match(peso(1500), /^₱1,500$/);
   assert.match(peso(0), /^₱0$/);
+});
+
+test("discountOf only reports a saving when the original price is genuinely higher", () => {
+  assert.deepEqual(discountOf(2200, 2400), { original: 2400, save: 200 });
+  assert.equal(discountOf(2200, null), null, "no original price -> plain price");
+  assert.equal(discountOf(2200, undefined), null);
+  assert.equal(discountOf(2200, 0), null, "zero is not a discount");
+  assert.equal(discountOf(2200, 2200), null, "same price -> no badge");
+  assert.equal(discountOf(2200, 2000), null, "stale lower original never shows a negative saving");
+  assert.equal(discountOf("2200", "2400")?.save, 200, "DB decimal strings are numbers");
+  assert.equal(discountOf("junk", "2400"), null, "unparseable input is ignored");
 });
 
 test("sortRows sorts ascending/descending by the chosen column and leaves the input alone", () => {

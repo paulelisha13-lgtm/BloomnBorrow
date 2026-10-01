@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS rental_items (
   category VARCHAR(100) NOT NULL,
   description TEXT NULL,
   daily_price DECIMAL(12,2) NOT NULL DEFAULT 0,
+  original_price DECIMAL(12,2) NULL,
   security_deposit DECIMAL(12,2) NOT NULL DEFAULT 0,
   total_quantity INT UNSIGNED NOT NULL DEFAULT 1,
   status ENUM('active','inactive','maintenance') NOT NULL DEFAULT 'active',

@@ -73,3 +73,22 @@ test("a calendar email is optional but must be valid when given", () => {
   assert.equal(schemas.calendarEntry.safeParse({ ...calendar, customer_email: "not-an-email" }).success, false);
   assert.equal(schemas.calendarEntry.safeParse({ ...calendar, customer_email: "Party@Example.com" }).data.customer_email, "party@example.com");
 });
+
+const inventoryItem = { sku: "RF-CAM-001", name: "Camera", category: "Camera", daily_price: 2200, security_deposit: 3000, total_quantity: 2 };
+
+test("an item's compare-at original price is optional and display-only", () => {
+  const without = schemas.inventoryItem.safeParse(inventoryItem);
+  assert.equal(without.success, true);
+  assert.equal(without.data.original_price, null, "absent means no discount, stored as null");
+  const cleared = schemas.inventoryItem.safeParse({ ...inventoryItem, original_price: "" });
+  assert.equal(cleared.success, true, "cleared field from the admin form is valid");
+  assert.equal(cleared.data.original_price, null, "cleared field becomes null, not 0");
+  const discounted = schemas.inventoryItem.safeParse({ ...inventoryItem, original_price: "2400" });
+  assert.equal(discounted.success, true);
+  assert.equal(discounted.data.original_price, 2400, "decimal strings are coerced");
+});
+
+test("an original price must be a non-negative number", () => {
+  assert.equal(schemas.inventoryItem.safeParse({ ...inventoryItem, original_price: -5 }).success, false);
+  assert.equal(schemas.inventoryItem.safeParse({ ...inventoryItem, original_price: "lots" }).success, false);
+});

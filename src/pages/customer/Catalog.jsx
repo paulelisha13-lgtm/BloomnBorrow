@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { CustomerShell } from "../../components/customer/CustomerShell";
 import { useCart } from "../../context/CartContext";
 import { publicApi } from "../../lib/publicApi";
-import { peso } from "../../lib/format";
+import { PriceDisplay } from "../../components/PriceDisplay";
 
 const STATE_KEY = "bb_customer_browse_state";
 const readBrowseState = () => {
@@ -81,7 +81,7 @@ export function CustomerCatalog() {
               <h3>{item.name}</h3>
               <div className="shop-item-card-foot">
                 <div className="shop-item-card-price">
-                  <strong>{peso(Number(item.daily_price))}<span>/day</span></strong>
+                  <PriceDisplay price={item.daily_price} originalPrice={item.original_price} />
                   <small className={out ? "shop-qty-zero" : ""}>{out ? "Unavailable" : `Available: ${item.available_quantity}`}</small>
                 </div>
                 <button type="button" className={`primary-button shop-add-btn ${added === item.id ? "is-added" : ""}`} disabled={out} onClick={e => quickAdd(e, item)}>{added === item.id ? "Added ✓" : "Add to Cart"}</button>

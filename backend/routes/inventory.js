@@ -24,13 +24,14 @@ router.get("/api/admin/inventory", authenticate, requireRole("admin","staff"), a
 router.post("/api/admin/inventory", authenticate, requireRole("admin"), parseBody(schemas.inventoryItem), async (req,res) => {
   const {sku,name,category,description,image_url} = req.body;
   const daily = req.body.daily_price;
+  const original = req.body.original_price;
   const deposit = req.body.security_deposit;
   const qty = req.body.total_quantity;
   try {
     const [result] = await db.query(`
-      INSERT INTO rental_items(sku,name,category,description,daily_price,security_deposit,total_quantity,status,image_url)
-      VALUES(?,?,?,?,?,?,?,'active',?)
-    `,[sku,name,category,description||null,daily,deposit,qty,image_url||null]);
+      INSERT INTO rental_items(sku,name,category,description,daily_price,original_price,security_deposit,total_quantity,status,image_url)
+      VALUES(?,?,?,?,?,?,?,?,?,'active')
+    `,[sku,name,category,description||null,daily,original,deposit,qty,image_url||null]);
     await audit(req,"CREATE_RENTAL_ITEM",null,{item_id:result.insertId,sku});
     res.status(201).json({id:result.insertId});
   } catch(e) {
@@ -46,9 +47,9 @@ router.patch("/api/admin/inventory/:id", authenticate, requireRole("admin"), par
   const next = {...old,...req.body};
   if(!["active","inactive","maintenance"].includes(next.status)) return res.status(400).json({message:"Invalid inventory status."});
   await db.query(`
-    UPDATE rental_items SET sku=?,name=?,category=?,description=?,daily_price=?,security_deposit=?,total_quantity=?,status=?,image_url=?
+    UPDATE rental_items SET sku=?,name=?,category=?,description=?,daily_price=?,original_price=?,security_deposit=?,total_quantity=?,status=?,image_url=?
     WHERE id=?
-  `,[next.sku,next.name,next.category,next.description||null,Number(next.daily_price),Number(next.security_deposit),Number(next.total_quantity),next.status,next.image_url||null,id]);
+  `,[next.sku,next.name,next.category,next.description||null,Number(next.daily_price),next.original_price==null?null:Number(next.original_price),Number(next.security_deposit),Number(next.total_quantity),next.status,next.image_url||null,id]);
   if(next.status==="maintenance"&&old.status!=="maintenance"){
     await db.query("INSERT INTO maintenance_records(rental_item_id,booking_id,reason,status,notes) VALUES(?,NULL,'Manual maintenance assignment','open',?)",[id,req.body.notes||null]);
   }

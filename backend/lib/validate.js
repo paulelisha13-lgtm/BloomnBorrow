@@ -175,6 +175,14 @@ export const schemas = {
     category: z.string().trim().min(1, "is required").max(60, "is too long"),
     description: optText(2000),
     daily_price: money,
+    // Optional compare-at price for the "Save ₱X" display. Display-only: a
+    // value at or below daily_price is simply not shown as a discount, so it
+    // never affects what a booking charges. "" / missing -> NULL, matching how
+    // the other nullable columns are stored rather than coercing to 0.
+    original_price: z.preprocess(
+      (v) => (v === "" || v === undefined || v === null ? null : v),
+      money.nullable()
+    ),
     security_deposit: money,
     total_quantity: z.coerce.number().int("must be a whole number").min(0, "cannot be negative").max(1_000_000, "is too large"),
     status: z.enum(["active", "inactive", "maintenance"]).optional().default("active"),
