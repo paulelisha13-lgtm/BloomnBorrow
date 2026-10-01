@@ -3,12 +3,12 @@ dist/
 .env
 .env.*
 !.env.example
-!server/.env.example
-!server/.env.production.example
-server/.env
-server/.env.production
+!backend/.env.example
+!backend/.env.production.example
+backend/.env
+backend/.env.production
 npm-debug.log*
 .DS_Store
 
 # Customer-uploaded ID documents -- never belongs in version control
-server/uploads/
+backend/uploads/

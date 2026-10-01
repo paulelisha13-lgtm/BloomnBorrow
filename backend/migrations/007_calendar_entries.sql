@@ -1,6 +1,6 @@
 -- Calendar Reservation & Booking module
 -- Replaces the Incidents module in the admin UI. The incidents table itself is
--- left in place: server/routes/bookings.js still writes damage records to it
+-- left in place: backend/routes/bookings.js still writes damage records to it
 -- during return inspection.
 
 CREATE TABLE IF NOT EXISTS calendar_entries (

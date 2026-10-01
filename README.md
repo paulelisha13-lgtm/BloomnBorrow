@@ -39,7 +39,7 @@ BloomnBorrow/
 │   ├── lib/                      api.js (server calls), format.js, invoice.js, roles.js
 │   ├── assets/                   logo.png
 │   └── styles.css
-├── server/
+├── backend/
 │   ├── server.js                 API entry: security middleware, mounts routes/, starts jobs/
 │   ├── routes/                   One file per area: auth, users, bookings, inventory, customers,
 │   │                             payments, calendar, maintenance, reports, settings, notifications
@@ -51,7 +51,7 @@ BloomnBorrow/
 └── docs/                         DEPLOYMENT.md, SECURITY.md, brand/ (full-size logo)
 ```
 
-Useful server commands (run inside `server/`):
+Useful server commands (run inside `backend/`):
 
 | Command | What it does |
 | --- | --- |
@@ -70,7 +70,7 @@ permissions) against a running server and database. It is skipped unless you giv
 and it deletes everything it creates (all test records use `e2e-*@example.com` emails):
 
 ```bash
-cd server
+cd backend
 BB_TEST_ADMIN_EMAIL=you@example.com BB_TEST_ADMIN_PASSWORD='...' npm run test:api
 ```
 
@@ -91,7 +91,7 @@ BB_TEST_ADMIN_EMAIL=you@example.com BB_TEST_ADMIN_PASSWORD='...' npm run test:ap
 ## Setup
 
 ### 1. Backend environment
-Copy `server/.env.example` to `server/.env`.
+Copy `backend/.env.example` to `backend/.env`.
 
 Set:
 ```env
@@ -124,7 +124,7 @@ through a different provider (SendGrid, Amazon SES, a relay, ...), set `SMTP_HOS
 
 ### 2. Create a local database and start the API
 ```bash
-cd server
+cd backend
 npm install
 npm run seed
 npm run dev
@@ -167,7 +167,7 @@ For real operation, do not run `npm run seed`.
 Use:
 
 ```bash
-cd server
+cd backend
 npm ci
 npm run security:check
 npm run migrate

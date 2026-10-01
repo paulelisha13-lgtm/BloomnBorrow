@@ -23,7 +23,7 @@ function ask(question) {
 function askHidden(question) {
   return new Promise((resolve, reject) => {
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
-      reject(new Error("Interactive password entry requires a terminal. Set INITIAL_ADMIN_PASSWORD in server/.env instead."));
+      reject(new Error("Interactive password entry requires a terminal. Set INITIAL_ADMIN_PASSWORD in backend/.env instead."));
       return;
     }
 

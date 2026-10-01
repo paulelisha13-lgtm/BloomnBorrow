@@ -74,13 +74,13 @@ Keep that password for step 5.
 | Setting | Value |
 | --- | --- |
 | **Root Directory** | *(leave empty — repo root)* |
-| **Build Command** | `npm ci && npm --prefix server ci && npm run build` |
-| **Pre-Deploy Command** | `npm --prefix server run migrate` |
-| **Start Command** | `node server/server.js` |
+| **Build Command** | `npm ci && npm --prefix backend ci && npm run build` |
+| **Pre-Deploy Command** | `npm --prefix backend run migrate` |
+| **Start Command** | `node backend/server.js` |
 | **Healthcheck Path** | `/api/health` |
 
-- `vite build` writes `dist/` at the repo root; the server serves `../dist` from `server/`.
-- The pre-deploy command runs the schema + `server/migrations/*.sql` before each release.
+- `vite build` writes `dist/` at the repo root; the server serves `../dist` from `backend/`.
+- The pre-deploy command runs the schema + `backend/migrations/*.sql` before each release.
   Migrations are idempotent (`CREATE TABLE IF NOT EXISTS`), so re-running is safe.
 
 ---
@@ -143,11 +143,11 @@ Notes:
    ```
 2. Temporarily change the **Pre-Deploy Command** to:
    ```
-   npm --prefix server run migrate && npm --prefix server run bootstrap-admin
+   npm --prefix backend run migrate && npm --prefix backend run bootstrap-admin
    ```
 3. Redeploy. Watch the deploy logs for `Initial Admin created successfully`.
 4. **Revert:** delete the three `INITIAL_ADMIN_*` variables and set the Pre-Deploy
-   Command back to `npm --prefix server run migrate`.
+   Command back to `npm --prefix backend run migrate`.
 
 `bootstrap-admin` skips itself once an admin exists, so a stray run is harmless — but
 don't leave the password variable lying around.
@@ -169,7 +169,7 @@ don't leave the password variable lying around.
 ## 9. Ongoing deploys
 
 Push to the tracked branch → Railway rebuilds and redeploys automatically. The
-pre-deploy command applies any new `server/migrations/*.sql` files. No manual steps.
+pre-deploy command applies any new `backend/migrations/*.sql` files. No manual steps.
 
 ---
 
@@ -191,9 +191,9 @@ App service → **Settings** → **Networking** → **Custom Domain** → add
 | `getaddrinfo ENOTFOUND` / `ECONNREFUSED` on the DB | Wrong `DB_HOST`. Use `${{MySQL.RAILWAY_PRIVATE_DOMAIN}}` and confirm both services are in the same project **and** environment. |
 | Pre-deploy fails: `Production migrations must not use the MySQL root account` | `DB_USER` is still `root`; switch it to `bloom_app` (step 3). |
 | Login succeeds, then every request is `401` / "session is no longer valid" | The session cookie isn't sticking. Confirm the site is `https://` and `TRUST_PROXY=1` is set. |
-| Blank page or `404` when refreshing `/admin` | `dist/` wasn't built, or the Start Command isn't `node server/server.js`. Check the build logs for `vite build`. |
-| Every request returns `429` | Rate limit tripped. Wait 15 minutes, or raise `RATE_LIMIT_GLOBAL` (see `server/server.js`). |
-| Want a stricter pre-launch check | Run the bundled preflight: `railway run --service <app-service> "npm --prefix server run preflight"`. It verifies secrets, SSL, tables, and that a real admin (not the demo account) exists. |
+| Blank page or `404` when refreshing `/admin` | `dist/` wasn't built, or the Start Command isn't `node backend/server.js`. Check the build logs for `vite build`. |
+| Every request returns `429` | Rate limit tripped. Wait 15 minutes, or raise `RATE_LIMIT_GLOBAL` (see `backend/server.js`). |
+| Want a stricter pre-launch check | Run the bundled preflight: `railway run --service <app-service> "npm --prefix backend run preflight"`. It verifies secrets, SSL, tables, and that a real admin (not the demo account) exists. |
 
 ---
 

@@ -262,7 +262,7 @@ CREATE TABLE IF NOT EXISTS incidents (
 
 -- Calendar Reservation & Booking module. Replaces the Incidents module in the
 -- admin UI. The incidents table above is intentionally kept: the booking
--- return-inspection flow (server/routes/bookings.js) still records damage there.
+-- return-inspection flow (backend/routes/bookings.js) still records damage there.
 CREATE TABLE IF NOT EXISTS calendar_entries (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   entry_type ENUM('booking','reservation','note','event') NOT NULL DEFAULT 'reservation',

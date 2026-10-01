@@ -4,7 +4,7 @@ import { fileURLToPath } from "url";
 import mysql from "mysql2/promise";
 import "dotenv/config";
 
-// schema.sql and migrations/ live in server/, one level above this script.
+// schema.sql and migrations/ live in backend/, one level above this script.
 const serverDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const database = process.env.DB_NAME || "bloom_borrow";
 const isProduction = process.env.NODE_ENV === "production";

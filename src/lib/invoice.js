@@ -45,7 +45,7 @@ const longDate = value => value ? new Date(value).toLocaleDateString("en-PH", { 
 const shortDate = value => value ? new Date(value).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" }) : "";
 const titleCase = value => String(value || "").replace(/_/g, " ").replace(/\b\w/g, ch => ch.toUpperCase());
 
-// Mirrors buildInvoice() in server/lib/invoiceTemplate.js so the printed and
+// Mirrors buildInvoice() in backend/lib/invoiceTemplate.js so the printed and
 // emailed invoices are identical. Keep the two in step.
 export function buildInvoice(booking = {}, business = {}) {
   const b = paymentBreakdown(booking);

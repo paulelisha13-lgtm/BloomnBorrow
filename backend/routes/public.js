@@ -32,7 +32,7 @@ const lookupLimiter = rateLimit({
 
 const ITEM_FIELDS = "r.id,r.name,r.category,r.description,r.daily_price,r.security_deposit,r.total_quantity,r.image_url";
 // Same "reserved right now" figure Admin -> Inventory already shows as
-// Available (server/routes/inventory.js) -- reused verbatim so the
+// Available (backend/routes/inventory.js) -- reused verbatim so the
 // Customer Side's Available count always agrees with Admin's, instead of a
 // second availability metric. This is the general, non-date-specific
 // figure for browsing; the date-exact check still happens at checkout via

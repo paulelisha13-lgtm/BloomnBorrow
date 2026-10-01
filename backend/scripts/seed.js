@@ -189,7 +189,7 @@ console.log("");
 
   if (error?.code === "ER_ACCESS_DENIED_ERROR") {
     console.error(
-      "\nCheck DB_USER and DB_PASSWORD in server/.env. " +
+      "\nCheck DB_USER and DB_PASSWORD in backend/.env. " +
       "The MySQL username/password is incorrect."
     );
   } else if (error?.code === "ECONNREFUSED") {
