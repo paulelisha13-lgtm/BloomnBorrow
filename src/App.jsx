@@ -1,5 +1,5 @@
 import React from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AccessManagement } from "./pages/AccessManagement";
 import { AccountSettings } from "./pages/AccountSettings";
@@ -23,8 +23,8 @@ import { CustomerRentalForm } from "./pages/customer/RentalForm";
 import { CustomerBookingStatus } from "./pages/customer/BookingStatus";
 import { CartProvider } from "./context/CartContext";
 
-function AdminRoutes() {
-  return <Routes>
+function AdminRoutes({ location }) {
+  return <Routes location={location}>
     <Route path="/access/login" element={<AccessLogin/>}/>
     <Route path="/admin/login" element={<Navigate to="/access/login" replace/>}/>
     <Route path="/shop" element={<CartProvider><CustomerHome/></CartProvider>}/>
@@ -53,6 +53,20 @@ function AdminRoutes() {
 // /shop/* is the public Customer Side (home, browse, request a rental, check status) --
 // everything else stays admin/staff-only, and unknown paths fall back to the
 // dashboard (or login if signed out).
+//
+// Item detail opens as a popup over Browse/Home: when navigation carries a
+// backgroundLocation (set by the page that opened it), the real page keeps
+// rendering underneath and only the modal route renders on top -- the
+// standard react-router "background location" pattern. A direct link or a
+// refresh has no backgroundLocation, so it falls through to the normal full
+// route instead.
 export default function App() {
-  return <AdminRoutes/>;
+  const location = useLocation();
+  const backgroundLocation = location.state?.backgroundLocation;
+  return <>
+    <AdminRoutes location={backgroundLocation || location}/>
+    {backgroundLocation && <Routes>
+      <Route path="/shop/:id" element={<CartProvider><CustomerItemDetail/></CartProvider>}/>
+    </Routes>}
+  </>;
 }

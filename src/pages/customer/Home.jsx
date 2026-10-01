@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { CustomerShell } from "../../components/customer/CustomerShell";
 import { useCart } from "../../context/CartContext";
 import { publicApi } from "../../lib/publicApi";
@@ -30,6 +30,7 @@ const STEPS = [
 
 export function CustomerHome() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { addItem } = useCart();
   const [items, setItems] = useState([]);
   const [added, setAdded] = useState(null);
@@ -89,7 +90,7 @@ export function CustomerHome() {
         <Link className="home-section-link" to="/shop/browse">View all items →</Link>
       </div>
       <div className="shop-item-grid">
-        {featured.map(item => <article className="shop-item-card" onClick={() => navigate(`/shop/${item.id}`)} key={item.id}>
+        {featured.map(item => <article className="shop-item-card" onClick={() => navigate(`/shop/${item.id}`, { state: { backgroundLocation: location } })} key={item.id}>
           <div className="shop-item-card-image">
             {item.image_url ? <img src={item.image_url} alt={item.name} /> : <div className="inventory-card-noimage">🌸</div>}
           </div>

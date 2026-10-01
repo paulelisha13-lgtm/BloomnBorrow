@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { CustomerShell } from "../../components/customer/CustomerShell";
 import { useCart } from "../../context/CartContext";
 import { publicApi } from "../../lib/publicApi";
@@ -12,6 +12,7 @@ const readBrowseState = () => {
 
 export function CustomerCatalog() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { addItem } = useCart();
   const [items, setItems] = useState([]);
   const [error, setError] = useState("");
@@ -70,7 +71,7 @@ export function CustomerCatalog() {
       <div className="shop-item-grid">
         {filtered.map(item => {
           const out = item.available_quantity < 1;
-          return <article className={`shop-item-card ${out ? "is-unavailable" : ""}`} onClick={() => navigate(`/shop/${item.id}`)} key={item.id}>
+          return <article className={`shop-item-card ${out ? "is-unavailable" : ""}`} onClick={() => navigate(`/shop/${item.id}`, { state: { backgroundLocation: location } })} key={item.id}>
             <div className="shop-item-card-image">
               {item.image_url ? <img src={item.image_url} alt={item.name} /> : <div className="inventory-card-noimage">🌸</div>}
               {out && <span className="shop-item-out-badge">Unavailable</span>}
