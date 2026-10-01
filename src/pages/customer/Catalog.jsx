@@ -59,12 +59,12 @@ export function CustomerCatalog() {
         <span>⌕</span>
         <input placeholder="Search items…" value={search} onChange={e => setSearch(e.target.value)} />
       </div>
-    </div>
 
-    <nav className="shop-category-nav" aria-label="Categories">
-      <button type="button" className={`shop-chip ${!category ? "active" : ""}`} onClick={() => setCategory("")}>All</button>
-      {categories.map(cat => <button type="button" key={cat} className={`shop-chip ${category === cat ? "active" : ""}`} onClick={() => setCategory(cat)}>{cat}</button>)}
-    </nav>
+      <nav className="shop-category-nav" aria-label="Categories">
+        <button type="button" className={`shop-chip ${!category ? "active" : ""}`} onClick={() => setCategory("")}>All</button>
+        {categories.map(cat => <button type="button" key={cat} className={`shop-chip ${category === cat ? "active" : ""}`} onClick={() => setCategory(cat)}>{cat}</button>)}
+      </nav>
+    </div>
 
     {loading ? <div className="admin-card inventory-empty">Loading items…</div> :
       filtered.length === 0 ? <div className="admin-card inventory-empty"><h3>No items found</h3><p>{search || category ? "Try adjusting your search or filters." : "Please check back soon."}</p></div> :
@@ -79,6 +79,7 @@ export function CustomerCatalog() {
             <div className="shop-item-card-body">
               <small className="shop-item-card-cat">{item.category}</small>
               <h3>{item.name}</h3>
+              {item.description && <p className="shop-item-card-desc">{item.description}</p>}
               <div className="shop-item-card-foot">
                 <div className="shop-item-card-price">
                   <PriceDisplay price={item.daily_price} originalPrice={item.original_price} />
