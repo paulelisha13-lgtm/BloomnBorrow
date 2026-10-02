@@ -3,6 +3,9 @@ import { authenticate, requireRole } from "../lib/auth.js";
 import { db } from "../lib/db.js";
 import { parseBody, schemas } from "../lib/validate.js";
 import { audit, changedFields } from "../lib/audit.js";
+import { ID_DOCUMENTS_DIR, PAYMENT_PROOFS_DIR } from "../lib/upload.js";
+import fs from "fs";
+import path from "path";
 
 const router = Router();
 
@@ -86,17 +89,52 @@ router.patch("/api/admin/customers/:id", authenticate, requireRole("admin","staf
   if(dup) return res.status(409).json({message:"Email is already used by another customer."});
   await db.query("UPDATE customers SET full_name=?,email=?,phone=?,city=?,address=?,province=?,postal_code=? WHERE id=?",[full_name,email,phone,city||null,address||null,province||null,postal_code||null,id]);
   const [[updated]]=await db.query("SELECT * FROM customers WHERE id=?",[id]);
-  await audit(req,"UPDATE_CUSTOMER",null,{customer_id:id,changes:changedFields(existing,updated,["full_name","email","phone","city","address","province","postal_code"])});
+  await audit(req,"UPDATE_CUSTOMER",null,{customer_id:id,changed_fields:Object.keys(changedFields(existing,updated,["full_name","email","phone","city","address","province","postal_code"]))});
   res.json({customer:updated});
 });
 
 router.delete("/api/admin/customers/:id", authenticate, requireRole("admin"), async (req,res) => {
   const id=Number(req.params.id);
-  const [[customer]]=await db.query("SELECT id,full_name,email,phone FROM customers WHERE id=?",[id]);
-  if(!customer) return res.status(404).json({message:"Customer not found."});
-  await db.query("DELETE FROM customers WHERE id=?",[id]);
-  await audit(req,"DELETE_CUSTOMER",null,{customer_id:id,full_name:customer.full_name,email:customer.email,phone:customer.phone});
-  res.json({ok:true});
+  const conn=await db.getConnection();
+  let bookings=[];
+  try {
+    await conn.beginTransaction();
+    const [[customer]]=await conn.query("SELECT id FROM customers WHERE id=? FOR UPDATE",[id]);
+    if(!customer) {
+      await conn.rollback();
+      return res.status(404).json({message:"Customer not found."});
+    }
+    [bookings]=await conn.query(`
+      SELECT b.id,b.id_document_path,
+        (SELECT w.proof_path FROM booking_payment_workflows w WHERE w.booking_id=b.id) proof_path
+      FROM bookings b WHERE b.customer_id=? FOR UPDATE
+    `,[id]);
+    await conn.query(`
+      UPDATE bookings SET customer_id=NULL,customer_name='Deleted customer',
+        customer_email=CONCAT('deleted-',id,'@invalid.local'),customer_phone='',city=NULL,
+        delivery_address=NULL,province=NULL,postal_code=NULL,notes=NULL,
+        id_document_path=NULL,id_document_original_name=NULL
+      WHERE customer_id=?
+    `,[id]);
+    for(const booking of bookings) {
+      await conn.query(`
+        UPDATE booking_payment_workflows
+        SET proof_path=NULL,proof_original_name=NULL,proof_uploaded_at=NULL,proof_status='awaiting'
+        WHERE booking_id=?
+      `,[booking.id]);
+    }
+    await conn.query("DELETE FROM customers WHERE id=?",[id]);
+    await conn.commit();
+  } catch(error) {
+    await conn.rollback();
+    throw error;
+  } finally { conn.release(); }
+  for(const booking of bookings) {
+    if(booking.id_document_path) fs.unlink(path.join(ID_DOCUMENTS_DIR,path.basename(booking.id_document_path)),()=>{});
+    if(booking.proof_path) fs.unlink(path.join(PAYMENT_PROOFS_DIR,path.basename(booking.proof_path)),()=>{});
+  }
+  await audit(req,"DELETE_CUSTOMER",null,{customer_id:id,anonymized_booking_count:bookings.length});
+  res.json({ok:true,anonymized_booking_count:bookings.length});
 });
 
 export default router;

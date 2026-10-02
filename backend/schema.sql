@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS rental_items (
   total_quantity INT UNSIGNED NOT NULL DEFAULT 1,
   status ENUM('active','inactive','maintenance') NOT NULL DEFAULT 'active',
   image_url TEXT NULL,
+  bundle_items JSON NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX(category),
@@ -155,6 +156,22 @@ CREATE TABLE IF NOT EXISTS payments (
   INDEX(created_at),
   CONSTRAINT fk_payment_booking FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE,
   CONSTRAINT fk_payment_user FOREIGN KEY (recorded_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- Private GCash handoff state. QR images are attached directly to email and
+-- are not stored here; only the send audit and the customer's private proof
+-- upload are retained against the booking.
+CREATE TABLE IF NOT EXISTS booking_payment_workflows (
+  booking_id BIGINT UNSIGNED PRIMARY KEY,
+  instructions_sent_at DATETIME NULL,
+  instructions_sent_by_user_id INT UNSIGNED NULL,
+  proof_path VARCHAR(255) NULL,
+  proof_original_name VARCHAR(255) NULL,
+  proof_uploaded_at DATETIME NULL,
+  proof_status ENUM('awaiting','submitted','reviewed') NOT NULL DEFAULT 'awaiting',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_payment_workflow_booking FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE,
+  CONSTRAINT fk_payment_workflow_sender FOREIGN KEY (instructions_sent_by_user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS return_inspections (

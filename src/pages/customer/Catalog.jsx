@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { CustomerShell } from "../../components/customer/CustomerShell";
+import { RentalItemCard } from "../../components/customer/RentalItemCard";
 import { useCart } from "../../context/CartContext";
 import { publicApi } from "../../lib/publicApi";
-import { PriceDisplay } from "../../components/PriceDisplay";
 
 const STATE_KEY = "bb_customer_browse_state";
 const readBrowseState = () => {
@@ -20,6 +20,9 @@ export function CustomerCatalog() {
   const [search, setSearch] = useState(() => readBrowseState().search || "");
   const [category, setCategory] = useState(() => readBrowseState().category || "");
   const [added, setAdded] = useState(null);
+  // The card the details panel was opened from stays marked while the panel
+  // is up, so the customer can see which item they're looking at.
+  const [selected, setSelected] = useState(null);
 
   useEffect(() => {
     publicApi("/public/items").then(d => setItems(d.items || [])).catch(e => setError(e.message)).finally(() => setLoading(false));
@@ -43,8 +46,12 @@ export function CustomerCatalog() {
     return matchCategory && matchSearch;
   });
 
-  const quickAdd = (e, item) => {
-    e.stopPropagation();
+  const openItem = item => {
+    setSelected(item.id);
+    navigate(`/shop/${item.id}`, { state: { backgroundLocation: location } });
+  };
+
+  const quickAdd = item => {
     if (item.available_quantity < 1) return;
     addItem(item, 1);
     setAdded(item.id);
@@ -66,30 +73,17 @@ export function CustomerCatalog() {
       </nav>
     </div>
 
-    {loading ? <div className="admin-card inventory-empty">Loading items…</div> :
+    {loading ? <div className="admin-card inventory-empty" role="status" aria-live="polite">Loading items…</div> :
       filtered.length === 0 ? <div className="admin-card inventory-empty"><h3>No items found</h3><p>{search || category ? "Try adjusting your search or filters." : "Please check back soon."}</p></div> :
-      <div className="shop-item-grid">
-        {filtered.map(item => {
-          const out = item.available_quantity < 1;
-          return <article className={`shop-item-card ${out ? "is-unavailable" : ""}`} onClick={() => navigate(`/shop/${item.id}`, { state: { backgroundLocation: location } })} key={item.id}>
-            <div className="shop-item-card-image">
-              {item.image_url ? <img src={item.image_url} alt={item.name} /> : <div className="inventory-card-noimage">🌸</div>}
-              {out && <span className="shop-item-out-badge">Unavailable</span>}
-            </div>
-            <div className="shop-item-card-body">
-              <small className="shop-item-card-cat">{item.category}</small>
-              <h3>{item.name}</h3>
-              {item.description && <p className="shop-item-card-desc">{item.description}</p>}
-              <div className="shop-item-card-foot">
-                <div className="shop-item-card-price">
-                  <PriceDisplay price={item.daily_price} originalPrice={item.original_price} />
-                  <small className={out ? "shop-qty-zero" : ""}>{out ? "Unavailable" : `Available: ${item.available_quantity}`}</small>
-                </div>
-                <button type="button" className={`primary-button shop-add-btn ${added === item.id ? "is-added" : ""}`} disabled={out} onClick={e => quickAdd(e, item)}>{added === item.id ? "Added ✓" : "Add to Cart"}</button>
-              </div>
-            </div>
-          </article>;
-        })}
+      <div className="shop-item-grid shop-async-reveal">
+        {filtered.map(item => <RentalItemCard
+          key={item.id}
+          item={item}
+          selected={selected === item.id}
+          onOpen={openItem}
+          onAdd={quickAdd}
+          added={added === item.id}
+        />)}
       </div>}
   </CustomerShell>;
 }

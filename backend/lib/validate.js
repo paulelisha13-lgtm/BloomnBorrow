@@ -187,6 +187,28 @@ export const schemas = {
     total_quantity: z.coerce.number().int("must be a whole number").min(0, "cannot be negative").max(1_000_000, "is too large"),
     status: z.enum(["active", "inactive", "maintenance"]).optional().default("active"),
     image_url: optText(500),
+    // Optional package/bundle manifest: [{ name, quantity }, ...]. An empty
+    // list or a missing value means the row is a plain rental item (stored as
+    // NULL); a non-empty list makes it a package on the customer catalog.
+    // Display-only -- it never changes pricing, stock or booking lines. A JSON
+    // string is accepted too, because MySQL hands the column back to the admin
+    // edit form as text on some drivers.
+    bundle_items: z.preprocess(
+      (v) => {
+        if (v === "" || v === undefined || v === null) return [];
+        if (typeof v === "string") {
+          try { const parsed = JSON.parse(v); return Array.isArray(parsed) ? parsed : []; }
+          catch { return []; }
+        }
+        return v;
+      },
+      z.array(
+        z.object({
+          name: z.string().trim().min(1, "is required").max(120, "is too long"),
+          quantity: z.coerce.number().int("must be a whole number").min(1, "cannot be zero").max(10000, "is too large"),
+        })
+      ).max(50, "has too many items")
+    ),
   }),
 
   // Calendar Reservation & Booking module. One shape covers bookings,

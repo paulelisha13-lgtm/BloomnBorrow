@@ -121,7 +121,8 @@ export async function bookingDetailById(id, conn=db) {
   `,[id]);
   const [payments] = await conn.query("SELECT * FROM payments WHERE booking_id=? ORDER BY created_at DESC",[id]);
   const [[inspection]] = await conn.query("SELECT * FROM return_inspections WHERE booking_id=? LIMIT 1",[id]);
-  return {...booking,items,history,payments,inspection:inspection || null};
+  const [[gcashPayment]] = await conn.query("SELECT instructions_sent_at,proof_original_name,proof_uploaded_at,proof_status FROM booking_payment_workflows WHERE booking_id=? LIMIT 1",[id]);
+  return {...booking,items,history,payments,inspection:inspection || null,gcash_payment:gcashPayment || null};
 }
 
 export const validTransitions = {

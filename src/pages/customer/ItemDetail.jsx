@@ -2,15 +2,27 @@ import React, { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { CustomerShell } from "../../components/customer/CustomerShell";
 import { PriceDisplay } from "../../components/PriceDisplay";
+import { RentalItemCard, isPackageItem, packageContents, packageLabel } from "../../components/customer/RentalItemCard";
 import { useCart } from "../../context/CartContext";
 import { publicApi } from "../../lib/publicApi";
-import { peso } from "../../lib/format";
+import { discountOf, peso } from "../../lib/format";
+
+// Module scope on purpose: defining this inside the component would make it a
+// brand-new component type on every render, so React would unmount/remount the
+// whole panel on each keystroke (input loses focus, the slide-in replays).
+function Shell({ background, children }) {
+  return background ? <>{children}</> : <CustomerShell hideFloatingCart disableModuleTransition>{children}</CustomerShell>;
+}
 
 // Opened from Browse/Home, this renders as a popup over the page that's
 // still mounted underneath (the "background location" react-router
 // pattern -- see App.jsx). Opened directly (a typed URL, a refresh, or a
 // shared link), there's no page underneath to show, so it falls back to a
 // full standalone page with its own shell.
+//
+// This panel is where the card deliberately stops: the full description,
+// the specification table, and -- for a package -- every included item with
+// its quantity. The catalog card above only ever shows the headline facts.
 export function CustomerItemDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -41,13 +53,12 @@ export function CustomerItemDetail() {
   }, [id]);
 
   const close = () => navigate(-1);
-  const Shell = ({ children }) => background ? <>{children}</> : <CustomerShell hideFloatingCart>{children}</CustomerShell>;
 
-  if (loading) return <Shell><div className="modal-backdrop" onClick={close}><div className="shop-detail-modal shop-detail-modal-small" onClick={e => e.stopPropagation()}>
+  if (loading) return <Shell background={background}><div className="modal-backdrop shop-detail-backdrop" onClick={close}><div className="shop-detail-modal shop-detail-modal-small" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-busy="true">
     <button type="button" className="booking-modal-close" onClick={close} aria-label="Close">×</button>
-    <p className="shop-detail-status-text">Loading item…</p>
+    <p className="shop-detail-status-text" role="status">Loading item…</p>
   </div></div></Shell>;
-  if (loadError || !item) return <Shell><div className="modal-backdrop" onClick={close}><div className="shop-detail-modal shop-detail-modal-small" onClick={e => e.stopPropagation()}>
+  if (loadError || !item) return <Shell background={background}><div className="modal-backdrop shop-detail-backdrop" onClick={close}><div className="shop-detail-modal shop-detail-modal-small" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
     <button type="button" className="booking-modal-close" onClick={close} aria-label="Close">×</button>
     <h3>Item not found</h3>
     <p className="shop-detail-status-text">{loadError || "This item may no longer be available."}</p>
@@ -59,25 +70,42 @@ export function CustomerItemDetail() {
 
   const addToCart = () => {
     if (out) return;
-    addItem(item, Math.min(item.available_quantity, Math.max(1, Number(quantity) || 1)));
+    const cap = Math.max(1, Number(item.available_quantity) || 1);
+    addItem(item, Math.min(cap, Math.max(1, Number(quantity) || 1)));
     setToast(true);
     setTimeout(close, 800);
   };
 
-  const quickAddRelated = (e, r) => {
-    e.stopPropagation();
+  const quickAddRelated = r => {
     if (r.available_quantity < 1) return;
     addItem(r, 1);
     setRelatedAdded(r.id);
-    setTimeout(() => setRelatedAdded(id => id === r.id ? null : id), 900);
+    setTimeout(() => setRelatedAdded(prev => prev === r.id ? null : prev), 900);
   };
 
-  return <Shell>
+  const openRelated = r => navigate(`/shop/${r.id}`, { state: { backgroundLocation: background || location } });
+
+  const contents = packageContents(item);
+  const pkg = isPackageItem(item);
+  const totalPieces = contents.reduce((sum, c) => sum + c.quantity, 0);
+  const savings = discountOf(item.daily_price, item.original_price);
+
+  const specs = [
+    ["Category", item.category],
+    ["Daily rate", `${peso(Number(item.daily_price))} / day`],
+    ["Security deposit", peso(Number(item.security_deposit))],
+    ["Total units", String(item.total_quantity)],
+    ["Available now", `${item.available_quantity} of ${item.total_quantity}`]
+  ];
+  if (savings) specs.push(["You save", peso(savings.save)]);
+
+  return <Shell background={background}>
     {toast && <div className="shop-toast">✓ Added to cart</div>}
-    <div className="modal-backdrop" onClick={close}>
-      <div className="shop-detail-modal" onClick={e => e.stopPropagation()}>
+    <div className="modal-backdrop shop-detail-backdrop" onClick={close}>
+      <div className="shop-detail-modal" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={item.name}>
         <button type="button" className="booking-modal-close" onClick={close} aria-label="Close">×</button>
 
+        <div className="shop-detail-content">
         <div className="shop-detail-grid">
           <div className="shop-detail-media">
             {item.image_url ? <img src={item.image_url} alt={item.name} /> : <div className="inventory-card-noimage">🌸</div>}
@@ -85,9 +113,8 @@ export function CustomerItemDetail() {
           </div>
 
           <div className="shop-detail-info">
-            <span className="eyebrow">{item.category}</span>
+            <span className={`eyebrow ${pkg ? "is-package" : ""}`}>{pkg ? packageLabel(item) : item.category}</span>
             <h1>{item.name}</h1>
-            {item.description && <p className="shop-detail-desc">{item.description}</p>}
 
             <div className="shop-detail-price-row">
               <PriceDisplay size="detail" price={item.daily_price} originalPrice={item.original_price} />
@@ -101,7 +128,7 @@ export function CustomerItemDetail() {
             <div className="shop-detail-actions">
               <div className="shop-qty-stepper">
                 <button type="button" onClick={() => step(-1)} disabled={out} aria-label="Decrease quantity">−</button>
-                <input type="number" min="1" max={item.available_quantity || 1} value={quantity} disabled={out} onChange={e => setQuantity(e.target.value)} />
+                <input type="number" min="1" max={item.available_quantity || 1} value={quantity} disabled={out} onChange={e => setQuantity(e.target.value.replace(/[^\d]/g, ""))} />
                 <button type="button" onClick={() => step(1)} disabled={out} aria-label="Increase quantity">+</button>
               </div>
               <button type="button" className="primary-button shop-detail-addbtn" disabled={out} onClick={addToCart}>
@@ -109,36 +136,49 @@ export function CustomerItemDetail() {
                 {out ? "Unavailable" : "Add to Cart"}
               </button>
             </div>
-
-            <div className="shop-detail-notes">
-              <span><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="1" y="7" width="14" height="10" rx="1.5" /><path d="M15 10h3.5l3.5 3.5V17h-7z" /><circle cx="6.5" cy="19.5" r="1.5" /><circle cx="17.5" cy="19.5" r="1.5" /></svg>Delivery available (fee confirmed on request)</span>
-              <span><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /></svg>Flexible rental duration</span>
-            </div>
           </div>
+        </div>
+
+        {item.description && <section className="shop-detail-section">
+          <h2>Description</h2>
+          <p className="shop-detail-desc">{item.description}</p>
+        </section>}
+
+        {contents.length > 0 && <section className="shop-detail-section">
+          <h2>Package contents <span>{totalPieces} piece{totalPieces === 1 ? "" : "s"}</span></h2>
+          <ul className="shop-detail-includes">
+            {contents.map((entry, index) => <li key={`${entry.name}-${index}`}>
+              <span className="shop-detail-includes-name">{entry.name}</span>
+              <span className="shop-detail-includes-qty">×{entry.quantity}</span>
+            </li>)}
+          </ul>
+        </section>}
+
+        <section className="shop-detail-section">
+          <h2>Specifications</h2>
+          <dl className="shop-detail-specs">
+            {specs.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+          </dl>
+        </section>
+
+        <div className="shop-detail-notes">
+          <span><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="1" y="7" width="14" height="10" rx="1.5" /><path d="M15 10h3.5l3.5 3.5V17h-7z" /><circle cx="6.5" cy="19.5" r="1.5" /><circle cx="17.5" cy="19.5" r="1.5" /></svg>Delivery available (fee confirmed on request)</span>
+          <span><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /></svg>Flexible rental duration</span>
         </div>
 
         {related.length > 0 && <section className="shop-related-section">
           <h2>Related Items</h2>
           <div className="shop-item-grid shop-related-grid">
-            {related.map(r => <article className={`shop-item-card ${r.available_quantity < 1 ? "is-unavailable" : ""}`} onClick={() => navigate(`/shop/${r.id}`, { state: { backgroundLocation: background || location } })} key={r.id}>
-              <div className="shop-item-card-image">
-                {r.image_url ? <img src={r.image_url} alt={r.name} /> : <div className="inventory-card-noimage">🌸</div>}
-                {r.available_quantity < 1 && <span className="shop-item-out-badge">Unavailable</span>}
-              </div>
-              <div className="shop-item-card-body">
-                <small className="shop-item-card-cat">{r.category}</small>
-                <h3>{r.name}</h3>
-                <div className="shop-item-card-foot">
-                  <div className="shop-item-card-price">
-                    <PriceDisplay price={r.daily_price} originalPrice={r.original_price} />
-                    <small className={r.available_quantity < 1 ? "shop-qty-zero" : ""}>{r.available_quantity < 1 ? "Unavailable" : `Available: ${r.available_quantity}`}</small>
-                  </div>
-                  <button type="button" className={`primary-button shop-add-btn ${relatedAdded === r.id ? "is-added" : ""}`} disabled={r.available_quantity < 1} onClick={e => quickAddRelated(e, r)}>{relatedAdded === r.id ? "Added ✓" : "Add to Cart"}</button>
-                </div>
-              </div>
-            </article>)}
+            {related.map(r => <RentalItemCard
+              key={r.id}
+              item={r}
+              onOpen={openRelated}
+              onAdd={quickAddRelated}
+              added={relatedAdded === r.id}
+            />)}
           </div>
         </section>}
+        </div>
       </div>
     </div>
   </Shell>;

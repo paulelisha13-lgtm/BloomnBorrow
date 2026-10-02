@@ -24,10 +24,9 @@ export function clearAuth() {
 
 export async function api(path, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
-  const headers = {
-    "Content-Type": "application/json",
-    ...(options.headers || {})
-  };
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+  const headers = { ...(options.headers || {}) };
+  if (!isFormData) headers["Content-Type"] = "application/json";
   if (!["GET","HEAD","OPTIONS"].includes(method)) {
     const csrf = decodeURIComponent(readCookie("bloom_borrow_staff_csrf"));
     if (csrf) headers["X-CSRF-Token"] = csrf;

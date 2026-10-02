@@ -106,7 +106,7 @@ JWT_SECRET=use-a-long-random-secret-at-least-32-characters
 JWT_EXPIRES_IN=8h
 ```
 
-To let staff email invoices to customers from Payments/Bookings ("Send Invoice"), also set:
+To let staff email invoices and approved GCash payment instructions from Bookings, also set:
 ```env
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=465
@@ -120,7 +120,7 @@ password — turn on 2-Step Verification on the Gmail account, then generate an 
 Password at https://myaccount.google.com/apppasswords and use that instead. To send
 through a different provider (SendGrid, Amazon SES, a relay, ...), set `SMTP_HOST`/
 `SMTP_PORT`/`SMTP_USER`/`SMTP_PASS` to that provider's values. Without `SMTP_USER`/
-`SMTP_PASS` set, "Send Invoice" will return an error instead of sending mail.
+`SMTP_PASS` set, invoice and GCash email actions will return an error instead of sending mail.
 
 ### 2. Create a local database and start the API
 ```bash

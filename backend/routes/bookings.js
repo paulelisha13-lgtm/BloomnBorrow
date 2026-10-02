@@ -7,13 +7,14 @@ import { audit } from "../lib/audit.js";
 import { getAvailability, bookingDetailById, createBooking, validTransitions, recalcPaymentStatus } from "../lib/bookings.js";
 import fs from "fs";
 import path from "path";
-import { ID_DOCUMENTS_DIR } from "../lib/upload.js";
+import { gcashQrUpload, ID_DOCUMENTS_DIR, PAYMENT_PROOFS_DIR } from "../lib/upload.js";
 import { lateDaysSince, parseDateOnly, rentalDays, toDateOnly } from "../lib/dates.js";
 import { generateIncidentNo } from "../lib/incidents.js";
 import { addNotification } from "../lib/notifications.js";
 import { getSetting, getSettings } from "../lib/settings.js";
 import { INVOICE_BRANDING_KEYS, renderInvoiceHtml, renderInvoiceText } from "../lib/invoiceTemplate.js";
 import { sendMail } from "../lib/mailer.js";
+import { escHtml, peso } from "../lib/format.js";
 
 const router = Router();
 
@@ -88,10 +89,20 @@ router.get("/api/admin/bookings/:id/id-document", authenticate, requireRole("adm
   res.download(filePath, booking.id_document_original_name || path.basename(filePath));
 });
 
+router.get("/api/admin/bookings/:id/payment-proof", authenticate, requireRole("admin","staff"), async (req,res) => {
+  const [[proof]] = await db.query("SELECT proof_path,proof_original_name FROM booking_payment_workflows WHERE booking_id=?",[Number(req.params.id)]);
+  if (!proof?.proof_path) return res.status(404).json({message:"No payment proof has been uploaded for this booking."});
+  const filePath = path.join(PAYMENT_PROOFS_DIR,path.basename(proof.proof_path));
+  if (!fs.existsSync(filePath)) return res.status(404).json({message:"The payment proof file is no longer available."});
+  const displayName = path.basename(proof.proof_original_name || proof.proof_path).replace(/["\r\n]/g,"_");
+  res.sendFile(filePath,{headers:{"Content-Disposition":`inline; filename="${displayName}"`}});
+});
+
 router.delete("/api/admin/bookings/:id", authenticate, requireRole("admin"), async (req,res) => {
   const id=Number(req.params.id);
   const [[booking]]=await db.query("SELECT id,booking_no,customer_name,customer_email,status,grand_total FROM bookings WHERE id=?",[id]);
   if(!booking) return res.status(404).json({message:"Booking not found."});
+  const [[paymentWorkflow]]=await db.query("SELECT proof_path FROM booking_payment_workflows WHERE booking_id=?",[id]);
   // Money records must survive: a booking with any payment on file (even a
   // voided one) can only be cancelled, never deleted. Deleting is for entries
   // made by mistake that never had money attached.
@@ -109,7 +120,8 @@ router.delete("/api/admin/bookings/:id", authenticate, requireRole("admin"), asy
     await conn.rollback();
     throw error;
   } finally { conn.release(); }
-  await audit(req,"DELETE_BOOKING",null,{booking_id:id,booking_no:booking.booking_no,customer_name:booking.customer_name,customer_email:booking.customer_email,status:booking.status,grand_total:booking.grand_total});
+  if(paymentWorkflow?.proof_path) fs.unlink(path.join(PAYMENT_PROOFS_DIR,path.basename(paymentWorkflow.proof_path)),()=>{});
+  await audit(req,"DELETE_BOOKING",null,{booking_id:id,booking_no:booking.booking_no,status:booking.status,grand_total:booking.grand_total});
   res.json({ok:true});
 });
 
@@ -276,6 +288,54 @@ router.post("/api/admin/bookings/:id/complete", authenticate, requireRole("admin
   res.json({ok:true});
 });
 
+router.post("/api/admin/bookings/:id/send-gcash-instructions", authenticate, requireRole("admin","staff"), requireStaffCsrf, (req,res,next) => {
+  gcashQrUpload(req,res,(err) => {
+    if (err) return res.status(400).json({message:err.message || "Could not process the GCash QR code."});
+    if (!req.file) return res.status(400).json({message:"Choose the GCash QR code image to send."});
+    next();
+  });
+}, async (req,res) => {
+  const id = Number(req.params.id);
+  const booking = await bookingDetailById(id);
+  if (!booking) return res.status(404).json({message:"Booking not found."});
+  if (booking.payment_method !== "gcash") return res.status(409).json({message:"This booking did not select GCash as its payment method."});
+  if (booking.status === "pending") return res.status(409).json({message:"Approve the rental request before sending payment instructions."});
+  if (["cancelled","rejected","completed"].includes(booking.status)) return res.status(409).json({message:"Payment instructions cannot be sent for a closed booking."});
+  if (!booking.customer_email) return res.status(400).json({message:"This booking has no customer email address."});
+
+  const instructions = String(req.body.instructions || "").trim();
+  if (!instructions) return res.status(400).json({message:"Add the payment instructions to include in the email."});
+  if (instructions.length > 2000) return res.status(400).json({message:"Payment instructions must be 2,000 characters or fewer."});
+
+  const business = await getSettings(INVOICE_BRANDING_KEYS);
+  const businessName = business.business_name || "Bloom & Borrow";
+  const safeInstructions = escHtml(instructions).replace(/\r?\n/g,"<br>");
+  try {
+    await sendMail({
+      to:booking.customer_email,
+      subject:`GCash payment instructions for ${booking.booking_no} — ${businessName}`,
+      text:`Your rental request ${booking.booking_no} has been reviewed.\n\nAmount due: ${peso(Number(booking.grand_total))}\n\n${instructions}\n\nThe GCash QR code is attached to this email. After paying, open Check Status on the Bloom & Borrow website and upload your payment screenshot for review.`,
+      html:`<p>Your rental request <strong>${escHtml(booking.booking_no)}</strong> has been reviewed.</p><p><strong>Amount due:</strong> ${peso(Number(booking.grand_total))}</p><p>${safeInstructions}</p><p>The GCash QR code is attached below. After paying, open <strong>Check Status</strong> on the Bloom &amp; Borrow website and upload your payment screenshot for review.</p><p><img src="cid:gcash-payment-qr" alt="GCash payment QR code" style="display:block;max-width:320px;width:100%;height:auto"></p>`,
+      attachments:[{
+        filename:req.file.originalname || "gcash-qr.png",
+        content:req.file.buffer,
+        contentType:req.file.mimetype,
+        cid:"gcash-payment-qr"
+      }]
+    });
+  } catch (error) {
+    return res.status(502).json({message:`Could not send the GCash payment email: ${error.message}`});
+  }
+
+  await db.query(`
+    INSERT INTO booking_payment_workflows(booking_id,instructions_sent_at,instructions_sent_by_user_id,proof_status)
+    VALUES(?,NOW(),?,'awaiting')
+    ON DUPLICATE KEY UPDATE instructions_sent_at=NOW(),instructions_sent_by_user_id=VALUES(instructions_sent_by_user_id)
+  `,[id,req.user.id]);
+  await audit(req,"SEND_GCASH_INSTRUCTIONS",null,{booking_id:id,booking_no:booking.booking_no});
+  res.json({ok:true,sent_to:booking.customer_email});
+});
+
 router.post("/api/admin/bookings/:id/send-invoice", authenticate, requireRole("admin","staff"), requireStaffCsrf, parseBody(schemas.sendInvoice), async (req,res) => {
   const id = Number(req.params.id);
   const booking = await bookingDetailById(id);
@@ -293,7 +353,7 @@ router.post("/api/admin/bookings/:id/send-invoice", authenticate, requireRole("a
   } catch (error) {
     return res.status(502).json({message:`Could not send the invoice email: ${error.message}`});
   }
-  await audit(req,"SEND_INVOICE_EMAIL",null,{booking_id:id,booking_no:booking.booking_no,to});
+  await audit(req,"SEND_INVOICE_EMAIL",null,{booking_id:id,booking_no:booking.booking_no});
   res.json({ok:true, sent_to: to});
 });
 

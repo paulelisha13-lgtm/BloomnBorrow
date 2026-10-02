@@ -9,6 +9,16 @@ import { useViewMode } from "../hooks/useViewMode";
 import { peso } from "../lib/format";
 import { isAdminUser } from "../lib/roles";
 
+// Package/bundle contents round-trip as { name, quantity }. Quantity is kept
+// as a string here so the number input stays controlled exactly like the
+// other price/quantity fields on this form; validation coerces it on save.
+const toBundleRows = value => {
+  let list = value;
+  if (typeof list === "string") { try { list = JSON.parse(list); } catch { list = null; } }
+  if (!Array.isArray(list)) return [];
+  return list.map(row => ({ name: String(row?.name ?? ""), quantity: String(row?.quantity ?? 1) }));
+};
+
 export function Inventory() {
   const [rows,setRows]=useState([]);
   const [modal,setModal]=useState(false);
@@ -24,13 +34,18 @@ export function Inventory() {
   const [conditionLoading,setConditionLoading]=useState(false);
   const [addConditionModal,setAddConditionModal]=useState(false);
   const [conditionForm,setConditionForm]=useState({condition_status:"good",condition_type:"after_return",notes:"",booking_id:""});
-  const blank={sku:"",name:"",category:"Events",description:"",daily_price:"",original_price:"",security_deposit:"",total_quantity:1,status:"active",image_url:""};
+  const blank={sku:"",name:"",category:"Events",description:"",daily_price:"",original_price:"",security_deposit:"",total_quantity:1,status:"active",image_url:"",bundle_items:[]};
   const [form,setForm]=useState(blank);
+
+  const bundleRows=Array.isArray(form.bundle_items)?form.bundle_items:[];
+  const setBundleRow=(i,key,value)=>setForm(f=>({...f,bundle_items:f.bundle_items.map((row,idx)=>idx===i?{...row,[key]:value}:row)}));
+  const addBundleRow=()=>setForm(f=>({...f,bundle_items:[...f.bundle_items,{name:"",quantity:"1"}]}));
+  const removeBundleRow=i=>setForm(f=>({...f,bundle_items:f.bundle_items.filter((_,idx)=>idx!==i)}));
 
   const load=()=>api("/admin/inventory").then(d=>setRows(d.items||[])).catch(e=>setError(e.message));
   React.useEffect(()=>{load();},[]);
   const openNew=()=>{setEditing(null);setForm(blank);setModal(true)};
-  const openEdit=(x)=>{setEditing(x);setForm({...x});setModal(true)};
+  const openEdit=(x)=>{setEditing(x);setForm({...x,bundle_items:toBundleRows(x.bundle_items)});setModal(true)};
   const save=async(e)=>{e.preventDefault();setError("");try{await api(editing?`/admin/inventory/${editing.id}`:"/admin/inventory",{method:editing?"PATCH":"POST",body:JSON.stringify(form)});setModal(false);load()}catch(err){setError(err.message)}};
   const confirmDelete=(x)=>{setDeleteModal(x)};
   const remove=async()=>{if(!deleteModal)return;setDeleteLoading(true);try{await api(`/admin/inventory/${deleteModal.id}`,{method:"DELETE"});setDeleteModal(null);load()}catch(e){setError(e.message)}finally{setDeleteLoading(false)}};
@@ -172,6 +187,17 @@ export function Inventory() {
         <label>Daily price<input required type="number" min="0" value={form.daily_price} onChange={e=>setForm({...form,daily_price:e.target.value})}/></label><label>Original price <small>(optional, shows “Save ₱X”)</small><input type="number" min="0" value={form.original_price??""} onChange={e=>setForm({...form,original_price:e.target.value})} placeholder="No discount"/></label><label>Security deposit<input required type="number" min="0" value={form.security_deposit} onChange={e=>setForm({...form,security_deposit:e.target.value})}/></label>
         <label>Quantity<input required type="number" min="1" value={form.total_quantity} onChange={e=>setForm({...form,total_quantity:e.target.value})}/></label><label>Image URL<input value={form.image_url||""} onChange={e=>setForm({...form,image_url:e.target.value})}/></label>
         <label className="span-2">Description<textarea value={form.description||""} onChange={e=>setForm({...form,description:e.target.value})}/></label>
+        <label className="span-2">Package contents <small>(optional — leave empty for a regular rental item)</small>
+          <div className="bundle-editor">
+            {bundleRows.map((row,i)=><div className="bundle-row" key={i}>
+              <input placeholder="Included item name" value={row.name} onChange={e=>setBundleRow(i,"name",e.target.value)}/>
+              <input className="bundle-qty" type="number" min="1" placeholder="Qty" value={row.quantity} onChange={e=>setBundleRow(i,"quantity",e.target.value)}/>
+              <button type="button" className="bundle-remove" onClick={()=>removeBundleRow(i)} aria-label={`Remove ${row.name||"included item"}`}>×</button>
+            </div>)}
+            <button type="button" className="secondary-button bundle-add" onClick={addBundleRow}>+ Add item</button>
+            {bundleRows.length===0&&<p className="bundle-hint">Leave empty when this is a single rental item. With contents listed, the customer catalog shows it as a package and the details panel lists everything inside.</p>}
+          </div>
+        </label>
       </div><div className="modal-actions"><button type="button" className="secondary-button" onClick={()=>setModal(false)}>Cancel</button><button type="submit" className="primary-button">Save item</button></div>
     </form></div>}
 

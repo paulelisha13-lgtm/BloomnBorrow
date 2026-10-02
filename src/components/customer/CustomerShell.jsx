@@ -1,14 +1,17 @@
 import React, { useEffect, useRef, useState } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { Logo } from "../Logo";
 import { useCart } from "../../context/CartContext";
 import { publicApi } from "../../lib/publicApi";
+import { CartDrawer } from "./CartDrawer";
 
 // Floating cart access (removed from the navbar to keep it minimal) -- always
 // reachable so Browse -> Add to Cart -> Cart -> Proceed to Rental still works.
+// Clicking it opens the floating cart panel instead of leaving the page.
 function CartFab() {
   const { count } = useCart();
   const [bump, setBump] = useState(false);
+  const [open, setOpen] = useState(false);
   const prev = useRef(count);
   useEffect(() => {
     if (count !== prev.current) {
@@ -18,14 +21,17 @@ function CartFab() {
       return () => clearTimeout(t);
     }
   }, [count]);
-  return <NavLink to="/shop/cart" className="shop-float-cart" aria-label={`Cart, ${count} item${count === 1 ? "" : "s"}`}>
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" />
-      <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
-    </svg>
-    <span>Cart</span>
-    <span className={`shop-cart-count ${bump ? "bump" : ""}`}>{count}</span>
-  </NavLink>;
+  return <>
+    <button type="button" className="shop-float-cart" onClick={() => setOpen(true)} aria-label={`Open cart, ${count} item${count === 1 ? "" : "s"}`}>
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" />
+        <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+      </svg>
+      <span>Cart</span>
+      <span className={`shop-cart-count ${bump ? "bump" : ""}`}>{count}</span>
+    </button>
+    {open && <CartDrawer onClose={() => setOpen(false)} />}
+  </>;
 }
 
 function FacebookIcon() {
@@ -85,7 +91,17 @@ function CustomerFooter() {
 // Note: CartProvider is NOT mounted here. Pages call useCart() themselves
 // before they render <CustomerShell>, so the provider has to be an ancestor
 // of the page component -- it's mounted once per route in App.jsx instead.
-export function CustomerShell({ title, subtitle, hero, children, hideFloatingCart }) {
+export function CustomerShell({ title, subtitle, hero, children, hideFloatingCart, disableModuleTransition }) {
+  const { pathname } = useLocation();
+  const detailRoute = pathname.startsWith("/shop/") && !["/shop/browse", "/shop/cart", "/shop/checkout", "/shop/status"].includes(pathname);
+
+  // Route changes should begin at the new module's heading. Item-detail
+  // overlays do not mount a new shell, so opening/closing one keeps the
+  // catalog's scroll position intact.
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [pathname]);
+
   return (
     <div className="shop-shell">
       <header className="shop-header">
@@ -93,19 +109,21 @@ export function CustomerShell({ title, subtitle, hero, children, hideFloatingCar
           <Logo to="/shop" />
           <nav className="shop-nav">
             <NavLink to="/shop" end>Home</NavLink>
-            <NavLink to="/shop/browse">Browse</NavLink>
+            <NavLink to="/shop/browse" className={({ isActive }) => isActive || detailRoute ? "active" : undefined} aria-current={detailRoute ? "page" : undefined}>Browse</NavLink>
             <NavLink to="/shop/status">Check Status</NavLink>
           </nav>
         </div>
       </header>
-      {hero}
-      <main className="shop-main">
-        {(title || subtitle) && <div className="shop-page-head">
-          {title && <h1>{title}</h1>}
-          {subtitle && <p>{subtitle}</p>}
-        </div>}
-        {children}
-      </main>
+      <div className={`shop-module-enter ${hero ? "has-hero" : ""} ${disableModuleTransition ? "no-enter" : ""}`}>
+        {hero}
+        <main className="shop-main">
+          {(title || subtitle) && <div className="shop-page-head">
+            {title && <h1>{title}</h1>}
+            {subtitle && <p>{subtitle}</p>}
+          </div>}
+          {children}
+        </main>
+      </div>
       <CustomerFooter />
       {!hideFloatingCart && <CartFab />}
     </div>

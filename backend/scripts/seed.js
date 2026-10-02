@@ -116,23 +116,41 @@ try {
 
   console.log("[seed] Creating/updating rental catalog...");
 
-  // [sku,name,category,description,daily_price,original_price,security_deposit,total_quantity,image_url]
+  // [sku,name,category,description,daily_price,original_price,security_deposit,total_quantity,image_url,bundle_items]
   // original_price is the optional compare-at price for the "Save ₱X" badge
   // (display-only); NULL means no discount.
+  // bundle_items is the optional package/bundle manifest -- a JSON list of
+  // {"name":…,"quantity":…} rows; NULL means the item is a plain rental item
+  // rather than a package. Only packages list contents, so the customer-facing
+  // card can show "Package · N items" and the details panel can show the list.
+  const bundle = entries => JSON.stringify(entries);
   const rentalItems = [
-    ["RF-CAM-001","Canon EOS R50 Camera","Camera","Compact mirrorless camera package for events, content creation, and travel.",1200,1400,3000,4,"https://images.unsplash.com/photo-1502920917128-1aa500764cbd?auto=format&fit=crop&w=900&q=80"],
-    ["RF-AUD-001","JBL PartyBox Speaker","Audio","Portable high-output speaker for birthdays, parties, and small outdoor events.",850,null,1800,6,"https://images.unsplash.com/photo-1545454675-3531b543be5d?auto=format&fit=crop&w=900&q=80"],
-    ["RF-EVT-001","Projector + Screen Set","Events","HD projector bundle ideal for presentations, movie nights, and events.",1500,1800,2500,3,"https://images.unsplash.com/photo-1478720568477-152d9b164e26?auto=format&fit=crop&w=900&q=80"],
-    ["RF-OUT-001","Premium Camping Tent","Outdoor","Water-resistant four-person tent with quick setup and compact storage.",650,null,1000,8,"https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=900&q=80"],
-    ["RF-TOL-001","Makita Power Tool Kit","Tools","Multi-tool rental package for home improvement and professional projects.",900,null,2200,5,"https://images.unsplash.com/photo-1504148455328-c376907d081c?auto=format&fit=crop&w=900&q=80"],
-    ["RF-EVT-002","Folding Table & Chair Set","Events","Convenient event furniture set for parties, meetings, and gatherings.",500,null,900,12,"https://images.unsplash.com/photo-1507501336603-6e31db2be093?auto=format&fit=crop&w=900&q=80"]
+    ["RF-CAM-001","Canon EOS R50 Camera","Camera","Compact mirrorless camera package for events, content creation, and travel.",1200,1400,3000,4,"https://images.unsplash.com/photo-1502920917128-1aa500764cbd?auto=format&fit=crop&w=900&q=80",null],
+    ["RF-AUD-001","JBL PartyBox Speaker","Audio","Portable high-output speaker for birthdays, parties, and small outdoor events.",850,null,1800,6,"https://images.unsplash.com/photo-1545454675-3531b543be5d?auto=format&fit=crop&w=900&q=80",null],
+    ["RF-EVT-001","Projector + Screen Set","Events","HD projector bundle ideal for presentations, movie nights, and events.",1500,1800,2500,3,"https://images.unsplash.com/photo-1478720568477-152d9b164e26?auto=format&fit=crop&w=900&q=80",bundle([
+      {name:"HD Projector",quantity:1},
+      {name:"Projection Screen",quantity:1},
+      {name:"Projector Stand",quantity:1},
+      {name:"HDMI Cable",quantity:1}
+    ])],
+    ["RF-OUT-001","Premium Camping Tent","Outdoor","Water-resistant four-person tent with quick setup and compact storage.",650,null,1000,8,"https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=900&q=80",null],
+    ["RF-TOL-001","Makita Power Tool Kit","Tools","Multi-tool rental package for home improvement and professional projects.",900,null,2200,5,"https://images.unsplash.com/photo-1504148455328-c376907d081c?auto=format&fit=crop&w=900&q=80",bundle([
+      {name:"Cordless Drill",quantity:1},
+      {name:"Circular Saw",quantity:1},
+      {name:"Battery Pack + Charger",quantity:1},
+      {name:"Tool Bag",quantity:1}
+    ])],
+    ["RF-EVT-002","Folding Table & Chair Set","Events","Convenient event furniture set for parties, meetings, and gatherings.",500,null,900,12,"https://images.unsplash.com/photo-1507501336603-6e31db2be093?auto=format&fit=crop&w=900&q=80",bundle([
+      {name:"Folding Table",quantity:1},
+      {name:"Folding Chair",quantity:4}
+    ])]
   ];
 
   for (const item of rentalItems) {
     await db.execute(`
       INSERT INTO rental_items
-        (sku,name,category,description,daily_price,original_price,security_deposit,total_quantity,status,image_url)
-      VALUES (?,?,?,?,?,?,?,?,'active',?)
+        (sku,name,category,description,daily_price,original_price,security_deposit,total_quantity,status,image_url,bundle_items)
+      VALUES (?,?,?,?,?,?,?,?,?,'active',?,?)
       ON DUPLICATE KEY UPDATE
         name=VALUES(name),
         category=VALUES(category),
@@ -142,7 +160,8 @@ try {
         security_deposit=VALUES(security_deposit),
         total_quantity=VALUES(total_quantity),
         status='active',
-        image_url=VALUES(image_url)
+        image_url=VALUES(image_url),
+        bundle_items=VALUES(bundle_items)
     `, item);
   }
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import { peso } from "../../lib/format";
 
@@ -8,6 +8,7 @@ export function NotificationBell() {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(false);
   const menuRef = useRef(null);
+  const navigate = useNavigate();
 
   const loadNotifications = async () => {
     setLoading(true);
@@ -25,6 +26,7 @@ export function NotificationBell() {
         message: `${b.customer_name} — ${b.items || "No items"}`,
         detail: `${peso(Number(b.grand_total))} · ${String(b.start_date).slice(0,10)} → ${String(b.end_date).slice(0,10)}`,
         status: b.status,
+        link: "/admin/bookings",
         time: b.created_at,
         read: false
       }));
@@ -36,6 +38,7 @@ export function NotificationBell() {
           title: "Low Stock Alert",
           message: `${item.name} — only ${item.total_quantity} unit(s) left`,
           detail: `SKU: ${item.sku || "N/A"} · Restock recommended`,
+          link: "/admin/inventory",
           time: new Date().toISOString(),
           read: false
         });
@@ -48,6 +51,7 @@ export function NotificationBell() {
           message: `${e.customer_name} — ${e.daysText}`,
           detail: `${e.booking_no} · Late fee: ${peso(e.lateFee)}`,
           status: e.level,
+          link: "/admin/bookings",
           time: new Date().toISOString(),
           read: false
         });
@@ -76,6 +80,12 @@ export function NotificationBell() {
 
   const markAllRead = () => setNotifications(prev => prev.map(n => ({ ...n, read: true })));
 
+  const goTo = (n) => {
+    setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, read: true } : x));
+    setOpen(false);
+    if (n.link) navigate(n.link);
+  };
+
   const getIcon = (type) => {
     if (type === "booking_new") return "📋";
     if (type === "booking_overdue") return "⚠";
@@ -103,14 +113,14 @@ export function NotificationBell() {
       <div className="notification-list">
         {loading && notifications.length === 0 ? <div className="notification-empty">Loading notifications...</div> :
         notifications.length === 0 ? <div className="notification-empty">No notifications yet.</div> :
-        notifications.map(n => <div className={`notification-item ${n.read ? "read" : ""} ${getTypeClass(n.type)}`} key={n.id} onClick={() => { n.read = true; setNotifications([...notifications]); }}>
+        notifications.map(n => <div className={`notification-item ${n.read ? "read" : ""} ${getTypeClass(n.type)}`} key={n.id} role="button" tabIndex={0} onClick={() => goTo(n)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); goTo(n); } }}>
           <span className="notification-icon">{getIcon(n.type)}</span>
           <div className="notification-content">
             <strong>{n.title}</strong>
             <p>{n.message}</p>
             <small>{n.detail}</small>
           </div>
-          {!n.read && <span className="notification-dot"></span>}
+          {n.read ? <span className="notification-go">→</span> : <span className="notification-dot"></span>}
         </div>)}
       </div>
       <div className="notification-footer">

@@ -92,3 +92,43 @@ test("an original price must be a non-negative number", () => {
   assert.equal(schemas.inventoryItem.safeParse({ ...inventoryItem, original_price: -5 }).success, false);
   assert.equal(schemas.inventoryItem.safeParse({ ...inventoryItem, original_price: "lots" }).success, false);
 });
+
+test("an item with no package contents stays a plain item", () => {
+  for (const missing of [undefined, "", null, [], "{}", "not json"]) {
+    const r = schemas.inventoryItem.safeParse({ ...inventoryItem, bundle_items: missing });
+    assert.equal(r.success, true, `${JSON.stringify(missing)} is accepted`);
+    assert.deepEqual(r.data.bundle_items, [], `${JSON.stringify(missing)} reads as no contents`);
+  }
+});
+
+test("package contents round-trip with quantities coerced to numbers", () => {
+  const fromForm = schemas.inventoryItem.safeParse({
+    ...inventoryItem,
+    bundle_items: [{ name: " Folding table ", quantity: "1" }, { name: "Folding chair", quantity: 4 }]
+  });
+  assert.equal(fromForm.success, true);
+  assert.deepEqual(fromForm.data.bundle_items, [
+    { name: "Folding table", quantity: 1 },
+    { name: "Folding chair", quantity: 4 }
+  ]);
+
+  const fromDb = schemas.inventoryItem.safeParse({
+    ...inventoryItem,
+    bundle_items: JSON.stringify([{ name: "HD projector", quantity: 1 }])
+  });
+  assert.equal(fromDb.success, true);
+  assert.deepEqual(fromDb.data.bundle_items, [{ name: "HD projector", quantity: 1 }]);
+});
+
+test("package contents need a name and a whole quantity of at least one", () => {
+  assert.equal(schemas.inventoryItem.safeParse({ ...inventoryItem, bundle_items: [{ name: "", quantity: 1 }] }).success, false);
+  assert.equal(schemas.inventoryItem.safeParse({ ...inventoryItem, bundle_items: [{ name: "Chair", quantity: 0 }] }).success, false);
+  assert.equal(schemas.inventoryItem.safeParse({ ...inventoryItem, bundle_items: [{ name: "Chair", quantity: 1.5 }] }).success, false);
+  assert.equal(
+    schemas.inventoryItem.safeParse({
+      ...inventoryItem,
+      bundle_items: Array.from({ length: 51 }, (_, i) => ({ name: `piece-${i}`, quantity: 1 }))
+    }).success,
+    false
+  );
+});

@@ -7,7 +7,7 @@ import { discountOf, peso } from "../lib/format";
 // struck-through original and the green "Save ₱X" pill from the design.
 //
 // size="detail" -> the large ItemDetail price row (.shop-detail-price)
-// size="card"   -> compact grid-card price (.shop-item-card-price child)
+// size="card"   -> compact grid-card price (.price-tag-card)
 export function PriceDisplay({ price, originalPrice, size = "card" }) {
   const discount = discountOf(price, originalPrice);
   const detail = size === "detail";

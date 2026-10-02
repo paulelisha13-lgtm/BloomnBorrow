@@ -6,6 +6,12 @@ import { audit } from "../lib/audit.js";
 
 const router = Router();
 
+// Package/bundle manifest (rental_items.bundle_items): the admin form edits a
+// plain list of { name, quantity } rows, the column stores JSON text, and an
+// empty list means "not a package" -- stored as NULL so a plain rental item
+// never carries a misleading empty array.
+const bundleItemsValue = value => Array.isArray(value) && value.length ? JSON.stringify(value) : null;
+
 router.get("/api/admin/inventory", authenticate, requireRole("admin","staff"), async (_req,res) => {
   const [items] = await db.query(`
     SELECT r.*,
@@ -29,9 +35,9 @@ router.post("/api/admin/inventory", authenticate, requireRole("admin"), parseBod
   const qty = req.body.total_quantity;
   try {
     const [result] = await db.query(`
-      INSERT INTO rental_items(sku,name,category,description,daily_price,original_price,security_deposit,total_quantity,status,image_url)
-      VALUES(?,?,?,?,?,?,?,?,?,'active')
-    `,[sku,name,category,description||null,daily,original,deposit,qty,image_url||null]);
+      INSERT INTO rental_items(sku,name,category,description,daily_price,original_price,security_deposit,total_quantity,status,image_url,bundle_items)
+      VALUES(?,?,?,?,?,?,?,?,?,'active',?,?)
+    `,[sku,name,category,description||null,daily,original,deposit,qty,image_url||null,bundleItemsValue(req.body.bundle_items)]);
     await audit(req,"CREATE_RENTAL_ITEM",null,{item_id:result.insertId,sku});
     res.status(201).json({id:result.insertId});
   } catch(e) {
@@ -47,9 +53,9 @@ router.patch("/api/admin/inventory/:id", authenticate, requireRole("admin"), par
   const next = {...old,...req.body};
   if(!["active","inactive","maintenance"].includes(next.status)) return res.status(400).json({message:"Invalid inventory status."});
   await db.query(`
-    UPDATE rental_items SET sku=?,name=?,category=?,description=?,daily_price=?,original_price=?,security_deposit=?,total_quantity=?,status=?,image_url=?
+    UPDATE rental_items SET sku=?,name=?,category=?,description=?,daily_price=?,original_price=?,security_deposit=?,total_quantity=?,status=?,image_url=?,bundle_items=?
     WHERE id=?
-  `,[next.sku,next.name,next.category,next.description||null,Number(next.daily_price),next.original_price==null?null:Number(next.original_price),Number(next.security_deposit),Number(next.total_quantity),next.status,next.image_url||null,id]);
+  `,[next.sku,next.name,next.category,next.description||null,Number(next.daily_price),next.original_price==null?null:Number(next.original_price),Number(next.security_deposit),Number(next.total_quantity),next.status,next.image_url||null,bundleItemsValue(next.bundle_items),id]);
   if(next.status==="maintenance"&&old.status!=="maintenance"){
     await db.query("INSERT INTO maintenance_records(rental_item_id,booking_id,reason,status,notes) VALUES(?,NULL,'Manual maintenance assignment','open',?)",[id,req.body.notes||null]);
   }

@@ -24,21 +24,40 @@ function DashboardRevenueBarChart({ rows=[] }) {
   </div>;
 }
 
+function wavePath(points, tension=0.9) {
+  if (points.length === 0) return "";
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] || points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] || points[i + 1];
+    const c1x = p1.x + ((p2.x - p0.x) / 6) * tension;
+    const c1y = p1.y + ((p2.y - p0.y) / 6) * tension;
+    const c2x = p2.x - ((p3.x - p1.x) / 6) * tension;
+    const c2y = p2.y - ((p3.y - p1.y) / 6) * tension;
+    d += ` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2.x} ${p2.y}`;
+  }
+  return d;
+}
+
 function DashboardBookingAreaChart({ rows=[] }) {
   const width=620, height=210, padX=26, padTop=18, padBottom=32;
   const values=rows.map(row=>Number(row.bookings)||0);
   const max=Math.max(1,...values);
   const usableW=width-padX*2, usableH=height-padTop-padBottom;
+  const baseline=height-padBottom;
   const points=rows.map((row,index)=>({x:padX+(rows.length>1?(index*usableW)/(rows.length-1):usableW/2),y:padTop+usableH-((Number(row.bookings)||0)/max)*usableH,row}));
-  const linePoints=points.map(point=>`${point.x},${point.y}`).join(" ");
-  const areaPoints=points.length?`${padX},${height-padBottom} ${linePoints} ${padX+usableW},${height-padBottom}`:"";
+  const linePath=wavePath(points);
+  const areaPath=points.length>1?`${linePath} L ${points[points.length-1].x} ${baseline} L ${points[0].x} ${baseline} Z`:"";
   const [hover,setHover]=useState(null);
   return <div className="dash-chart-wrap">
     <svg className="dash-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Booking activity for the last seven days">
-      <defs><linearGradient id="bookingAreaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#12aaa7" stopOpacity=".42"/><stop offset="48%" stopColor="#12aaa7" stopOpacity=".16"/><stop offset="100%" stopColor="#12aaa7" stopOpacity="0"/></linearGradient></defs>
+      <defs><linearGradient id="bookingAreaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#12aaa7" stopOpacity=".22"/><stop offset="48%" stopColor="#12aaa7" stopOpacity=".09"/><stop offset="100%" stopColor="#12aaa7" stopOpacity="0"/></linearGradient></defs>
       {[0,.5,1].map((ratio,index)=><line key={index} x1={padX} y1={padTop+usableH*ratio} x2={width-padX} y2={padTop+usableH*ratio} className="chart-grid-line"/>)}
-      {areaPoints&&<polygon points={areaPoints} className="booking-area"/>}
-      {linePoints&&<polyline points={linePoints} className="booking-line" pathLength="1"/>}
+      {areaPath&&<path d={areaPath} className="booking-area"/>}
+      {linePath&&<path d={linePath} className="booking-line" pathLength="1"/>}
       {points.map((point,index)=><g key={point.row.date} className="booking-point-group" tabIndex="0" onMouseEnter={()=>setHover(index)} onMouseLeave={()=>setHover(null)} onFocus={()=>setHover(index)} onBlur={()=>setHover(null)} aria-label={`${point.row.label}: ${Number(point.row.bookings||0)} bookings`}>
         <circle cx={point.x} cy={point.y} r={hover===index?6:4} className={hover===index?"booking-point active":"booking-point"}/>
         <rect x={point.x-25} y={padTop} width="50" height={usableH} fill="transparent"/>

@@ -30,8 +30,8 @@ export async function publicApi(path, options = {}) {
   return handle(response);
 }
 
-// For the booking submission, which must carry the uploaded ID file as
-// multipart/form-data (never as base64/JSON).
+// For private customer uploads (booking ID and payment proof), which must use
+// multipart/form-data rather than base64/JSON.
 export async function publicApiForm(path, formData) {
   let response;
   try {

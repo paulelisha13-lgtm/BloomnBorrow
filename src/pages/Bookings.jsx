@@ -12,6 +12,8 @@ import { peso } from "../lib/format";
 import { balanceStatus, openInvoice, paymentBreakdown } from "../lib/invoice";
 import { isAdminUser } from "../lib/roles";
 
+const DEFAULT_GCASH_INSTRUCTIONS = "Please scan the attached GCash QR code and pay the rental total shown in this email. After payment, open Check Status on the Bloom & Borrow website and upload your payment screenshot for review.";
+
 export function Bookings() {
   const navigate=useNavigate();
   const [rows,setRows]=useState([]);
@@ -34,6 +36,11 @@ export function Bookings() {
   const [rentConfirm,setRentConfirm]=useState(false);
   const [approveConfirm,setApproveConfirm]=useState(false);
   const [rejectConfirm,setRejectConfirm]=useState(false);
+  const [showGcashModal,setShowGcashModal]=useState(false);
+  const [gcashQr,setGcashQr]=useState(null);
+  const [gcashInstructions,setGcashInstructions]=useState(DEFAULT_GCASH_INSTRUCTIONS);
+  const [gcashError,setGcashError]=useState("");
+  const [sendingGcash,setSendingGcash]=useState(false);
   const business=useBusinessProfile();
 
   const load=()=>api("/admin/bookings").then(d=>setRows(d.bookings||[])).catch(e=>setError(e.message));
@@ -51,6 +58,28 @@ export function Bookings() {
     finally{setSendingInvoice(false)}
   };
 
+  const openGcashModal=()=>{
+    setGcashQr(null);
+    setGcashInstructions(DEFAULT_GCASH_INSTRUCTIONS);
+    setGcashError("");
+    setShowGcashModal(true);
+  };
+
+  const sendGcashInstructions=async()=>{
+    if(!detail||!gcashQr)return setGcashError("Choose the GCash QR code image to send.");
+    if(!gcashInstructions.trim())return setGcashError("Add the payment instructions for the customer.");
+    setSendingGcash(true);setGcashError("");
+    try{
+      const body=new FormData();
+      body.append("qr_code",gcashQr);
+      body.append("instructions",gcashInstructions.trim());
+      await api(`/admin/bookings/${detail.id}/send-gcash-instructions`,{method:"POST",body});
+      setShowGcashModal(false);
+      await open(detail.id);
+    }catch(e){setGcashError(e.message)}
+    finally{setSendingGcash(false)}
+  };
+
   const deleteBooking=async()=>{
     if(!deleteBookingTarget)return;
     setDeletingBooking(true);
@@ -65,7 +94,7 @@ export function Bookings() {
 
   const openPaymentModal=()=>{
     const balances=paymentBreakdown(detail);
-    setPaymentForm({amount:String(balances.rentalBalance||balances.depositBalance||0),method:"cash",payment_type:balances.rentalBalance>0?"rental":"deposit",notes:""});
+    setPaymentForm({amount:String(balances.rentalBalance||balances.depositBalance||0),method:detail.payment_method||"cash",payment_type:balances.rentalBalance>0?"rental":"deposit",notes:""});
     setShowPaymentModal(true);
   };
 
@@ -158,7 +187,6 @@ export function Bookings() {
         {sorted.map(b=><article className="booking-card" key={b.id} onClick={()=>open(b.id)}>
           <div className="booking-card-top">
             <div className="booking-card-id">
-              <span className="booking-avatar-sm">{b.customer_name.split(" ").map(x=>x[0]).join("").slice(0,2)}</span>
               <div><strong>{b.booking_no}</strong><small>{b.customer_name}</small></div>
             </div>
             <span className={`status-pill ${b.status==="pending"?"pending":b.status==="overdue"?"overdue":b.status==="cancelled"||b.status==="rejected"?"overdue":"confirmed"}`}>{b.status}</span>
@@ -188,7 +216,6 @@ export function Bookings() {
       <button className="booking-modal-close" onClick={()=>setDetail(null)}>×</button>
       <div className="booking-modal-header">
         <div className="booking-modal-customer">
-          <div className="booking-avatar">{detail.customer_name.split(" ").map(x=>x[0]).join("").slice(0,2)}</div>
           <div><span className="eyebrow">{detail.booking_no}{detail.id_document_path&&" · Customer request"}</span><h2>{detail.customer_name}</h2><p>{detail.customer_email} · {detail.customer_phone}</p></div>
         </div>
       </div>
@@ -199,7 +226,7 @@ export function Bookings() {
 
       <div className="booking-detail-grid">
         <div className="booking-stat-card"><div><small>Status</small><b>{detail.status}</b></div></div>
-        <div className="booking-stat-card"><div><small>Payment</small><b>{detail.payment_status}</b></div></div>
+        <div className="booking-stat-card"><div><small>Payment</small><b>{detail.payment_status} · {detail.payment_method}</b></div></div>
         <div className="booking-stat-card"><div><small>Dates</small><b>{new Date(detail.start_date).toLocaleDateString("en-PH",{month:"short",day:"numeric"})} → {new Date(detail.end_date).toLocaleDateString("en-PH",{month:"short",day:"numeric",year:"numeric"})}</b></div></div>
         <div className="booking-stat-card"><div><small>Total</small><b>{peso(grandTotal)}</b></div></div>
       </div>
@@ -237,7 +264,11 @@ export function Bookings() {
           <div className="booking-actions">
             <button className="primary-button" onClick={openPaymentModal}>Add Payment</button>
             <button className="secondary-button" disabled={sendingInvoice||!detail.customer_email} title={detail.customer_email?"":"This booking has no customer email on file"} onClick={()=>setInvoiceConfirm(true)}>{sendingInvoice?"Sending...":invoiceSent?"Sent ✓":"Email Invoice"}</button>
+            {detail.payment_method==="gcash"&&<button className="secondary-button" disabled={detail.status==="pending"||!detail.customer_email||["cancelled","rejected","completed"].includes(detail.status)} title={detail.status==="pending"?"Approve the request before sending payment instructions":!detail.customer_email?"This booking has no customer email on file":""} onClick={openGcashModal}>{detail.gcash_payment?.instructions_sent_at?"Resend GCash Instructions":"Send GCash Instructions"}</button>}
+            {detail.gcash_payment?.proof_status==="submitted"&&<a className="secondary-button" href={`${API_BASE}/admin/bookings/${detail.id}/payment-proof`} target="_blank" rel="noreferrer">View Payment Proof</a>}
           </div>
+          {detail.payment_method==="gcash"&&detail.gcash_payment?.instructions_sent_at&&<p className="booking-action-note">GCash instructions sent {new Date(detail.gcash_payment.instructions_sent_at).toLocaleString()}.</p>}
+          {detail.gcash_payment?.proof_status==="submitted"&&<p className="booking-action-note is-proof">Payment screenshot uploaded {new Date(detail.gcash_payment.proof_uploaded_at).toLocaleString()}.</p>}
         </div>
         {detail.id_document_path&&<div className="booking-actions-group">
           <div className="booking-actions-label">Verification</div>
@@ -315,6 +346,24 @@ export function Bookings() {
       <div className="confirm-modal-actions">
         <button className="secondary-button" onClick={()=>setInvoiceConfirm(false)}>Cancel</button>
         <button className="primary-button" onClick={()=>{setInvoiceConfirm(false);sendInvoice()}}>Send</button>
+      </div>
+    </div></div>}
+
+    {showGcashModal&&detail&&<div className="modal-backdrop" onClick={()=>!sendingGcash&&setShowGcashModal(false)}><div className="modal confirm-modal gcash-email-modal" onClick={e=>e.stopPropagation()}>
+      <h3>Send GCash Payment Email</h3>
+      <p>Send the QR code and payment instructions for <strong>{detail.booking_no}</strong> to <strong>{detail.customer_email}</strong>.</p>
+      <div className="gcash-email-total"><span>Rental total</span><strong>{peso(Number(detail.grand_total))}</strong></div>
+      <label>GCash QR code
+        <input type="file" accept="image/jpeg,image/png" onChange={e=>{setGcashError("");setGcashQr(e.target.files?.[0]||null)}} />
+        <small>JPG or PNG · up to 5MB</small>
+      </label>
+      <label>Payment instructions
+        <textarea rows="5" maxLength="2000" value={gcashInstructions} onChange={e=>setGcashInstructions(e.target.value)} />
+      </label>
+      {gcashError&&<div className="login-error">{gcashError}</div>}
+      <div className="confirm-modal-actions">
+        <button className="secondary-button" disabled={sendingGcash} onClick={()=>setShowGcashModal(false)}>Cancel</button>
+        <button className="primary-button" disabled={sendingGcash||!gcashQr||!gcashInstructions.trim()} onClick={sendGcashInstructions}>{sendingGcash?"Sending…":"Send Email"}</button>
       </div>
     </div></div>}
 

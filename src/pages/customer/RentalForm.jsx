@@ -115,20 +115,41 @@ export function CustomerRentalForm() {
     navigate("/shop/cart");
   };
 
-  if (result) return <CustomerShell title="Request submitted">
-    <div className="admin-card shop-success">
-      <h2>{result.booking_no}</h2>
-      <p>Your rental request has been submitted and is now waiting for Admin approval.</p>
-      <div className="shop-success-actions">
-        <Link className="secondary-button" to="/shop/browse">Browse more items</Link>
-        <Link className="primary-button" to="/shop/status">Check status</Link>
-      </div>
-    </div>
-  </CustomerShell>;
+  if (result) {
+    const isGcash = (result.payment_method || form.payment_method) === "gcash";
+    return <CustomerShell hideFloatingCart>
+      <section className="admin-card shop-success" aria-labelledby="request-success-title">
+        <div className="shop-success-mark" aria-hidden="true">✓</div>
+        <p className="home-eyebrow">Request confirmation</p>
+        <h1 id="request-success-title">Request Submitted Successfully</h1>
+        <div className="shop-success-reference">
+          <span>Rental reference number</span>
+          <strong>{result.booking_no}</strong>
+        </div>
+        <div className="shop-success-status">
+          <span>Status</span>
+          <strong><i aria-hidden="true" />Pending Admin Approval</strong>
+        </div>
+        <p className="shop-success-message">Your rental request has been submitted and is currently waiting for Admin approval.</p>
+        <div className="shop-success-total"><span>Rental total</span><strong>{peso(Number(result.grand_total))}</strong></div>
+
+        {isGcash && <div className="shop-success-payment">
+          <h2>GCash Payment</h2>
+          <p>Your GCash payment QR code and payment instructions will be sent to your registered <strong>Gmail address</strong> once your rental request has been reviewed by Admin.</p>
+          <small>Please check your <strong>Inbox and Spam/Junk folder</strong> for the payment instructions.</small>
+        </div>}
+
+        <div className="shop-success-actions">
+          <Link className="primary-button" to="/shop/status">Check Status</Link>
+          <Link className="secondary-button" to="/shop/browse">Browse More Items</Link>
+        </div>
+      </section>
+    </CustomerShell>;
+  }
 
   if (items.length === 0) return null;
 
-  if (!agreed) return <CustomerShell title="Complete your rental request" subtitle="One request covers every item in your cart." hideFloatingCart>
+  if (!agreed) return <CustomerShell title="Complete your rental request" subtitle="One request covers every item in your cart." hideFloatingCart disableModuleTransition>
     <PrivacyConsentModal business={business} onAgree={() => setAgreed(true)} onDecline={() => navigate("/shop/cart")} />
   </CustomerShell>;
 
@@ -245,7 +266,7 @@ export function CustomerRentalForm() {
       <p className="muted">Confirming sends this request to our team. It will be marked as waiting for approval — this is not a confirmed booking yet.</p>
       <div className="confirm-modal-actions">
         <button className="secondary-button" disabled={submitting} onClick={() => setConfirming(false)}>Edit</button>
-        <button className="primary-button" disabled={submitting} onClick={submit}>{submitting ? "Confirming…" : "Continue to Confirm"}</button>
+        <button className={`primary-button ${submitting ? "is-loading" : ""}`} disabled={submitting} aria-busy={submitting} onClick={submit}>{submitting ? "Confirming…" : "Continue to Confirm"}</button>
       </div>
     </div></div>}
   </CustomerShell>;

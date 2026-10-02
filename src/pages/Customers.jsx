@@ -108,7 +108,6 @@ export function Customers() {
       </table></div>:<div className="customer-card-grid">
         {sorted.map(c=><article className="customer-detail-card" key={c.id} onClick={()=>openDetail(c)}>
           <div className="customer-card-header">
-            <div className="customer-avatar-lg">{c.full_name.split(" ").map(x=>x[0]).join("").slice(0,2)}</div>
             <div className="customer-card-title">
               <h3>{c.full_name}</h3>
               <small>{c.email}</small>
@@ -135,7 +134,6 @@ export function Customers() {
     {detail&&<div className="modal-backdrop" onClick={()=>{setDetail(null);setEditing(false)}}><div className="modal customer-detail-modal" onClick={e=>e.stopPropagation()}>
       <button className="booking-modal-close" onClick={()=>{setDetail(null);setEditing(false)}}>×</button>
       <div className="customer-detail-header">
-        <div className="customer-avatar-xl">{(editing?editForm.full_name:detail.full_name).split(" ").map(x=>x[0]).join("").slice(0,2)}</div>
         <div>
           {editing?<input className="customer-edit-input" value={editForm.full_name} onChange={e=>setEditForm({...editForm,full_name:e.target.value})} placeholder="Full name"/>:<h2>{detail.full_name}</h2>}
           {editing?<input className="customer-edit-input" type="email" value={editForm.email} onChange={e=>setEditForm({...editForm,email:e.target.value})} placeholder="Email"/>:<p>{detail.email}</p>}
@@ -202,7 +200,7 @@ export function Customers() {
     {deleteConfirm&&<div className="modal-backdrop" onClick={()=>setDeleteConfirm(null)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
       <h3>Delete Customer</h3>
       <p>Are you sure you want to delete <strong>{deleteConfirm.full_name}</strong>?</p>
-      <small>This will permanently remove the customer and their data. This action cannot be undone.</small>
+      <small>Contact details and uploaded ID/payment files will be erased. Booking and payment history will remain without customer identifiers.</small>
       <div className="confirm-modal-actions">
         <button className="secondary-button" onClick={()=>setDeleteConfirm(null)}>Cancel</button>
         <button className="danger-button" disabled={deleting} onClick={del}>{deleting?"Deleting...":"Delete Customer"}</button>

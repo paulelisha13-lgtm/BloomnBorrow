@@ -138,6 +138,21 @@ test("API workflow and permissions", { skip }, async (t) => {
     }
   });
 
+  await t.test("customer deletion removes identifiers but preserves booking history", async () => {
+    const bookingId = created.bookings[0];
+    const deleted = await admin(`/admin/customers/${created.customerId}`, { method: "DELETE" });
+    assert.equal(deleted.status, 200, deleted.data.message);
+    const retained = await admin(`/admin/bookings/${bookingId}`);
+    assert.equal(retained.status, 200, retained.data.message);
+    assert.equal(retained.data.booking.customer_id, null);
+    assert.equal(retained.data.booking.customer_name, "Deleted customer");
+    assert.equal(retained.data.booking.customer_email, `deleted-${bookingId}@invalid.local`);
+    assert.equal(retained.data.booking.customer_phone, "");
+    assert.equal(retained.data.booking.delivery_address, null);
+    assert.equal(retained.data.booking.id_document_path, null);
+    assert.ok(retained.data.booking.payments.length > 0, "payment history is retained");
+  });
+
   await t.test("customer-facing endpoints are gone", async () => {
     for (const [method, path] of [["GET", "/rentals"], ["POST", "/bookings/guest"], ["GET", "/bookings/track"], ["GET", "/settings/public"]]) {
       assert.equal((await client()(path, { method, body: method === "POST" ? {} : undefined })).status, 404, path);

@@ -38,7 +38,7 @@ export function fromDisplayName(value) {
   return cleaned || "Bloom & Borrow";
 }
 
-export async function sendMail({ to, subject, html, text }) {
+export async function sendMail({ to, subject, html, text, attachments }) {
   const message = {
     from: `"${fromDisplayName(process.env.SMTP_FROM_NAME)}" <${process.env.SMTP_USER}>`,
     to,
@@ -46,5 +46,6 @@ export async function sendMail({ to, subject, html, text }) {
   };
   if (html) message.html = html;
   if (text) message.text = text;
+  if (attachments?.length) message.attachments = attachments;
   await getTransporter().sendMail(message);
 }
