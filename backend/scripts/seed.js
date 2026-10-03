@@ -193,7 +193,7 @@ try {
     ["late_fee_per_day","250"],
     ["currency","PHP"],
     ["cancellation_policy","Bookings may be cancelled before preparation. Refunds are subject to payment status and business policy."],
-    ["notification_email_enabled","0"],
+    ["notification_email_enabled","1"],
     ["notification_sms_enabled","0"]
   ];
   for (const [key,value] of settings) {

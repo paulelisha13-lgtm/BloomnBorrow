@@ -27,7 +27,6 @@ export function CustomerRentalForm() {
   const [form, setForm] = useState(blankForm());
   const [idFile, setIdFile] = useState(null);
   const [idFileError, setIdFileError] = useState("");
-  const [openSections, setOpenSections] = useState({ customer: true, rental: true, items: true, id: true, summary: true });
   const [availability, setAvailability] = useState({});
   const [error, setError] = useState("");
   const [confirming, setConfirming] = useState(false);
@@ -39,8 +38,6 @@ export function CustomerRentalForm() {
 
   useEffect(() => { if (items.length === 0 && !result) navigate("/shop/cart", { replace: true }); }, [items, result, navigate]);
   useEffect(() => { publicApi("/public/business-info").then(d => setBusiness(d.business || {})).catch(() => {}); }, []);
-
-  const toggleSection = key => setOpenSections(v => ({ ...v, [key]: !v[key] }));
 
   const days = form.start_date && form.end_date
     ? Math.max(1, Math.floor((new Date(form.end_date + "T00:00:00") - new Date(form.start_date + "T00:00:00")) / 86400000) + 1)
@@ -153,93 +150,85 @@ export function CustomerRentalForm() {
     <PrivacyConsentModal business={business} onAgree={() => setAgreed(true)} onDecline={() => navigate("/shop/cart")} />
   </CustomerShell>;
 
-  return <CustomerShell title="Complete your rental request" subtitle="One request covers every item in your cart." hideFloatingCart>
-    <div className="admin-booking-form">
-      {error && <div className="login-error">{error}</div>}
+  return <CustomerShell title="Complete your rental request" subtitle="Fill out the information below. Review your booking summary before submitting." hideFloatingCart>
+    <div className="shop-request-layout">
+      <div className="shop-request-main">
+        {error && <div className="login-error">{error}</div>}
 
-      <section className={`admin-card form-section ${openSections.customer ? "is-open" : "is-collapsed"}`}>
-        <button type="button" className="form-section-toggle" onClick={() => toggleSection("customer")} aria-expanded={openSections.customer}>
-          <div className="form-section-title"><span>1</span><div><h2>Customer Information</h2><p>{openSections.customer ? "Tell us who this rental request is for." : form.full_name ? `${form.full_name} · ${form.phone}` : "Customer details not completed"}</p></div></div>
-          <span className="section-chevron">⌄</span>
-        </button>
-        {openSections.customer && <div className="form-section-content">
-          <div className="customer-information-fields">
-            <div className="form-group"><label>Customer Name <span className="required">*</span></label><input required type="text" value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} placeholder="Enter full name" /></div>
-            <div className="form-group"><label>Contact Number <span className="required">*</span></label><input required type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="09XX XXX XXXX" /></div>
-            <div className="form-group"><label>Email Address <span className="required">*</span></label><input required type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="you@example.com" /></div>
-            <div className="form-group customer-address-field"><label>Full Address <span className="required">*</span></label><textarea required rows="3" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} placeholder="House number, street, barangay, city, province, postal code" /></div>
+        <section className="admin-card form-section shop-request-section">
+          <div className="form-section-title"><span>1</span><div><h2>Customer information</h2><p>Your personal and contact details.</p></div></div>
+          <div className="customer-information-fields shop-request-fields">
+            <div className="form-group"><label>Full name <span className="required">*</span></label><input required type="text" value={form.full_name} onChange={e => setForm({ ...form, full_name:e.target.value })} placeholder="Enter your full name" /></div>
+            <div className="form-group"><label>Phone number <span className="required">*</span></label><input required type="tel" value={form.phone} onChange={e => setForm({ ...form, phone:e.target.value })} placeholder="09XX XXX XXXX" /></div>
+            <div className="form-group"><label>Email address <span className="required">*</span></label><input required type="email" value={form.email} onChange={e => setForm({ ...form, email:e.target.value })} placeholder="you@example.com" /></div>
+            <div className="form-group"><label>Full address <span className="required">*</span></label><input required value={form.address} onChange={e => setForm({ ...form, address:e.target.value })} placeholder="Enter your complete address" /></div>
+            <div className="form-group span-2"><label>Additional notes <span>(optional)</span></label><textarea rows="3" value={form.notes} onChange={e => setForm({ ...form, notes:e.target.value })} placeholder="Special requests, delivery instructions, or other details" /></div>
           </div>
-        </div>}
-      </section>
+        </section>
 
-      <section className={`admin-card form-section ${openSections.rental ? "is-open" : "is-collapsed"}`}>
-        <button type="button" className="form-section-toggle" onClick={() => toggleSection("rental")} aria-expanded={openSections.rental}>
-          <div className="form-section-title"><span>2</span><div><h2>Rental Information</h2><p>{openSections.rental ? "Duration-based prices are calculated inclusively." : form.start_date && form.end_date ? `${form.start_date} → ${form.end_date} · ${days} days` : "Rental dates not set"}</p></div></div>
-          <span className="section-chevron">⌄</span>
-        </button>
-        {openSections.rental && <div className="form-section-content"><div className="form-grid">
-          <div className="form-group"><label>Start date <span className="required">*</span></label><input required type="date" value={form.start_date} onChange={e => setForm({ ...form, start_date: e.target.value })} /></div>
-          <div className="form-group"><label>End date <span className="required">*</span></label><input required type="date" min={form.start_date || undefined} value={form.end_date} onChange={e => setForm({ ...form, end_date: e.target.value })} /></div>
-          <div className="form-group"><label>Fulfillment</label><select value={form.fulfillment} onChange={e => setForm({ ...form, fulfillment: e.target.value })}><option value="pickup">Pickup</option><option value="delivery">Delivery</option></select></div>
-          <div className="form-group"><label>Payment method</label><select value={form.payment_method} onChange={e => setForm({ ...form, payment_method: e.target.value })}><option value="cash">Cash</option><option value="gcash">GCash</option><option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select></div>
-        </div>
-        {form.fulfillment === "delivery" && <p className="muted">Delivery fee will be confirmed by our team after your request is reviewed.</p>}
-        </div>}
-      </section>
+        <section className="admin-card form-section shop-request-section">
+          <div className="form-section-title"><span>2</span><div><h2>Rental information</h2><p>Set your rental period and preferred options.</p></div></div>
+          <div className="form-grid shop-request-rental-fields">
+            <div className="form-group"><label>Rental start date <span className="required">*</span></label><input required type="date" value={form.start_date} onChange={e => setForm({ ...form, start_date:e.target.value })} /></div>
+            <div className="form-group"><label>Rental end date <span className="required">*</span></label><input required type="date" min={form.start_date || undefined} value={form.end_date} onChange={e => setForm({ ...form, end_date:e.target.value })} /></div>
+            <div className="form-group"><label>Fulfillment</label><select value={form.fulfillment} onChange={e => setForm({ ...form, fulfillment:e.target.value })}><option value="pickup">Pickup</option><option value="delivery">Delivery</option></select></div>
+            <div className="form-group"><label>Payment method</label><select value={form.payment_method} onChange={e => setForm({ ...form, payment_method:e.target.value })}><option value="cash">Cash</option><option value="gcash">GCash</option><option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select></div>
+          </div>
+          {form.fulfillment === "delivery" && <p className="shop-request-help">The delivery fee will be confirmed after Admin reviews your request.</p>}
+        </section>
 
-      <section className={`admin-card form-section ${openSections.items ? "is-open" : "is-collapsed"}`}>
-        <button type="button" className="form-section-toggle" onClick={() => toggleSection("items")} aria-expanded={openSections.items}>
-          <div className="form-section-title"><span>3</span><div><h2>Rental Items</h2><p>{openSections.items ? "From your cart -- to change items or quantity, go back to Cart." : `${lines.length} item${lines.length === 1 ? "" : "s"} · ${items.reduce((s, x) => s + x.quantity, 0)} pieces`}</p></div></div>
-          <span className="section-chevron">⌄</span>
-        </button>
-        {openSections.items && <div className="form-section-content">
-          <div className="admin-booking-items">
-            {lines.map(x => <article className="admin-booking-item" key={x.item_id}>
-              <div className="item-row-head">
-                {x.image_url ? <img src={x.image_url} alt="" /> : <span className="item-image-placeholder">B</span>}
-                <div className="form-group grow"><label>Rental item</label><input readOnly value={x.name} /></div>
-              </div>
-              <div className="item-input-grid">
-                <div className="form-group"><label>Quantity / pieces</label><input readOnly value={x.quantity} /></div>
-                <div className="form-group"><label>Rental duration</label><input readOnly value={`${days} day${days === 1 ? "" : "s"}`} /></div>
-                <div className="form-group"><label>Delivery fee / piece</label><input readOnly value="To be confirmed" /></div>
-                <div className="form-group"><label>Availability</label><div className={`availability-box ${availability[x.item_id]?.available ? "ok" : availability[x.item_id] ? "bad" : ""}`}>{!form.start_date || !form.end_date ? "Select dates above" : availability[x.item_id] ? (availability[x.item_id].available ? `Available (${availability[x.item_id].available_quantity})` : `Only ${availability[x.item_id].available_quantity} available`) : "Checking…"}</div></div>
-              </div>
-              <div className="item-calculation"><span>Rental <b>{peso(x.rental)}</b></span><span>Deposit <b>{peso(x.deposit)}</b></span><span>Item total <b>{peso(x.rental + x.deposit)}</b></span></div>
+        <section className="admin-card form-section shop-request-section">
+          <div className="form-section-title"><span>3</span><div><h2>Rental items</h2><p>Review the items included in this request.</p></div></div>
+          <div className="shop-request-items">
+            {lines.map(x => <article className="shop-request-item" key={x.item_id}>
+              {x.image_url ? <img src={x.image_url} alt="" /> : <span className="shop-request-item-placeholder">B</span>}
+              <div className="shop-request-item-name"><strong>{x.name}</strong><small>{x.category}</small></div>
+              <div><small>Quantity</small><strong>{x.quantity}</strong></div>
+              <div><small>Duration</small><strong>{days} day{days === 1 ? "" : "s"}</strong></div>
+              <div className={`shop-request-availability ${availability[x.item_id]?.available ? "ok" : availability[x.item_id] ? "bad" : ""}`}>{!form.start_date || !form.end_date ? "Select dates" : availability[x.item_id] ? (availability[x.item_id].available ? `Available: ${availability[x.item_id].available_quantity}` : `Only ${availability[x.item_id].available_quantity} available`) : "Checking..."}</div>
+              <div className="shop-request-item-total"><strong>{peso(x.rental)}</strong><small>Rental total</small></div>
             </article>)}
           </div>
-          <Link className="secondary-button" to="/shop/cart">Edit cart</Link>
-        </div>}
-      </section>
+          <Link className="secondary-button shop-request-edit-cart" to="/shop/cart">Edit rental items</Link>
+        </section>
 
-      <section className={`admin-card form-section ${openSections.id ? "is-open" : "is-collapsed"}`}>
-        <button type="button" className="form-section-toggle" onClick={() => toggleSection("id")} aria-expanded={openSections.id}>
-          <div className="form-section-title"><span>4</span><div><h2>Upload ID</h2><p>{openSections.id ? "Required so we can verify your rental request." : idFile ? idFile.name : "ID not uploaded yet"}</p></div></div>
-          <span className="section-chevron">⌄</span>
-        </button>
-        {openSections.id && <div className="form-section-content">
-          <div className="form-group"><label>ID document (JPG, PNG, or PDF, up to 5MB) <span className="required">*</span></label><input type="file" accept={ID_TYPES.join(",")} onChange={onPickFile} /></div>
+        <section className="admin-card form-section shop-request-section">
+          <div className="form-section-title"><span>4</span><div><h2>Upload ID</h2><p>A valid ID is required for verification.</p></div></div>
+          <div className="shop-request-upload">
+            <div className="form-group"><label>ID document <span className="required">*</span></label><input type="file" accept={ID_TYPES.join(",")} onChange={onPickFile} /></div>
+            <small>Accepted formats: JPG, PNG, PDF. Maximum size: 5MB.</small>
+          </div>
           {idFileError && <div className="login-error">{idFileError}</div>}
           {idFile && <div className="shop-file-preview"><span>{idFile.name}</span><button type="button" className="mini-button" onClick={() => setIdFile(null)}>Replace</button></div>}
-        </div>}
-      </section>
+        </section>
+      </div>
 
-      <section className={`admin-card form-section booking-review ${openSections.summary ? "is-open" : "is-collapsed"}`}>
-        <button type="button" className="form-section-toggle" onClick={() => toggleSection("summary")} aria-expanded={openSections.summary}>
-          <div className="form-section-title"><span>5</span><div><h2>Booking Summary</h2><p>{openSections.summary ? "Review everything before requesting to rent." : `Estimated total: ${peso(total)}`}</p></div></div>
-          <span className="section-chevron">⌄</span>
-        </button>
-        {openSections.summary && <div className="form-section-content booking-review-content">
-          <div className="form-group"><label>Notes (optional)</label><textarea rows="3" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Anything we should know?" /></div>
-          <div className="review-total">
-            <div><span>Rental subtotal</span><strong>{peso(rentalSubtotal)}</strong></div>
-            <div><span>Security deposit</span><strong>{peso(depositSubtotal)}</strong></div>
-            <div className="grand"><span>Estimated total</span><strong>{peso(total)}</strong></div>
-          </div>
+      <aside className="admin-card shop-request-summary">
+        <div className="shop-request-summary-head"><h2>Booking summary</h2><p>Review your booking details and estimated total.</p></div>
+        <div className="shop-request-summary-items">
+          <strong>Rental items ({items.reduce((sum,item)=>sum+item.quantity,0)})</strong>
+          {lines.map(x => <div className="shop-request-summary-item" key={x.item_id}>
+            {x.image_url ? <img src={x.image_url} alt="" /> : <span className="shop-request-summary-placeholder">B</span>}
+            <div><strong>{x.name}</strong><small>{x.quantity} piece{x.quantity === 1 ? "" : "s"} · {days} day{days === 1 ? "" : "s"}</small></div>
+            <b>{peso(x.rental)}</b>
+          </div>)}
+        </div>
+        <div className="shop-request-totals">
+          <div><span>Rental subtotal</span><strong>{peso(rentalSubtotal)}</strong></div>
+          <div><span>Delivery fee</span><strong>{form.fulfillment === "delivery" ? "To be confirmed" : peso(0)}</strong></div>
+          <div><span>Security deposit</span><strong>{peso(depositSubtotal)}</strong></div>
+          <div className="grand"><span>Estimated total</span><strong>{peso(total)}</strong></div>
+        </div>
+        <button type="button" className="primary-button shop-request-submit" onClick={openConfirm}>Request to Rent</button>
+        <p className="shop-request-safe">Your information is used only to process and verify this rental request.</p>
+        <button type="button" className="secondary-button shop-request-back" onClick={() => setLeaveConfirm(true)}>Back to Cart</button>
+        {(business?.business_phone || business?.business_email || business?.business_address) && <div className="shop-request-contact">
+          <strong>Business contact</strong>
+          {business.business_phone && <span>{business.business_phone}</span>}
+          {business.business_email && <span>{business.business_email}</span>}
+          {business.business_address && <span>{business.business_address}</span>}
         </div>}
-      </section>
-
-      <div className="sticky-form-actions"><button type="button" className="secondary-button" onClick={() => setLeaveConfirm(true)}>Back to Cart</button><button className="primary-button" onClick={openConfirm}>Request to Rent</button></div>
+      </aside>
     </div>
 
     {leaveConfirm && <div className="modal-backdrop" onClick={() => setLeaveConfirm(false)}><div className="modal confirm-modal" onClick={e => e.stopPropagation()}>
@@ -247,7 +236,7 @@ export function CustomerRentalForm() {
       <p>Going back to the cart will clear everything you've entered in this rental request.</p>
       <div className="confirm-modal-actions">
         <button className="secondary-button" onClick={() => setLeaveConfirm(false)}>Cancel</button>
-        <button className="primary-button" onClick={confirmBackToCart}>Continue</button>
+        <button className="primary-button" data-customer-nav onClick={confirmBackToCart}>Continue</button>
       </div>
     </div></div>}
 

@@ -97,16 +97,23 @@ Set:
 ```env
 PORT=4000
 CLIENT_ORIGIN=http://localhost:5173
+APP_ORIGINS=http://localhost:5173
 DB_HOST=127.0.0.1
 DB_PORT=3306
 DB_USER=YOUR_MYSQL_USER
 DB_PASSWORD=YOUR_MYSQL_PASSWORD
 DB_NAME=bloom_borrow
 JWT_SECRET=use-a-long-random-secret-at-least-32-characters
+CSRF_SECRET=use-a-different-long-random-secret-at-least-32-characters
+BOOKING_LINK_SECRET=use-a-third-different-long-random-secret-at-least-32-characters
+BOOKING_LINK_TTL_HOURS=168
 JWT_EXPIRES_IN=8h
 ```
 
-To let staff email invoices and approved GCash payment instructions from Bookings, also set:
+`BOOKING_LINK_SECRET` encrypts the private booking links sent by email. Links expire
+after `BOOKING_LINK_TTL_HOURS` (seven days by default). Never commit real secrets.
+
+To send automatic booking-status updates, payment-review decisions, invoices, and approved GCash payment instructions, also set:
 ```env
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=465
@@ -120,7 +127,7 @@ password — turn on 2-Step Verification on the Gmail account, then generate an 
 Password at https://myaccount.google.com/apppasswords and use that instead. To send
 through a different provider (SendGrid, Amazon SES, a relay, ...), set `SMTP_HOST`/
 `SMTP_PORT`/`SMTP_USER`/`SMTP_PASS` to that provider's values. Without `SMTP_USER`/
-`SMTP_PASS` set, invoice and GCash email actions will return an error instead of sending mail.
+`SMTP_PASS` set, booking changes still succeed, but automatic emails are logged as failed and Admin sees a warning. Manual invoice and GCash email actions return an error instead of sending mail.
 
 ### 2. Create a local database and start the API
 ```bash

@@ -15,6 +15,9 @@ import { getSetting, getSettings } from "../lib/settings.js";
 import { INVOICE_BRANDING_KEYS, renderInvoiceHtml, renderInvoiceText } from "../lib/invoiceTemplate.js";
 import { sendMail } from "../lib/mailer.js";
 import { escHtml, peso } from "../lib/format.js";
+import { allocateVerifiedGcashPayment } from "../lib/gcashPayment.js";
+import { lifecycleEmailResponse, sendBookingLifecycleEmail } from "../lib/bookingEmails.js";
+import { bookingStatusUrl } from "../lib/bookingAccess.js";
 
 const router = Router();
 
@@ -43,10 +46,12 @@ router.post("/api/admin/availability/check", authenticate, requireRole("admin","
 
 router.get("/api/admin/bookings", authenticate, requireRole("admin","staff"), async (_req,res) => {
   const [rows] = await db.query(`
-    SELECT b.id,b.booking_no,b.customer_name,b.start_date,b.end_date,b.grand_total,b.status,b.payment_status,
-           GROUP_CONCAT(CONCAT(bi.item_name,' × ',bi.quantity) ORDER BY bi.id SEPARATOR ', ') AS items
+    SELECT b.id,b.booking_no,b.customer_name,b.start_date,b.end_date,b.grand_total,b.status,b.payment_status,b.created_at,
+           GROUP_CONCAT(CONCAT(bi.item_name,' × ',bi.quantity) ORDER BY bi.id SEPARATOR ', ') AS items,
+           MAX(w.proof_status) AS gcash_proof_status,MAX(w.proof_uploaded_at) AS gcash_proof_uploaded_at
     FROM bookings b
     LEFT JOIN booking_items bi ON bi.booking_id=b.id
+    LEFT JOIN booking_payment_workflows w ON w.booking_id=b.id
     GROUP BY b.id
     ORDER BY b.created_at DESC
     LIMIT 250
@@ -64,7 +69,8 @@ router.post("/api/admin/bookings", authenticate, requireRole("admin","staff"), r
     });
     await conn.commit();
     await audit(req,"CREATE_BOOKING",null,{booking_id:bookingId,booking_no:bookingNo,customer_id:customer.id,grand_total:grandTotal});
-    res.status(201).json({booking:await bookingDetailById(bookingId)});
+    const delivery=await sendBookingLifecycleEmail({bookingId,event:"submitted"});
+    res.status(201).json({booking:await bookingDetailById(bookingId),...lifecycleEmailResponse(delivery,"Booking created.")});
   } catch (error) {
     try { await conn.rollback(); } catch {}
     if (error.statusCode) return res.status(error.statusCode).json({message:error.message});
@@ -96,6 +102,159 @@ router.get("/api/admin/bookings/:id/payment-proof", authenticate, requireRole("a
   if (!fs.existsSync(filePath)) return res.status(404).json({message:"The payment proof file is no longer available."});
   const displayName = path.basename(proof.proof_original_name || proof.proof_path).replace(/["\r\n]/g,"_");
   res.sendFile(filePath,{headers:{"Content-Disposition":`inline; filename="${displayName}"`}});
+});
+
+router.patch("/api/admin/bookings/:id/payment-proof/review", authenticate, requireRole("admin","staff"), parseBody(schemas.gcashProofReview), async (req,res,next) => {
+  const id=Number(req.params.id);
+  if(!Number.isInteger(id)||id<=0) return res.status(400).json({message:"Invalid booking ID."});
+  const {action,verified_amount,gcash_reference,review_note}=req.body;
+  const conn=await db.getConnection();
+  let booking;
+  let allocation=null;
+  const paymentIds=[];
+  try {
+    await conn.beginTransaction();
+    [[booking]]=await conn.query(`
+      SELECT b.id,b.booking_no,b.customer_name,b.customer_email,b.payment_method,b.payment_status,b.status,
+             b.rental_subtotal,b.deposit_total,b.delivery_fee,b.grand_total,
+             w.proof_path,w.proof_status
+      FROM bookings b
+      LEFT JOIN booking_payment_workflows w ON w.booking_id=b.id
+      WHERE b.id=? FOR UPDATE
+    `,[id]);
+    if(!booking){await conn.rollback();return res.status(404).json({message:"Booking not found."});}
+    if(booking.payment_method!=="gcash"){await conn.rollback();return res.status(409).json({message:"This booking does not use GCash as its payment method."});}
+    if(!booking.proof_path){await conn.rollback();return res.status(409).json({message:"No customer payment proof has been uploaded for this booking."});}
+    if(booking.proof_status!=="submitted"){
+      const message=booking.proof_status==="approved"
+        ? "This payment proof has already been approved. No additional payment was recorded."
+        : booking.proof_status==="rejected"
+          ? "This payment proof has already been rejected. Wait for the customer to upload a new screenshot."
+          : "This payment proof is not ready for review.";
+      await conn.rollback();
+      return res.status(409).json({message});
+    }
+    if(["cancelled","rejected","completed"].includes(booking.status)){
+      await conn.rollback();
+      return res.status(409).json({message:"Payment proof cannot be reviewed for a closed booking."});
+    }
+
+    if(action==="approve"){
+      const [[paid]]=await conn.query(`
+        SELECT
+          COALESCE(SUM(CASE WHEN payment_type IN ('rental','delivery','other') THEN amount ELSE 0 END),0) AS rental_paid,
+          COALESCE(SUM(CASE WHEN payment_type='deposit' THEN amount ELSE 0 END),0) AS deposit_paid
+        FROM payments WHERE booking_id=? AND status='completed'
+      `,[id]);
+      try {
+        allocation=allocateVerifiedGcashPayment({
+          verifiedAmount:verified_amount,
+          rentalDue:Number(booking.rental_subtotal||0)+Number(booking.delivery_fee||0),
+          depositDue:booking.deposit_total,
+          rentalPaid:paid.rental_paid,
+          depositPaid:paid.deposit_paid
+        });
+      } catch(error) {
+        await conn.rollback();
+        const message=error.remainingBalance!==undefined
+          ? `Verified amount cannot exceed the remaining balance of ${peso(error.remainingBalance)}.`
+          : error.message;
+        return res.status(409).json({message});
+      }
+
+      const note=["Approved from customer GCash proof",review_note].filter(Boolean).join(" — ").slice(0,255);
+      if(allocation.rental>0){
+        const [result]=await conn.query(`
+          INSERT INTO payments(booking_id,amount,payment_type,method,reference_no,status,notes,recorded_by_user_id)
+          VALUES(?,?,'rental','gcash',?,'completed',?,?)
+        `,[id,allocation.rental,gcash_reference,note,req.user.id]);
+        paymentIds.push(result.insertId);
+      }
+      if(allocation.deposit>0){
+        const [result]=await conn.query(`
+          INSERT INTO payments(booking_id,amount,payment_type,method,reference_no,status,notes,recorded_by_user_id)
+          VALUES(?,?,'deposit','gcash',?,'completed',?,?)
+        `,[id,allocation.deposit,gcash_reference,note,req.user.id]);
+        paymentIds.push(result.insertId);
+      }
+      await conn.query(`
+        UPDATE booking_payment_workflows
+        SET proof_status='approved',reviewed_at=NOW(),reviewed_by_user_id=?,review_note=?,gcash_reference=?,verified_amount=?
+        WHERE booking_id=?
+      `,[req.user.id,review_note||null,gcash_reference,verified_amount,id]);
+      await recalcPaymentStatus(id,conn);
+    } else {
+      await conn.query(`
+        UPDATE booking_payment_workflows
+        SET proof_status='rejected',reviewed_at=NOW(),reviewed_by_user_id=?,review_note=?,gcash_reference=NULL,verified_amount=NULL
+        WHERE booking_id=?
+      `,[req.user.id,review_note,id]);
+    }
+    await conn.commit();
+  } catch(error) {
+    try{await conn.rollback();}catch{}
+    return next(error);
+  } finally { conn.release(); }
+
+  const approved=action==="approve";
+  try {
+    await addNotification({
+      bookingId:id,
+      type:approved?"PAYMENT_PROOF_APPROVED":"PAYMENT_PROOF_REJECTED",
+      title:`Payment proof ${approved?"approved":"rejected"} for ${booking.booking_no}`,
+      message:approved?`${peso(verified_amount)} was verified and recorded.`:`Customer action required: ${review_note}`
+    });
+  } catch(error) {
+    // The financial decision is already committed. A secondary notification
+    // failure must not make the response look like the payment was not saved.
+    console.error(`[GCASH REVIEW NOTIFICATION] ${booking.booking_no}:`,error.message);
+  }
+  await audit(req,approved?"APPROVE_GCASH_PROOF":"REJECT_GCASH_PROOF",null,{
+    booking_id:id,booking_no:booking.booking_no,amount:approved?verified_amount:undefined,
+    reference_no:approved?gcash_reference:undefined,payment_ids:paymentIds,reason:approved?undefined:review_note
+  });
+
+  let emailSent=false;
+  let emailWarning="";
+  try {
+    const {business_name:businessName}=await getSettings(["business_name"]);
+    const brand=businessName||"Bloom & Borrow";
+    const statusUrl=bookingStatusUrl(id);
+    const statusText=statusUrl?`\n\nOpen your secure booking page: ${statusUrl}`:"";
+    const statusButton=statusUrl?`<p style="margin:20px 0"><a href="${escHtml(statusUrl)}" style="display:inline-block;padding:11px 17px;border-radius:9px;background:#089b9d;color:#fff;text-decoration:none;font-weight:700">View Booking and Payment</a></p>`:"";
+    if(approved){
+      const remaining=allocation?.outstandingAfter||0;
+      await sendMail({
+        to:booking.customer_email,
+        subject:`GCash payment approved — ${booking.booking_no}`,
+        text:`Hello ${booking.customer_name},\n\nYour GCash payment proof for ${booking.booking_no} has been approved.\n\nVerified amount: ${peso(verified_amount)}\nGCash reference: ${gcash_reference}\nRemaining balance: ${peso(remaining)}\n\n${remaining>0?`You may upload another payment proof from your secure booking page after paying the remaining balance.${statusText}\n\nThis private link expires and should not be forwarded.`:"Your payment has been recorded successfully."}\n\n${brand}`,
+        html:`<p>Hello ${escHtml(booking.customer_name)},</p><p>Your GCash payment proof for <strong>${escHtml(booking.booking_no)}</strong> has been approved.</p><ul><li><strong>Verified amount:</strong> ${peso(verified_amount)}</li><li><strong>GCash reference:</strong> ${escHtml(gcash_reference)}</li><li><strong>Remaining balance:</strong> ${peso(remaining)}</li></ul><p>${remaining>0?"You may upload another payment proof from your secure booking page after paying the remaining balance.":"Your payment has been recorded successfully."}</p>${remaining>0?`${statusButton}<p style="font-size:12px;color:#718687">This private link expires and should not be forwarded.</p>`:""}<p>${escHtml(brand)}</p>`
+      });
+    }else{
+      await sendMail({
+        to:booking.customer_email,
+        subject:`Action needed for GCash payment — ${booking.booking_no}`,
+        text:`Hello ${booking.customer_name},\n\nWe could not approve the GCash payment proof for ${booking.booking_no}.\n\nReason: ${review_note}\n\nOpen your secure booking page and upload a clear replacement screenshot.${statusText}\n\nThis private link expires and should not be forwarded.\n\n${brand}`,
+        html:`<p>Hello ${escHtml(booking.customer_name)},</p><p>We could not approve the GCash payment proof for <strong>${escHtml(booking.booking_no)}</strong>.</p><p><strong>Reason:</strong> ${escHtml(review_note)}</p><p>Open your secure booking page and upload a clear replacement screenshot.</p>${statusButton}<p style="font-size:12px;color:#718687">This private link expires and should not be forwarded.</p><p>${escHtml(brand)}</p>`
+      });
+    }
+    emailSent=true;
+  } catch(error) {
+    console.error(`[GCASH REVIEW EMAIL] ${booking.booking_no}:`,error.message);
+    emailWarning="The review was saved, but the customer email could not be sent. Check the SMTP configuration and contact the customer manually.";
+  }
+
+  res.json({
+    ok:true,
+    proof_status:approved?"approved":"rejected",
+    recorded_payment_ids:paymentIds,
+    remaining_balance:allocation?.outstandingAfter??null,
+    email_sent:emailSent,
+    message:approved
+      ? `Payment proof approved and ${peso(verified_amount)} recorded.${emailSent?" Customer email sent.":""}`
+      : `Payment proof rejected.${emailSent?" Customer email sent with the reason.":""}`,
+    ...(emailWarning?{email_warning:emailWarning}:{})
+  });
 });
 
 router.delete("/api/admin/bookings/:id", authenticate, requireRole("admin"), async (req,res) => {
@@ -131,14 +290,18 @@ router.patch("/api/admin/bookings/:id/status", authenticate, requireRole("admin"
   const note=String(req.body.note||"").slice(0,255);
   const [[booking]] = await db.query("SELECT id,booking_no,status,customer_name FROM bookings WHERE id=?",[id]);
   if(!booking) return res.status(404).json({message:"Booking not found."});
+  if(to==="rejected" && !note.trim()) {
+    return res.status(400).json({message:"A customer-facing rejection reason is required."});
+  }
   if(!(validTransitions[booking.status]||[]).includes(to)) {
     return res.status(409).json({message:`Cannot move booking from ${booking.status} to ${to}.`});
   }
   await db.query("UPDATE bookings SET status=? WHERE id=?",[to,id]);
   await db.query("INSERT INTO booking_status_history(booking_id,from_status,to_status,changed_by_user_id,note) VALUES(?,?,?,?,?)",[id,booking.status,to,req.user.id,note||null]);
-  await addNotification({bookingId:id,type:"BOOKING_STATUS",title:`Booking ${booking.booking_no}: ${to}`,message:`Your booking status changed from ${booking.status} to ${to}.`});
+  try{await addNotification({bookingId:id,type:"BOOKING_STATUS",title:`Booking ${booking.booking_no}: ${to}`,message:`Your booking status changed from ${booking.status} to ${to}.`});}catch(error){console.error(`[BOOKING NOTIFICATION] ${booking.booking_no}:`,error.message)}
   await audit(req,"BOOKING_STATUS",null,{booking_id:id,from:booking.status,to});
-  res.json({ok:true});
+  const delivery=await sendBookingLifecycleEmail({bookingId:id,event:to,context:{note}});
+  res.json({ok:true,...lifecycleEmailResponse(delivery,`Booking marked ${to}.`)});
 });
 
 router.patch("/api/admin/bookings/:id/reschedule", authenticate, requireRole("admin","staff"), parseBody(schemas.reschedule), async (req,res) => {
@@ -166,7 +329,8 @@ router.patch("/api/admin/bookings/:id/reschedule", authenticate, requireRole("ad
   await recalcPaymentStatus(id);
   await db.query("INSERT INTO booking_status_history(booking_id,from_status,to_status,changed_by_user_id,note) VALUES(?,?,?,?,?)",[id,booking.status,booking.status,req.user.id,`Rescheduled to ${req.body.start_date} - ${req.body.end_date}`]);
   await audit(req,"RESCHEDULE_BOOKING",null,{booking_id:id,booking_no:booking.booking_no,from:{start_date:booking.start_date,end_date:booking.end_date},to:{start_date:req.body.start_date,end_date:req.body.end_date},grand_total:{from:booking.grand_total,to:grand}});
-  res.json({ok:true});
+  const delivery=await sendBookingLifecycleEmail({bookingId:id,event:"rescheduled",context:{old_start_date:booking.start_date,old_end_date:booking.end_date}});
+  res.json({ok:true,grand_total:grand,...lifecycleEmailResponse(delivery,"Booking dates updated.")});
 });
 
 router.post("/api/admin/bookings/:id/payments", authenticate, requireRole("admin","staff"), parseBody(schemas.recordPayment), async (req,res) => {
@@ -260,14 +424,15 @@ router.post("/api/admin/bookings/:id/return-inspection", authenticate, requireRo
     await conn.query("INSERT INTO booking_status_history(booking_id,from_status,to_status,changed_by_user_id,note) VALUES(?,?,'returned',?,?)",[bookingId,booking.status,req.user.id,"Return inspection recorded"]);
   }
     await conn.commit();
-    await audit(req,"RETURN_INSPECTION",null,{booking_id:bookingId,booking_no:booking.booking_no,condition_after:conditionAfter,late_days:lateDays,late_fee:lateFee,damage_charge:damage,deposit_refund:refund});
-    res.json({ok:true,late_days:lateDays,late_fee:lateFee,damage_charge:damage,deposit_refund:refund});
   } catch(error) {
     await conn.rollback();
     throw error;
   } finally {
     conn.release();
   }
+  await audit(req,"RETURN_INSPECTION",null,{booking_id:bookingId,booking_no:booking.booking_no,condition_after:conditionAfter,late_days:lateDays,late_fee:lateFee,damage_charge:damage,deposit_refund:refund});
+  const delivery=await sendBookingLifecycleEmail({bookingId,event:"returned",context:{late_fee:lateFee,damage_charge:damage,deposit_refund:refund}});
+  res.json({ok:true,late_days:lateDays,late_fee:lateFee,damage_charge:damage,deposit_refund:refund,...lifecycleEmailResponse(delivery,"Return inspection recorded.")});
 });
 
 router.post("/api/admin/bookings/:id/complete", authenticate, requireRole("admin","staff"), async (req,res) => {
@@ -285,7 +450,8 @@ router.post("/api/admin/bookings/:id/complete", authenticate, requireRole("admin
   await db.query("INSERT INTO booking_status_history(booking_id,from_status,to_status,changed_by_user_id,note) VALUES(?,'returned','completed',?,?)",[id,req.user.id,req.body.note||"Rental completed"]);
   await recalcPaymentStatus(id);
   await audit(req,"COMPLETE_BOOKING",null,{booking_id:id,booking_no:booking.booking_no,deposit_refund:booking.inspection?.deposit_refund||0});
-  res.json({ok:true});
+  const delivery=await sendBookingLifecycleEmail({bookingId:id,event:"completed",context:{deposit_refund:booking.inspection?.deposit_refund||0}});
+  res.json({ok:true,...lifecycleEmailResponse(delivery,"Rental completed.")});
 });
 
 router.post("/api/admin/bookings/:id/send-gcash-instructions", authenticate, requireRole("admin","staff"), requireStaffCsrf, (req,res,next) => {
@@ -310,12 +476,15 @@ router.post("/api/admin/bookings/:id/send-gcash-instructions", authenticate, req
   const business = await getSettings(INVOICE_BRANDING_KEYS);
   const businessName = business.business_name || "Bloom & Borrow";
   const safeInstructions = escHtml(instructions).replace(/\r?\n/g,"<br>");
+  const statusUrl = bookingStatusUrl(id);
+  const statusText = statusUrl ? `\n\nView your booking and upload payment proof: ${statusUrl}` : "";
+  const statusButton = statusUrl ? `<p style="margin:20px 0"><a href="${escHtml(statusUrl)}" style="display:inline-block;padding:11px 17px;border-radius:9px;background:#089b9d;color:#fff;text-decoration:none;font-weight:700">View Booking and Upload Payment Proof</a></p>` : "";
   try {
     await sendMail({
       to:booking.customer_email,
       subject:`GCash payment instructions for ${booking.booking_no} — ${businessName}`,
-      text:`Your rental request ${booking.booking_no} has been reviewed.\n\nAmount due: ${peso(Number(booking.grand_total))}\n\n${instructions}\n\nThe GCash QR code is attached to this email. After paying, open Check Status on the Bloom & Borrow website and upload your payment screenshot for review.`,
-      html:`<p>Your rental request <strong>${escHtml(booking.booking_no)}</strong> has been reviewed.</p><p><strong>Amount due:</strong> ${peso(Number(booking.grand_total))}</p><p>${safeInstructions}</p><p>The GCash QR code is attached below. After paying, open <strong>Check Status</strong> on the Bloom &amp; Borrow website and upload your payment screenshot for review.</p><p><img src="cid:gcash-payment-qr" alt="GCash payment QR code" style="display:block;max-width:320px;width:100%;height:auto"></p>`,
+      text:`Your rental request ${booking.booking_no} has been reviewed.\n\nAmount due: ${peso(Number(booking.grand_total))}\n\n${instructions}\n\nThe GCash QR code is attached to this email. After paying, use the secure link below to view your booking and upload your payment screenshot.${statusText}\n\nThis private link expires and should not be forwarded.`,
+      html:`<p>Your rental request <strong>${escHtml(booking.booking_no)}</strong> has been reviewed.</p><p><strong>Amount due:</strong> ${peso(Number(booking.grand_total))}</p><p>${safeInstructions}</p><p>The GCash QR code is attached below. After paying, use the secure button to view your booking and upload your payment screenshot.</p><p><img src="cid:gcash-payment-qr" alt="GCash payment QR code" style="display:block;max-width:320px;width:100%;height:auto"></p>${statusButton}<p style="font-size:12px;color:#718687">This private link expires and should not be forwarded.</p>`,
       attachments:[{
         filename:req.file.originalname || "gcash-qr.png",
         content:req.file.buffer,
@@ -355,6 +524,28 @@ router.post("/api/admin/bookings/:id/send-invoice", authenticate, requireRole("a
   }
   await audit(req,"SEND_INVOICE_EMAIL",null,{booking_id:id,booking_no:booking.booking_no});
   res.json({ok:true, sent_to: to});
+});
+
+router.post("/api/admin/bookings/:id/send-status-email", authenticate, requireRole("admin","staff"), requireStaffCsrf, async (req,res) => {
+  const id=Number(req.params.id);
+  const booking=await bookingDetailById(id);
+  if(!booking)return res.status(404).json({message:"Booking not found."});
+  const latestStatus=[...(booking.history||[])].reverse().find(entry=>entry.to_status===booking.status);
+  const event=booking.status==="pending"?"submitted":booking.status;
+  const delivery=await sendBookingLifecycleEmail({
+    bookingId:id,
+    event,
+    context:{
+      note:latestStatus?.note||"",
+      late_fee:booking.inspection?.late_fee||0,
+      damage_charge:booking.inspection?.damage_charge||0,
+      deposit_refund:booking.inspection?.deposit_refund||0
+    }
+  });
+  if(delivery.skipped)return res.status(409).json({message:delivery.reason});
+  if(!delivery.sent)return res.status(502).json({message:delivery.error});
+  await audit(req,"SEND_BOOKING_STATUS_EMAIL",null,{booking_id:id,booking_no:booking.booking_no,status:booking.status});
+  res.json({ok:true,email_sent:true,message:`Current ${booking.status} status emailed to the customer.`});
 });
 
 router.post("/api/admin/overdue-check", authenticate, requireRole("admin"), async (req,res) => {

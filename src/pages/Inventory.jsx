@@ -1,10 +1,12 @@
 import React, { useState } from "react";
 import { api } from "../lib/api";
 import { Kpi } from "../components/Kpi";
+import { ListPagination } from "../components/ListPagination";
 import { AdminShell } from "../components/layout/AdminShell";
 import { SortControls } from "../components/SortControls";
 import { ViewToggle } from "../components/ViewToggle";
 import { sortRows, useSort } from "../hooks/useSort";
+import { usePagination } from "../hooks/usePagination";
 import { useViewMode } from "../hooks/useViewMode";
 import { peso } from "../lib/format";
 import { isAdminUser } from "../lib/roles";
@@ -91,6 +93,9 @@ export function Inventory() {
   const {sortKey,sortDir,setSort}=useSort("created_at","desc");
   const sorted=sortRows(filtered,sorts,sortKey,sortDir);
   const [view,setView]=useViewMode("bb.view.inventory");
+  const pagination=usePagination(sorted.length);
+  const visibleRows=sorted.slice(pagination.startIndex,pagination.startIndex+pagination.pageSize);
+  const changeSort=key=>{pagination.setPage(1);setSort(key)};
 
   const stats={
     total:rows.length,
@@ -113,19 +118,19 @@ export function Inventory() {
     <div className="admin-page-toolbar">
       <div className="admin-search">
         <span>⌕</span>
-        <input placeholder="Search by name or SKU..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        <input placeholder="Search by name or SKU..." value={search} onChange={e=>{setSearch(e.target.value);pagination.setPage(1)}}/>
       </div>
-      <div className="inventory-filters">
-        <select value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}>
+      <div className="admin-toolbar-controls inventory-filters">
+        {isAdminUser()&&<button className="primary-button" onClick={openNew}>+ Rent Item</button>}
+        <select value={categoryFilter} onChange={e=>{setCategoryFilter(e.target.value);pagination.setPage(1)}}>
           {categories.map(c=><option key={c}>{c}</option>)}
         </select>
-        <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+        <select value={statusFilter} onChange={e=>{setStatusFilter(e.target.value);pagination.setPage(1)}}>
           {statuses.map(s=><option key={s}>{s==="All"?"All statuses":s}</option>)}
         </select>
-        <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={setSort}/>
+        <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={changeSort}/>
         <ViewToggle view={view} onChange={setView}/>
       </div>
-      {isAdminUser()&&<button className="primary-button" onClick={openNew}>+ Rent Item</button>}
     </div>
 
     <section className="admin-card">
@@ -133,9 +138,9 @@ export function Inventory() {
         <span>📭</span>
         <h3>No items found</h3>
         <p>{search||categoryFilter!=="All"||statusFilter!=="All"?"Try adjusting your filters.":"Add your first rental item to get started."}</p>
-      </div>:view==="table"?<div className="table-wrap"><table>
+      </div>:<>{view==="table"?<div className="table-wrap"><table>
         <thead><tr><th>Item</th><th>Category</th><th className="num">Price/day</th><th className="num">Deposit</th><th className="num">Available</th><th className="num">Reserved</th><th>Status</th><th></th></tr></thead>
-        <tbody>{sorted.map(item=><tr key={item.id}>
+        <tbody>{visibleRows.map(item=><tr key={item.id}>
           <td><strong>{item.name}</strong><br/><small>{item.sku}</small></td>
           <td>{item.category}</td>
           <td className="num">{peso(Number(item.daily_price))}</td>
@@ -150,7 +155,7 @@ export function Inventory() {
           </div></td>
         </tr>)}</tbody>
       </table></div>:<div className="inventory-grid">
-        {sorted.map(item=><article className="inventory-card-item" key={item.id}>
+        {visibleRows.map(item=><article className="inventory-card-item" key={item.id}>
           <div className="inventory-card-image">
             {item.image_url?<img src={item.image_url} alt={item.name}/>:<div className="inventory-card-noimage" aria-label="No photo">📦</div>}
             <span className={`inventory-status-badge ${item.status}`}>{item.status}</span>
@@ -177,6 +182,7 @@ export function Inventory() {
           </div>
         </article>)}
       </div>}
+      <ListPagination {...pagination} total={sorted.length} label="items" onPageChange={pagination.setPage}/></>}
     </section>
 
     {modal&&<div className="modal-backdrop" onClick={()=>setModal(false)}><form className="modal" onSubmit={save} onClick={e=>e.stopPropagation()}>

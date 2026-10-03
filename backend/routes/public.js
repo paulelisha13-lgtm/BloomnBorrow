@@ -12,6 +12,8 @@ import fs from "fs";
 import path from "path";
 import { peso, escHtml } from "../lib/format.js";
 import { INVOICE_BRANDING_KEYS } from "../lib/invoiceTemplate.js";
+import { sendBookingLifecycleEmail } from "../lib/bookingEmails.js";
+import { verifyBookingAccessToken } from "../lib/bookingAccess.js";
 
 const router = Router();
 
@@ -172,13 +174,15 @@ router.post("/api/public/bookings", bookingLimiter, (req,res,next) => {
       }
     } catch { /* best-effort: a mail hiccup must never fail the customer's booking */ }
 
+    const confirmationDelivery=await sendBookingLifecycleEmail({bookingId,event:"submitted"});
+
     const booking = await bookingDetailById(bookingId);
     res.status(201).json({booking: {
       booking_no: booking.booking_no, status: booking.status,
       start_date: booking.start_date, end_date: booking.end_date,
       items: booking.items, grand_total: booking.grand_total,
       payment_method: booking.payment_method
-    }});
+    },confirmation_email_sent:confirmationDelivery.sent});
   } catch (error) {
     try { await conn.rollback(); } catch {}
     fs.unlink(req.file.path, () => {}); // the booking never happened, so don't keep the file
@@ -187,34 +191,59 @@ router.post("/api/public/bookings", bookingLimiter, (req,res,next) => {
   } finally { conn.release(); }
 });
 
+async function loadPublicBooking(where, params) {
+  const [[booking]] = await db.query(
+    `SELECT b.id,b.booking_no,b.status,b.payment_status,b.payment_method,b.start_date,b.end_date,b.grand_total,b.created_at,
+            w.instructions_sent_at,w.proof_uploaded_at,w.proof_status,w.reviewed_at,w.review_note,
+            w.gcash_reference,w.verified_amount,
+            COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.booking_id=b.id AND p.status='completed' AND p.payment_type<>'refund'),0) AS paid_amount
+     FROM bookings b
+     LEFT JOIN booking_payment_workflows w ON w.booking_id=b.id
+     WHERE ${where} LIMIT 1`,
+    params
+  );
+  if (!booking) return null;
+  const [items] = await db.query("SELECT item_name,quantity FROM booking_items WHERE booking_id=?",[booking.id]);
+  const { id: _id, instructions_sent_at, proof_uploaded_at, proof_status, reviewed_at, review_note, gcash_reference, verified_amount, paid_amount, ...publicBooking } = booking;
+  return {
+    ...publicBooking,
+    items,
+    gcash_instructions_sent: Boolean(instructions_sent_at),
+    payment_proof_status: proof_status || null,
+    payment_proof_uploaded_at: proof_uploaded_at || null,
+    payment_proof_reviewed_at: reviewed_at || null,
+    payment_proof_review_note: proof_status==="rejected" ? review_note : null,
+    payment_verified_amount: proof_status==="approved" ? verified_amount : null,
+    payment_reference: proof_status==="approved" ? gcash_reference : null,
+    amount_paid:Number(paid_amount||0),
+    balance_due:Math.max(0,Number(booking.grand_total||0)-Number(paid_amount||0))
+  };
+}
+
 // Status check by booking_no + email (both required, so a guessable/sequential
 // booking_no alone cannot be used to browse other customers' requests).
 router.get("/api/public/bookings/lookup", lookupLimiter, async (req,res) => {
   const bookingNo = String(req.query.booking_no || "").trim();
   const email = String(req.query.email || "").trim().toLowerCase();
   if (!bookingNo || !email) return res.status(400).json({message:"Booking number and email are required."});
-  const [[booking]] = await db.query(
-    `SELECT b.id,b.booking_no,b.status,b.payment_status,b.payment_method,b.start_date,b.end_date,b.grand_total,b.created_at,
-            w.instructions_sent_at,w.proof_uploaded_at,w.proof_status
-     FROM bookings b
-     LEFT JOIN booking_payment_workflows w ON w.booking_id=b.id
-     WHERE b.booking_no=? AND b.customer_email=? LIMIT 1`,
-    [bookingNo, email]
-  );
+  const booking = await loadPublicBooking("b.booking_no=? AND b.customer_email=?",[bookingNo,email]);
   if (!booking) return res.status(404).json({message:"No booking found for that booking number and email."});
-  const [items] = await db.query("SELECT item_name,quantity FROM booking_items WHERE booking_id=?",[booking.id]);
-  const { id: _id, instructions_sent_at, proof_uploaded_at, proof_status, ...publicBooking } = booking;
-  res.json({booking: {
-    ...publicBooking,
-    items,
-    gcash_instructions_sent: Boolean(instructions_sent_at),
-    payment_proof_status: proof_status || null,
-    payment_proof_uploaded_at: proof_uploaded_at || null
-  }});
+  res.json({booking});
 });
 
-// Customers identify the booking with the same booking-number + email pair
-// used by status lookup. Proofs stay private and are never served publicly.
+// Email links carry an encrypted, authenticated, short-lived token. It grants
+// access to one booking only and contains no email address or booking number.
+router.post("/api/public/bookings/access", lookupLimiter, async (req,res) => {
+  const access = verifyBookingAccessToken(req.body?.token);
+  if (!access) return res.status(401).json({message:"This secure booking link is invalid or has expired. Use your booking number and email below instead."});
+  const booking = await loadPublicBooking("b.id=?",[access.bookingId]);
+  if (!booking) return res.status(404).json({message:"This booking is no longer available."});
+  res.set("Cache-Control","no-store");
+  res.json({booking});
+});
+
+// Customers identify the booking with either the secure email token or the
+// booking-number + email fallback. Proofs stay private and are never public.
 router.post("/api/public/bookings/payment-proof", bookingLimiter, (req,res,next) => {
   paymentProofUpload(req,res,(err) => {
     if (err) return res.status(400).json({message:err.message || "Could not process the payment proof."});
@@ -224,18 +253,25 @@ router.post("/api/public/bookings/payment-proof", bookingLimiter, (req,res,next)
 }, async (req,res,next) => {
   const removeNewFile = () => { if (req.file?.path) fs.unlink(req.file.path, () => {}); };
   try {
+    const accessToken = String(req.body.access_token || "").trim();
+    const access = accessToken ? verifyBookingAccessToken(accessToken) : null;
     const bookingNo = String(req.body.booking_no || "").trim();
     const email = String(req.body.email || "").trim().toLowerCase();
-    if (!bookingNo || !email) {
+    if (accessToken && !access) {
       removeNewFile();
-      return res.status(400).json({message:"Booking number and email are required."});
+      return res.status(401).json({message:"This secure booking link is invalid or has expired. Open a newer email or use Check Status again."});
+    }
+    if (!access && (!bookingNo || !email)) {
+      removeNewFile();
+      return res.status(400).json({message:"A secure booking link or your booking number and email is required."});
     }
     const [[booking]] = await db.query(`
-      SELECT b.id,b.booking_no,b.status,b.payment_method,w.instructions_sent_at,w.proof_path
+      SELECT b.id,b.booking_no,b.status,b.payment_method,b.payment_status,
+             w.instructions_sent_at,w.proof_path,w.proof_status
       FROM bookings b
       LEFT JOIN booking_payment_workflows w ON w.booking_id=b.id
-      WHERE b.booking_no=? AND b.customer_email=? LIMIT 1
-    `,[bookingNo,email]);
+      WHERE ${access?"b.id=?":"b.booking_no=? AND b.customer_email=?"} LIMIT 1
+    `,access?[access.bookingId]:[bookingNo,email]);
     if (!booking) {
       removeNewFile();
       return res.status(404).json({message:"No booking found for that booking number and email."});
@@ -252,10 +288,19 @@ router.post("/api/public/bookings/payment-proof", bookingLimiter, (req,res,next)
       removeNewFile();
       return res.status(409).json({message:"Payment proof cannot be submitted for a closed booking."});
     }
+    if (booking.payment_status === "paid") {
+      removeNewFile();
+      return res.status(409).json({message:"This booking is already fully paid. No additional payment proof is needed."});
+    }
+    if (booking.proof_status === "submitted") {
+      removeNewFile();
+      return res.status(409).json({message:"A payment proof is already waiting for Admin review."});
+    }
 
     await db.query(`
       UPDATE booking_payment_workflows
-      SET proof_path=?,proof_original_name=?,proof_uploaded_at=NOW(),proof_status='submitted'
+      SET proof_path=?,proof_original_name=?,proof_uploaded_at=NOW(),proof_status='submitted',
+          reviewed_at=NULL,reviewed_by_user_id=NULL,review_note=NULL,gcash_reference=NULL,verified_amount=NULL
       WHERE booking_id=?
     `,[req.file.filename,req.file.originalname,booking.id]);
     if (booking.proof_path && booking.proof_path !== req.file.filename) {

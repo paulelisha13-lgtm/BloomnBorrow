@@ -121,8 +121,20 @@ export async function bookingDetailById(id, conn=db) {
   `,[id]);
   const [payments] = await conn.query("SELECT * FROM payments WHERE booking_id=? ORDER BY created_at DESC",[id]);
   const [[inspection]] = await conn.query("SELECT * FROM return_inspections WHERE booking_id=? LIMIT 1",[id]);
-  const [[gcashPayment]] = await conn.query("SELECT instructions_sent_at,proof_original_name,proof_uploaded_at,proof_status FROM booking_payment_workflows WHERE booking_id=? LIMIT 1",[id]);
-  return {...booking,items,history,payments,inspection:inspection || null,gcash_payment:gcashPayment || null};
+  const [[customerEmailDelivery]] = await conn.query(`
+    SELECT type,title,status,created_at FROM notifications
+    WHERE booking_id=? AND channel='email'
+    ORDER BY id DESC LIMIT 1
+  `,[id]);
+  const [[gcashPayment]] = await conn.query(`
+    SELECT w.instructions_sent_at,w.proof_original_name,w.proof_uploaded_at,w.proof_status,
+           w.reviewed_at,w.review_note,w.gcash_reference,w.verified_amount,
+           u.full_name AS reviewed_by
+    FROM booking_payment_workflows w
+    LEFT JOIN users u ON u.id=w.reviewed_by_user_id
+    WHERE w.booking_id=? LIMIT 1
+  `,[id]);
+  return {...booking,items,history,payments,inspection:inspection || null,gcash_payment:gcashPayment || null,customer_email_delivery:customerEmailDelivery || null};
 }
 
 export const validTransitions = {

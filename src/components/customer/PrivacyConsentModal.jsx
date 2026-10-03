@@ -60,7 +60,7 @@ export function PrivacyConsentModal({ business, onAgree, onDecline }) {
     </div>
     {!scrolledToEnd && <p className="muted shop-privacy-hint">Scroll to the end to continue.</p>}
     <div className="confirm-modal-actions">
-      <button type="button" className="secondary-button" onClick={onDecline}>Decline</button>
+      <button type="button" className="secondary-button" data-customer-nav onClick={onDecline}>Decline</button>
       <button type="button" className="primary-button" disabled={!scrolledToEnd} onClick={onAgree}>I Agree</button>
     </div>
   </div></div>;

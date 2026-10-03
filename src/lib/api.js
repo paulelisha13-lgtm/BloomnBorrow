@@ -1,4 +1,5 @@
 export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000/api";
+import { beginActionRequest, finishActionRequest } from "./actionFeedback";
 
 function readCookie(name) {
   const prefix = `${encodeURIComponent(name)}=`;
@@ -24,6 +25,7 @@ export function clearAuth() {
 
 export async function api(path, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
+  const feedbackId = beginActionRequest(method);
   const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
   const headers = { ...(options.headers || {}) };
   if (!isFormData) headers["Content-Type"] = "application/json";
@@ -40,13 +42,18 @@ export async function api(path, options = {}) {
       headers
     });
   } catch {
-    throw new Error(`Cannot reach the server at ${API_BASE}. Is the API running?`);
+    const error=new Error(`Cannot reach the server at ${API_BASE}. Is the API running?`);
+    finishActionRequest(feedbackId,{ok:false,message:error.message,method});
+    throw error;
   }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     if (response.status === 401) clearAuth();
-    throw new Error(data.message || describeHttpError(response.status));
+    const error=new Error(data.message || describeHttpError(response.status));
+    finishActionRequest(feedbackId,{ok:false,message:error.message,method});
+    throw error;
   }
+  finishActionRequest(feedbackId,{ok:true,message:data.message,method});
   return data;
 }
 

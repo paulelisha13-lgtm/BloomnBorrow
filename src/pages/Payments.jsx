@@ -1,10 +1,12 @@
 import React, { useState } from "react";
 import { api } from "../lib/api";
 import { Kpi } from "../components/Kpi";
+import { ListPagination } from "../components/ListPagination";
 import { AdminShell } from "../components/layout/AdminShell";
 import { SortControls } from "../components/SortControls";
 import { ViewToggle } from "../components/ViewToggle";
 import { sortRows, useSort } from "../hooks/useSort";
+import { usePagination } from "../hooks/usePagination";
 import { useViewMode } from "../hooks/useViewMode";
 import { useBusinessProfile } from "../hooks/useBusinessProfile";
 import { peso } from "../lib/format";
@@ -79,6 +81,9 @@ export function Payments() {
   const {sortKey,sortDir,setSort}=useSort("latestDate","desc");
   const sortedGroups=sortRows(grouped,sorts,sortKey,sortDir);
   const [view,setView]=useViewMode("bb.view.payments");
+  const pagination=usePagination(sortedGroups.length);
+  const visibleGroups=sortedGroups.slice(pagination.startIndex,pagination.startIndex+pagination.pageSize);
+  const changeSort=key=>{pagination.setPage(1);setSort(key)};
 
   const net=rows.filter(x=>x.status==="completed").reduce((s,x)=>s+(x.payment_type==="refund"?-1:1)*Number(x.amount),0);
   const stats={
@@ -118,22 +123,22 @@ export function Payments() {
     <div className="admin-page-toolbar">
       <div className="admin-search">
         <span>⌕</span>
-        <input placeholder="Search by booking # or customer..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        <input placeholder="Search by booking # or customer..." value={search} onChange={e=>{setSearch(e.target.value);pagination.setPage(1)}}/>
       </div>
-      <div className="payment-filters">
-        <select className="booking-status-select" value={typeFilter} onChange={e=>setTypeFilter(e.target.value)}>
+      <div className="admin-toolbar-controls payment-filters">
+        <select className="booking-status-select" value={typeFilter} onChange={e=>{setTypeFilter(e.target.value);pagination.setPage(1)}}>
           <option value="All">All Types</option>
           <option value="rental">Rental</option>
           <option value="deposit">Deposit</option>
           <option value="refund">Refund</option>
         </select>
-        <select className="booking-status-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+        <select className="booking-status-select" value={statusFilter} onChange={e=>{setStatusFilter(e.target.value);pagination.setPage(1)}}>
           <option value="All">All Status</option>
           <option value="completed">Completed</option>
           <option value="pending">Pending</option>
           <option value="void">Void</option>
         </select>
-        <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={setSort}/>
+        <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={changeSort}/>
         <ViewToggle view={view} onChange={setView}/>
       </div>
     </div>
@@ -143,9 +148,9 @@ export function Payments() {
         <span>💳</span>
         <h3>No payments found</h3>
         <p>{search||typeFilter!=="All"||statusFilter!=="All"?"Try adjusting your filters.":"No payment transactions yet."}</p>
-      </div>:view==="table"?<div className="table-wrap"><table>
+      </div>:<>{view==="table"?<div className="table-wrap"><table>
         <thead><tr><th>Booking</th><th>Customer</th><th className="num">Payments</th><th>Method</th><th>Latest activity</th><th>Status</th><th className="num">Amount</th><th></th></tr></thead>
-        <tbody>{sortedGroups.map(g=>[
+        <tbody>{visibleGroups.map(g=>[
           <tr key={g.booking_id} className="row-clickable" onClick={()=>setExpanded(expanded===g.booking_id?null:g.booking_id)}>
             <td><strong>{g.booking_no}</strong></td>
             <td>{g.customer_name}</td>
@@ -179,7 +184,7 @@ export function Payments() {
           </td></tr>
         ])}</tbody>
       </table></div>:<div className="payment-card-grid">
-        {sortedGroups.map(g=><article className={`payment-card ${expanded===g.booking_id?"payment-card-expanded":""}`} key={g.booking_id}>
+        {visibleGroups.map(g=><article className={`payment-card ${expanded===g.booking_id?"payment-card-expanded":""}`} key={g.booking_id}>
           <div className="payment-card-top" onClick={()=>setExpanded(expanded===g.booking_id?null:g.booking_id)}>
             <div className="payment-card-icon-wrap">
               <span className="payment-card-icon">{g.hasRefund?"↩":g.payments[0]?.payment_type==="deposit"?"🔒":"💵"}</span>
@@ -222,6 +227,7 @@ export function Payments() {
           </div>
         </article>)}
       </div>}
+      <ListPagination {...pagination} total={sortedGroups.length} label="bookings" onPageChange={pagination.setPage}/></>}
     </section>
 
     {voidTarget&&<div className="modal-backdrop" onClick={()=>setVoidTarget(null)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>

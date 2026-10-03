@@ -13,6 +13,7 @@ import { balanceStatus, openInvoice, paymentBreakdown } from "../lib/invoice";
 import { isAdminUser } from "../lib/roles";
 
 const DEFAULT_GCASH_INSTRUCTIONS = "Please scan the attached GCash QR code and pay the rental total shown in this email. After payment, open Check Status on the Bloom & Borrow website and upload your payment screenshot for review.";
+const BOOKINGS_PER_PAGE = 10;
 
 export function Bookings() {
   const navigate=useNavigate();
@@ -22,6 +23,7 @@ export function Bookings() {
   const [busy,setBusy]=useState(false);
   const [search,setSearch]=useState("");
   const [statusFilter,setStatusFilter]=useState("All");
+  const [page,setPage]=useState(1);
   const [showPaymentModal,setShowPaymentModal]=useState(false);
   const [paymentForm,setPaymentForm]=useState({amount:"",method:"cash",payment_type:"rental",notes:""});
   const [paymentSubmitting,setPaymentSubmitting]=useState(false);
@@ -36,17 +38,24 @@ export function Bookings() {
   const [rentConfirm,setRentConfirm]=useState(false);
   const [approveConfirm,setApproveConfirm]=useState(false);
   const [rejectConfirm,setRejectConfirm]=useState(false);
+  const [rejectReason,setRejectReason]=useState("");
   const [showGcashModal,setShowGcashModal]=useState(false);
   const [gcashQr,setGcashQr]=useState(null);
   const [gcashInstructions,setGcashInstructions]=useState(DEFAULT_GCASH_INSTRUCTIONS);
   const [gcashError,setGcashError]=useState("");
   const [sendingGcash,setSendingGcash]=useState(false);
+  const [sendingStatusEmail,setSendingStatusEmail]=useState(false);
+  const [proofReviewMode,setProofReviewMode]=useState(null);
+  const [proofReviewForm,setProofReviewForm]=useState({verified_amount:"",gcash_reference:"",review_note:""});
+  const [proofReviewError,setProofReviewError]=useState("");
+  const [proofReviewSubmitting,setProofReviewSubmitting]=useState(false);
+  const [actionNotice,setActionNotice]=useState("");
   const business=useBusinessProfile();
 
   const load=()=>api("/admin/bookings").then(d=>setRows(d.bookings||[])).catch(e=>setError(e.message));
   React.useEffect(()=>{load()},[]);
-  const open=async(id)=>{setError("");setInvoiceSent(false);try{setDetail((await api(`/admin/bookings/${id}`)).booking)}catch(e){setError(e.message)}};
-  const act=async(path,body={})=>{setBusy(true);setError("");try{await api(path,{method:"PATCH",body:JSON.stringify(body)});if(detail)await open(detail.id);load()}catch(e){setError(e.message)}finally{setBusy(false)}};
+  const open=async(id)=>{setError("");setActionNotice("");setInvoiceSent(false);try{setDetail((await api(`/admin/bookings/${id}`)).booking)}catch(e){setError(e.message)}};
+  const act=async(path,body={})=>{setBusy(true);setError("");try{const data=await api(path,{method:"PATCH",body:JSON.stringify(body)});if(detail)await open(detail.id);await load();setActionNotice(data.message||"Booking updated successfully.")}catch(e){setError(e.message)}finally{setBusy(false)}};
 
   const sendInvoice=async()=>{
     setSendingInvoice(true);setError("");
@@ -80,6 +89,35 @@ export function Bookings() {
     finally{setSendingGcash(false)}
   };
 
+  const openProofReview=mode=>{
+    const outstanding=paymentBreakdown(detail).outstanding;
+    setProofReviewMode(mode);
+    setProofReviewError("");
+    setProofReviewForm({verified_amount:mode==="approve"?String(outstanding):"",gcash_reference:"",review_note:""});
+  };
+
+  const submitProofReview=async()=>{
+    if(!detail||!proofReviewMode)return;
+    if(proofReviewMode==="approve"&&Number(proofReviewForm.verified_amount)<=0)return setProofReviewError("Enter the amount confirmed in the GCash transaction.");
+    if(proofReviewMode==="approve"&&!proofReviewForm.gcash_reference.trim())return setProofReviewError("Enter the GCash reference number before approving.");
+    if(proofReviewMode==="reject"&&!proofReviewForm.review_note.trim())return setProofReviewError("Explain why the screenshot cannot be approved. The customer will see this reason.");
+    setProofReviewSubmitting(true);setProofReviewError("");
+    try{
+      const data=await api(`/admin/bookings/${detail.id}/payment-proof/review`,{method:"PATCH",body:JSON.stringify({
+        action:proofReviewMode,
+        verified_amount:proofReviewMode==="approve"?Number(proofReviewForm.verified_amount):undefined,
+        gcash_reference:proofReviewMode==="approve"?proofReviewForm.gcash_reference.trim():"",
+        review_note:proofReviewForm.review_note.trim()
+      })});
+      const bookingId=detail.id;
+      setProofReviewMode(null);
+      await open(bookingId);
+      await load();
+      setActionNotice([data.message,data.email_warning].filter(Boolean).join(" "));
+    }catch(e){setProofReviewError(e.message)}
+    finally{setProofReviewSubmitting(false)}
+  };
+
   const deleteBooking=async()=>{
     if(!deleteBookingTarget)return;
     setDeletingBooking(true);
@@ -110,9 +148,30 @@ export function Bookings() {
     finally{setPaymentSubmitting(false)}
   };
 
+  const resendStatusEmail=async()=>{
+    if(!detail)return;
+    setSendingStatusEmail(true);setError("");
+    try{
+      const data=await api(`/admin/bookings/${detail.id}/send-status-email`,{method:"POST",body:JSON.stringify({})});
+      const bookingId=detail.id;
+      await open(bookingId);
+      setActionNotice(data.message);
+    }catch(e){setError(`Could not send status email: ${e.message}`)}
+    finally{setSendingStatusEmail(false)}
+  };
+
   const reschedule=async()=>{const start=window.prompt("New start date (YYYY-MM-DD):",String(detail.start_date).slice(0,10));if(!start)return;const end=window.prompt("New end date (YYYY-MM-DD):",String(detail.end_date).slice(0,10));if(!end)return;await act(`/admin/bookings/${detail.id}/reschedule`,{start_date:start,end_date:end})};
   const openInspect=()=>{setInspectForm({condition:"Good",damage_charge:"0",maintenance_required:false});setShowInspectModal(true)};
-  const submitInspect=async()=>{setInspectSubmitting(true);try{await api(`/admin/bookings/${detail.id}/return-inspection`,{method:"POST",body:JSON.stringify({condition_after:inspectForm.condition,damage_charge:Number(inspectForm.damage_charge),maintenance_required:inspectForm.maintenance_required})});setShowInspectModal(false);if(inspectForm.maintenance_required){navigate("/admin/maintenance")}else{await open(detail.id);load()}}catch(e){setError(e.message)}finally{setInspectSubmitting(false)}};
+  const submitInspect=async()=>{setInspectSubmitting(true);try{const data=await api(`/admin/bookings/${detail.id}/return-inspection`,{method:"POST",body:JSON.stringify({condition_after:inspectForm.condition,damage_charge:Number(inspectForm.damage_charge),maintenance_required:inspectForm.maintenance_required})});setShowInspectModal(false);if(inspectForm.maintenance_required){navigate("/admin/maintenance")}else{const bookingId=detail.id;await open(bookingId);await load();setActionNotice(data.message||"Return inspection recorded.")}}catch(e){setError(e.message)}finally{setInspectSubmitting(false)}};
+
+  const completeRental=async()=>{
+    setBusy(true);setError("");
+    try{
+      const data=await api(`/admin/bookings/${detail.id}/complete`,{method:"POST",body:JSON.stringify({})});
+      const bookingId=detail.id;
+      await open(bookingId);await load();setActionNotice(data.message||"Rental completed.");
+    }catch(e){setError(e.message)}finally{setBusy(false)}
+  };
 
   const statuses=["All","pending","confirmed","ready","rented","overdue","returned","completed","cancelled","rejected"];
   const statusCounts=Object.fromEntries(statuses.map(s=>[s,s==="All"?rows.length:rows.filter(b=>b.status===s).length]));
@@ -131,7 +190,20 @@ export function Bookings() {
   };
   const {sortKey,sortDir,setSort}=useSort("start_date","desc");
   const sorted=sortRows(filtered,sorts,sortKey,sortDir);
+  const pageCount=Math.max(1,Math.ceil(sorted.length/BOOKINGS_PER_PAGE));
+  const currentPage=Math.min(page,pageCount);
+  const pageStart=(currentPage-1)*BOOKINGS_PER_PAGE;
+  const visibleRows=sorted.slice(pageStart,pageStart+BOOKINGS_PER_PAGE);
   const [view,setView]=useViewMode("bb.view.bookings");
+
+  React.useEffect(()=>{
+    if(page>pageCount)setPage(pageCount);
+  },[page,pageCount]);
+
+  const changeSort=key=>{
+    setPage(1);
+    setSort(key);
+  };
 
   const stats={
     total:rows.length,
@@ -154,14 +226,14 @@ export function Bookings() {
     <div className="admin-page-toolbar">
       <div className="admin-search">
         <span>⌕</span>
-        <input placeholder="Search by booking # or customer..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        <input placeholder="Search by booking # or customer..." value={search} onChange={e=>{setSearch(e.target.value);setPage(1)}}/>
       </div>
-      <div className="booking-filter-group">
+      <div className="admin-toolbar-controls booking-filter-group">
         <button className="primary-button" onClick={()=>navigate("/admin/bookings/new")}>+ Add Booking</button>
-        <select className="booking-status-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+        <select className="booking-status-select" value={statusFilter} onChange={e=>{setStatusFilter(e.target.value);setPage(1)}}>
           {statuses.map(s=><option key={s} value={s}>{s==="All"?"All Status":s.charAt(0).toUpperCase()+s.slice(1)} ({statusCounts[s]})</option>)}
         </select>
-        <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={setSort}/>
+        <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={changeSort}/>
         <ViewToggle view={view} onChange={setView}/>
       </div>
     </div>
@@ -171,9 +243,9 @@ export function Bookings() {
         <span>📭</span>
         <h3>No bookings found</h3>
         <p>{search||statusFilter!=="All"?"Try adjusting your search or filter.":"No bookings have been made yet."}</p>
-      </div>:view==="table"?<div className="table-wrap"><table>
+      </div>:<>{view==="table"?<div className="table-wrap"><table>
         <thead><tr><th>Booking</th><th>Customer</th><th>Items</th><th>Dates</th><th>Payment</th><th>Status</th><th className="num">Total</th><th></th></tr></thead>
-        <tbody>{sorted.map(b=><tr key={b.id} className="row-clickable" onClick={()=>open(b.id)}>
+        <tbody>{visibleRows.map(b=><tr key={b.id} className="row-clickable" onClick={()=>open(b.id)}>
           <td><strong>{b.booking_no}</strong></td>
           <td>{b.customer_name}</td>
           <td className="cell-wrap"><small>{b.items||"—"}</small></td>
@@ -184,7 +256,7 @@ export function Bookings() {
           <td><button className="mini-button" onClick={e=>{e.stopPropagation();open(b.id)}}>Manage →</button></td>
         </tr>)}</tbody>
       </table></div>:<div className="booking-card-grid">
-        {sorted.map(b=><article className="booking-card" key={b.id} onClick={()=>open(b.id)}>
+        {visibleRows.map(b=><article className="booking-card" key={b.id} onClick={()=>open(b.id)}>
           <div className="booking-card-top">
             <div className="booking-card-id">
               <div><strong>{b.booking_no}</strong><small>{b.customer_name}</small></div>
@@ -202,6 +274,14 @@ export function Bookings() {
           </div>
         </article>)}
       </div>}
+      <nav className="list-pagination" aria-label="Bookings pagination">
+        <span className="list-pagination-summary">Showing {pageStart+1}&ndash;{Math.min(pageStart+BOOKINGS_PER_PAGE,sorted.length)} of {sorted.length} bookings</span>
+        <div className="list-pagination-controls">
+          <button type="button" disabled={currentPage===1} onClick={()=>setPage(currentPage-1)} aria-label="Previous bookings page">&larr; Previous</button>
+          <span>Page {currentPage} of {pageCount}</span>
+          <button type="button" disabled={currentPage===pageCount} onClick={()=>setPage(currentPage+1)} aria-label="Next bookings page">Next &rarr;</button>
+        </div>
+      </nav></>}
     </section>
 
     {detail&&(()=>{
@@ -212,13 +292,15 @@ export function Bookings() {
       const isPaid=balance<=0;
       const isPartial=totalPaid>0&&!isPaid;
 
-      return <div className="modal-backdrop" onClick={()=>setDetail(null)}><div className="modal booking-modal" onClick={e=>e.stopPropagation()}>
-      <button className="booking-modal-close" onClick={()=>setDetail(null)}>×</button>
+      return <div className="modal-backdrop booking-drawer-backdrop" onClick={()=>setDetail(null)}><div className="modal booking-modal" role="dialog" aria-modal="true" aria-labelledby="booking-detail-title" onClick={e=>e.stopPropagation()}>
+      <button className="booking-modal-close" onClick={()=>setDetail(null)} aria-label="Close booking details">×</button>
       <div className="booking-modal-header">
         <div className="booking-modal-customer">
-          <div><span className="eyebrow">{detail.booking_no}{detail.id_document_path&&" · Customer request"}</span><h2>{detail.customer_name}</h2><p>{detail.customer_email} · {detail.customer_phone}</p></div>
+          <div><span className="eyebrow">{detail.booking_no}{detail.id_document_path&&" · Customer request"}</span><h2 id="booking-detail-title">{detail.customer_name}</h2><p>{detail.customer_email} · {detail.customer_phone}</p></div>
         </div>
       </div>
+
+      {actionNotice&&<div className="booking-action-feedback" role="status">{actionNotice}</div>}
 
       {isPaid&&<div className="booking-paid-banner"><span className="paid-banner-icon">✓</span><div><strong>Payment Complete</strong><small>Customer has fully paid this booking</small></div></div>}
       {!isPaid&&isPartial&&<div className="booking-partial-banner"><span className="partial-banner-icon">⏳</span><div><strong>Partial Payment</strong><small>{peso(totalPaid)} paid — {peso(balance)} balance remaining</small></div></div>}
@@ -251,13 +333,15 @@ export function Bookings() {
         <div className="booking-actions-group">
           <div className="booking-actions-label">Workflow</div>
           <div className="booking-actions">
-            {detail.status==="pending"&&<><button className="primary-button" disabled={busy} onClick={()=>setApproveConfirm(true)}>Approve Booking</button><button className="secondary-button danger" onClick={()=>setRejectConfirm(true)}>Reject Booking</button></>}
+            {detail.status==="pending"&&<><button className="primary-button" disabled={busy} onClick={()=>setApproveConfirm(true)}>Approve Booking</button><button className="secondary-button danger" onClick={()=>{setRejectReason("");setRejectConfirm(true)}}>Reject Booking</button></>}
             {["pending","confirmed","ready"].includes(detail.status)&&<button className="secondary-button" onClick={reschedule}>Reschedule Date</button>}
             {detail.status==="confirmed"&&<button className="primary-button" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"ready"})}>Mark as Ready</button>}
             {detail.status==="ready"&&<button className="primary-button" onClick={()=>setRentConfirm(true)}>{detail.fulfillment==="pickup"?"Confirm Pickup · Rented":"Mark as Rented"}</button>}
             {["rented","overdue"].includes(detail.status)&&<button className="primary-button" onClick={openInspect}>Return Item</button>}
-            {detail.status==="returned"&&detail.inspection&&<button className="primary-button" onClick={()=>api(`/admin/bookings/${detail.id}/complete`,{method:"POST",body:JSON.stringify({})}).then(()=>{open(detail.id);load()}).catch(e=>setError(e.message))}>Mark Complete</button>}
+            {detail.status==="returned"&&detail.inspection&&<button className="primary-button" disabled={busy} onClick={completeRental}>Mark Complete</button>}
+            <button className="secondary-button" disabled={sendingStatusEmail||!detail.customer_email} onClick={resendStatusEmail}>{sendingStatusEmail?"Sending Status Email…":"Email Current Status"}</button>
           </div>
+          {detail.customer_email_delivery&&<p className={`customer-email-delivery ${detail.customer_email_delivery.status}`}><strong>Latest customer email: {detail.customer_email_delivery.status}</strong> · {detail.customer_email_delivery.title} · {new Date(detail.customer_email_delivery.created_at).toLocaleString()}</p>}
         </div>
         <div className="booking-actions-group">
           <div className="booking-actions-label">Payments</div>
@@ -265,10 +349,13 @@ export function Bookings() {
             <button className="primary-button" onClick={openPaymentModal}>Add Payment</button>
             <button className="secondary-button" disabled={sendingInvoice||!detail.customer_email} title={detail.customer_email?"":"This booking has no customer email on file"} onClick={()=>setInvoiceConfirm(true)}>{sendingInvoice?"Sending...":invoiceSent?"Sent ✓":"Email Invoice"}</button>
             {detail.payment_method==="gcash"&&<button className="secondary-button" disabled={detail.status==="pending"||!detail.customer_email||["cancelled","rejected","completed"].includes(detail.status)} title={detail.status==="pending"?"Approve the request before sending payment instructions":!detail.customer_email?"This booking has no customer email on file":""} onClick={openGcashModal}>{detail.gcash_payment?.instructions_sent_at?"Resend GCash Instructions":"Send GCash Instructions"}</button>}
-            {detail.gcash_payment?.proof_status==="submitted"&&<a className="secondary-button" href={`${API_BASE}/admin/bookings/${detail.id}/payment-proof`} target="_blank" rel="noreferrer">View Payment Proof</a>}
+            {["submitted","approved","rejected"].includes(detail.gcash_payment?.proof_status)&&<a className="secondary-button" href={`${API_BASE}/admin/bookings/${detail.id}/payment-proof`} target="_blank" rel="noreferrer">View Payment Proof</a>}
+            {detail.gcash_payment?.proof_status==="submitted"&&<><button className="primary-button" onClick={()=>openProofReview("approve")}>Approve Proof</button><button className="secondary-button danger" onClick={()=>openProofReview("reject")}>Reject Proof</button></>}
           </div>
           {detail.payment_method==="gcash"&&detail.gcash_payment?.instructions_sent_at&&<p className="booking-action-note">GCash instructions sent {new Date(detail.gcash_payment.instructions_sent_at).toLocaleString()}.</p>}
-          {detail.gcash_payment?.proof_status==="submitted"&&<p className="booking-action-note is-proof">Payment screenshot uploaded {new Date(detail.gcash_payment.proof_uploaded_at).toLocaleString()}.</p>}
+          {detail.gcash_payment?.proof_status==="submitted"&&<div className="payment-proof-review-state submitted"><strong>Awaiting Admin review</strong><span>Customer screenshot uploaded {new Date(detail.gcash_payment.proof_uploaded_at).toLocaleString()}.</span></div>}
+          {detail.gcash_payment?.proof_status==="approved"&&<div className="payment-proof-review-state approved"><strong>Payment proof approved</strong><span>{peso(Number(detail.gcash_payment.verified_amount||0))} recorded{detail.gcash_payment.gcash_reference?` · Ref ${detail.gcash_payment.gcash_reference}`:""}{detail.gcash_payment.reviewed_by?` · ${detail.gcash_payment.reviewed_by}`:""}.</span></div>}
+          {detail.gcash_payment?.proof_status==="rejected"&&<div className="payment-proof-review-state rejected"><strong>Replacement proof required</strong><span>{detail.gcash_payment.review_note} The customer can upload another screenshot from Check Status.</span></div>}
         </div>
         {detail.id_document_path&&<div className="booking-actions-group">
           <div className="booking-actions-label">Verification</div>
@@ -367,6 +454,29 @@ export function Bookings() {
       </div>
     </div></div>}
 
+    {proofReviewMode&&detail&&<div className="modal-backdrop" onClick={()=>!proofReviewSubmitting&&setProofReviewMode(null)}><div className="modal gcash-review-modal" onClick={e=>e.stopPropagation()}>
+      <div className="modal-head"><div><span className="eyebrow">GCash Verification</span><h2>{proofReviewMode==="approve"?"Approve Payment Proof":"Reject Payment Proof"}</h2></div><button type="button" disabled={proofReviewSubmitting} onClick={()=>setProofReviewMode(null)}>×</button></div>
+      <p className="gcash-review-intro">Booking <strong>{detail.booking_no}</strong> · {detail.customer_name}</p>
+      <a className="secondary-button gcash-review-proof-link" href={`${API_BASE}/admin/bookings/${detail.id}/payment-proof`} target="_blank" rel="noreferrer">Open submitted screenshot</a>
+      {proofReviewMode==="approve"?<div className="gcash-review-fields">
+        <label>Verified amount
+          <div className="payment-amount-wrap"><span className="payment-currency">₱</span><input type="number" min="0.01" step="0.01" value={proofReviewForm.verified_amount} onChange={e=>setProofReviewForm({...proofReviewForm,verified_amount:e.target.value})}/></div>
+          <small>Maximum remaining balance: {peso(paymentBreakdown(detail).outstanding)}</small>
+        </label>
+        <label>GCash reference number<input maxLength="120" value={proofReviewForm.gcash_reference} onChange={e=>setProofReviewForm({...proofReviewForm,gcash_reference:e.target.value})} placeholder="Enter the transaction reference"/></label>
+        <label>Internal note <small>(optional)</small><textarea rows="3" maxLength="500" value={proofReviewForm.review_note} onChange={e=>setProofReviewForm({...proofReviewForm,review_note:e.target.value})} placeholder="Optional verification note"/></label>
+        <p className="gcash-review-impact">Approval records the verified amount immediately. It is allocated to rental/service charges first, then the refundable deposit.</p>
+      </div>:<div className="gcash-review-fields">
+        <label>Reason shown to customer<textarea rows="4" maxLength="500" value={proofReviewForm.review_note} onChange={e=>setProofReviewForm({...proofReviewForm,review_note:e.target.value})} placeholder="Example: The screenshot is blurry and the transaction reference cannot be read."/></label>
+        <p className="gcash-review-impact is-warning">No payment will be recorded. The customer will be asked to upload a clear replacement screenshot.</p>
+      </div>}
+      {proofReviewError&&<div className="login-error">{proofReviewError}</div>}
+      <div className="modal-actions">
+        <button className="secondary-button" disabled={proofReviewSubmitting} onClick={()=>setProofReviewMode(null)}>Cancel</button>
+        <button className={proofReviewMode==="approve"?"primary-button":"danger-button"} disabled={proofReviewSubmitting} onClick={submitProofReview}>{proofReviewSubmitting?"Saving…":proofReviewMode==="approve"?"Approve and Record Payment":"Reject and Notify Customer"}</button>
+      </div>
+    </div></div>}
+
     {rentConfirm&&detail&&<div className="modal-backdrop" onClick={()=>setRentConfirm(false)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
       <h3>Mark as Rented</h3>
       <p>Mark <strong>{detail.booking_no}</strong> as Rented? The items will remain reserved until they are returned.</p>
@@ -387,10 +497,11 @@ export function Bookings() {
 
     {rejectConfirm&&detail&&<div className="modal-backdrop" onClick={()=>setRejectConfirm(false)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
       <h3>Reject Rental</h3>
-      <p>Reject this rental request?</p>
+      <p>Reject this rental request? The customer will receive the reason below by email.</p>
+      <label className="reject-reason-field">Reason shown to customer<textarea rows="3" maxLength="255" value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder="Example: Required ID details could not be verified."/></label>
       <div className="confirm-modal-actions">
         <button className="secondary-button" onClick={()=>setRejectConfirm(false)}>Cancel</button>
-        <button className="danger-button" disabled={busy} onClick={()=>{setRejectConfirm(false);act(`/admin/bookings/${detail.id}/status`,{status:"rejected"})}}>Reject</button>
+        <button className="danger-button" disabled={busy||!rejectReason.trim()} onClick={()=>{setRejectConfirm(false);act(`/admin/bookings/${detail.id}/status`,{status:"rejected",note:rejectReason.trim()})}}>Reject and Email Customer</button>
       </div>
     </div></div>}
 

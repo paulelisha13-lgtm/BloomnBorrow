@@ -22,17 +22,18 @@ import { CustomerCart } from "./pages/customer/Cart";
 import { CustomerRentalForm } from "./pages/customer/RentalForm";
 import { CustomerBookingStatus } from "./pages/customer/BookingStatus";
 import { CartProvider } from "./context/CartContext";
+import { InteractionFeedback } from "./components/InteractionFeedback";
 
 function AdminRoutes({ location }) {
   return <Routes location={location}>
     <Route path="/access/login" element={<AccessLogin/>}/>
     <Route path="/admin/login" element={<Navigate to="/access/login" replace/>}/>
-    <Route path="/shop" element={<CartProvider><CustomerHome/></CartProvider>}/>
-    <Route path="/shop/browse" element={<CartProvider><CustomerCatalog/></CartProvider>}/>
-    <Route path="/shop/cart" element={<CartProvider><CustomerCart/></CartProvider>}/>
-    <Route path="/shop/checkout" element={<CartProvider><CustomerRentalForm/></CartProvider>}/>
-    <Route path="/shop/status" element={<CartProvider><CustomerBookingStatus/></CartProvider>}/>
-    <Route path="/shop/:id" element={<CartProvider><CustomerItemDetail/></CartProvider>}/>
+    <Route path="/shop" element={<CustomerHome/>}/>
+    <Route path="/shop/browse" element={<CustomerCatalog/>}/>
+    <Route path="/shop/cart" element={<CustomerCart/>}/>
+    <Route path="/shop/checkout" element={<CustomerRentalForm/>}/>
+    <Route path="/shop/status" element={<CustomerBookingStatus/>}/>
+    <Route path="/shop/:id" element={<CustomerItemDetail/>}/>
     <Route path="/admin" element={<ProtectedRoute roles={["admin","staff"]}><AdminDashboard/></ProtectedRoute>}/>
     <Route path="/admin/inventory" element={<ProtectedRoute roles={["admin","staff"]}><Inventory/></ProtectedRoute>}/>
     <Route path="/admin/bookings" element={<ProtectedRoute roles={["admin","staff"]}><Bookings/></ProtectedRoute>}/>
@@ -63,10 +64,11 @@ function AdminRoutes({ location }) {
 export default function App() {
   const location = useLocation();
   const backgroundLocation = location.state?.backgroundLocation;
-  return <>
+  return <CartProvider>
+    <InteractionFeedback/>
     <AdminRoutes location={backgroundLocation || location}/>
     {backgroundLocation && <Routes>
-      <Route path="/shop/:id" element={<CartProvider><CustomerItemDetail/></CartProvider>}/>
+      <Route path="/shop/:id" element={<CustomerItemDetail/>}/>
     </Routes>}
-  </>;
+  </CartProvider>;
 }

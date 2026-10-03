@@ -18,16 +18,22 @@ export function NotificationBell() {
         api("/admin/inventory").catch(()=>({items:[]})),
         api("/admin/escalations").catch(()=>({escalated:[]}))
       ]);
-      const bookings = (bookingsData.bookings || []).slice(0, 10);
+      const bookings = [...(bookingsData.bookings || [])]
+        .sort((a,b) => {
+          const proofPriority = Number(b.gcash_proof_status === "submitted") - Number(a.gcash_proof_status === "submitted");
+          if (proofPriority) return proofPriority;
+          return new Date(b.gcash_proof_uploaded_at || b.created_at || 0) - new Date(a.gcash_proof_uploaded_at || a.created_at || 0);
+        })
+        .slice(0, 10);
       const notifs = bookings.map(b => ({
         id: `b-${b.id}`,
-        type: b.status === "pending" ? "booking_new" : b.status === "overdue" ? "booking_overdue" : "booking_update",
-        title: b.status === "pending" ? "New Booking" : b.status === "overdue" ? "Overdue Rental" : "Booking Updated",
-        message: `${b.customer_name} — ${b.items || "No items"}`,
-        detail: `${peso(Number(b.grand_total))} · ${String(b.start_date).slice(0,10)} → ${String(b.end_date).slice(0,10)}`,
+        type: b.gcash_proof_status === "submitted" ? "payment_proof" : b.status === "pending" ? "booking_new" : b.status === "overdue" ? "booking_overdue" : "booking_update",
+        title: b.gcash_proof_status === "submitted" ? "Payment Proof to Review" : b.status === "pending" ? "New Booking" : b.status === "overdue" ? "Overdue Rental" : "Booking Updated",
+        message: b.gcash_proof_status === "submitted" ? `${b.booking_no} — ${b.customer_name}` : `${b.customer_name} — ${b.items || "No items"}`,
+        detail: b.gcash_proof_status === "submitted" ? "GCash screenshot uploaded · Open Bookings to review" : `${peso(Number(b.grand_total))} · ${String(b.start_date).slice(0,10)} → ${String(b.end_date).slice(0,10)}`,
         status: b.status,
         link: "/admin/bookings",
-        time: b.created_at,
+        time: b.gcash_proof_uploaded_at || b.created_at,
         read: false
       }));
       const lowStockItems = (inventoryData.items || []).filter(x => x.status === "active" && Number(x.total_quantity) < 5);
@@ -87,6 +93,7 @@ export function NotificationBell() {
   };
 
   const getIcon = (type) => {
+    if (type === "payment_proof") return "₱";
     if (type === "booking_new") return "📋";
     if (type === "booking_overdue") return "⚠";
     if (type === "low_stock") return "🔴";
@@ -94,6 +101,7 @@ export function NotificationBell() {
   };
 
   const getTypeClass = (type) => {
+    if (type === "payment_proof") return "notif-new";
     if (type === "booking_new") return "notif-new";
     if (type === "booking_overdue") return "notif-overdue";
     if (type === "low_stock") return "notif-lowstock";

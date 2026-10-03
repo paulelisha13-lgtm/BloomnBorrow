@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { api } from "../lib/api";
 import { AdminShell } from "../components/layout/AdminShell";
+import { ListPagination } from "../components/ListPagination";
+import { usePagination } from "../hooks/usePagination";
 import { peso } from "../lib/format";
 
 // ---- Audit Log -------------------------------------------------------------
@@ -16,6 +18,8 @@ const AUDIT_LABELS = {
   GUEST_BOOKING_CREATED:"Guest booking submitted", BOOKING_STATUS:"Changed booking status",
   RESCHEDULE_BOOKING:"Rescheduled booking", DELETE_BOOKING:"Deleted booking", RETURN_INSPECTION:"Recorded return inspection",
   COMPLETE_BOOKING:"Completed booking", RECORD_PAYMENT:"Recorded payment", VOID_PAYMENT:"Voided payment", DELETE_PAYMENT:"Deleted payment",
+  APPROVE_GCASH_PROOF:"Approved GCash proof", REJECT_GCASH_PROOF:"Rejected GCash proof", SEND_GCASH_INSTRUCTIONS:"Sent GCash instructions",
+  SEND_BOOKING_STATUS_EMAIL:"Sent booking status email",
   CREATE_RENTAL_ITEM:"Added rental item", UPDATE_RENTAL_ITEM:"Updated rental item", ARCHIVE_RENTAL_ITEM:"Archived rental item",
   DELETE_RENTAL_ITEM:"Deleted rental item", RECORD_ITEM_CONDITION:"Recorded item condition",
   CREATE_INCIDENT:"Reported incident", UPDATE_INCIDENT:"Updated incident",
@@ -29,7 +33,7 @@ const auditLabel = a => AUDIT_LABELS[a] || String(a||"").toLowerCase().replace(/
 
 // Pill colour: red = security-relevant or destructive, amber = a change, green = routine.
 function auditTone(a) {
-  if (/FAILED|LOCKED|BLOCKED|DELETE|PURGED|VOID|DISABLE_USER|RESET_PASSWORD|EXPORT/.test(a)) return "overdue";
+  if (/FAILED|LOCKED|BLOCKED|DELETE|PURGED|VOID|REJECT|DISABLE_USER|RESET_PASSWORD|EXPORT/.test(a)) return "overdue";
   if (/UPDATE|CHANGE|RESCHEDULE|BLOCK|STATUS|SETTINGS/.test(a)) return "pending";
   return "completed";
 }
@@ -63,7 +67,6 @@ function csvCell(v) {
 }
 
 export function AuditLog() {
-  const PAGE = 100;
   const [logs,setLogs]=useState([]);
   const [total,setTotal]=useState(0);
   const [actions,setActions]=useState([]);
@@ -75,24 +78,25 @@ export function AuditLog() {
   const [error,setError]=useState("");
   const [detail,setDetail]=useState(null);
   const [retentionDays,setRetentionDays]=useState(null);
+  const pagination=usePagination(total);
 
   const query=(extra={})=>new URLSearchParams(Object.entries({...filters,...extra}).filter(([,v])=>v!==""&&v!==undefined)).toString();
 
   const load=async(offset=0)=>{
     setLoading(true);
     try{
-      const data=await api(`/access/audit?${query({limit:PAGE,offset})}`);
-      setLogs(prev=>offset?[...prev,...data.logs]:data.logs);
+      const data=await api(`/access/audit?${query({limit:pagination.pageSize,offset})}`);
+      setLogs(data.logs);
       setTotal(data.total); setActions(data.actions||[]); setActors(data.actors||[]); setRetentionDays(data.retention_days??null); setError("");
     }catch(e){setError(e.message)}
     finally{setLoading(false)}
   };
-  React.useEffect(()=>{load(0)},[filters]);
+  React.useEffect(()=>{load(pagination.startIndex)},[filters,pagination.page]);
   // Debounce free-text search so typing doesn't fire a request per keystroke.
-  React.useEffect(()=>{const t=setTimeout(()=>setFilters(f=>f.q===search?f:{...f,q:search}),350);return()=>clearTimeout(t)},[search]);
+  React.useEffect(()=>{const t=setTimeout(()=>{pagination.setPage(1);setFilters(f=>f.q===search?f:{...f,q:search})},350);return()=>clearTimeout(t)},[search]);
 
-  const set=(k,v)=>setFilters(f=>({...f,[k]:v}));
-  const clear=()=>{setSearch("");setFilters({q:"",action:"",actor:"",from:"",to:""})};
+  const set=(k,v)=>{pagination.setPage(1);setFilters(f=>({...f,[k]:v}))};
+  const clear=()=>{pagination.setPage(1);setSearch("");setFilters({q:"",action:"",actor:"",from:"",to:""})};
   const hasFilters=Object.values(filters).some(Boolean);
 
   const exportCsv=async()=>{
@@ -106,7 +110,8 @@ export function AuditLog() {
       const a=document.createElement("a"); a.href=url; a.download=`audit-log-${new Date().toISOString().slice(0,10)}.csv`; a.click();
       URL.revokeObjectURL(url);
       if(data.total>data.logs.length) setError(`Exported the newest ${data.logs.length} of ${data.total} events. Narrow the date range to export the rest.`);
-      load(0); // the export itself is now an audit event
+      pagination.setPage(1);
+      if(pagination.page===1)load(0); // the export itself is now an audit event
     }catch(e){setError(e.message)}
     finally{setExporting(false)}
   };
@@ -115,7 +120,8 @@ export function AuditLog() {
     {error&&<div className="login-error">{error}</div>}
     <div className="admin-page-toolbar audit-toolbar">
       <div className="admin-search"><span>⌕</span><input placeholder="Search staff, booking #, email, IP, details..." value={search} onChange={e=>setSearch(e.target.value)}/></div>
-      <div className="payment-filters audit-filters">
+      <div className="admin-toolbar-controls payment-filters audit-filters">
+        <button className="primary-button small" onClick={exportCsv} disabled={exporting||!total}>{exporting?"Exporting…":"Export CSV"}</button>
         <select className="booking-status-select" value={filters.action} onChange={e=>set("action",e.target.value)} aria-label="Action">
           <option value="">All actions</option>
           {actions.map(a=><option key={a} value={a}>{auditLabel(a)}</option>)}
@@ -128,7 +134,6 @@ export function AuditLog() {
         <input className="booking-status-select" type="date" value={filters.from} max={filters.to||undefined} onChange={e=>set("from",e.target.value)} aria-label="From date"/>
         <input className="booking-status-select" type="date" value={filters.to} min={filters.from||undefined} onChange={e=>set("to",e.target.value)} aria-label="To date"/>
         {hasFilters&&<button className="secondary-button small" onClick={clear}>Clear</button>}
-        <button className="primary-button small" onClick={exportCsv} disabled={exporting||!total}>{exporting?"Exporting…":"Export CSV"}</button>
       </div>
     </div>
 
@@ -147,7 +152,7 @@ export function AuditLog() {
           <td><button className="mini-button" onClick={()=>setDetail(l)}>View</button></td>
         </tr>)}</tbody>
       </table></div>}
-      {logs.length<total&&<div className="audit-more"><button className="secondary-button" disabled={loading} onClick={()=>load(logs.length)}>{loading?"Loading…":`Load more (${(total-logs.length).toLocaleString()} older)`}</button></div>}
+      {!loading&&logs.length>0&&<ListPagination {...pagination} total={total} label="events" onPageChange={pagination.setPage}/>}
       {loading&&logs.length===0&&<p className="muted" style={{padding:"20px",textAlign:"center"}}>Loading audit log…</p>}
     </section>
 

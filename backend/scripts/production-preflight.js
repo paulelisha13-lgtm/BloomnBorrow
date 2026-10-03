@@ -4,11 +4,13 @@ import { db } from "../lib/db.js";
 
 const fail=[];
 const warn=[];
-const req=["DB_HOST","DB_USER","DB_PASSWORD","DB_NAME","JWT_SECRET","CSRF_SECRET","APP_ORIGINS"];
+const req=["DB_HOST","DB_USER","DB_PASSWORD","DB_NAME","JWT_SECRET","CSRF_SECRET","BOOKING_LINK_SECRET","APP_ORIGINS"];
 for(const k of req) if(!String(process.env[k]||"").trim()) fail.push(`${k} is missing.`);
 if((process.env.JWT_SECRET||"").length<64) fail.push("JWT_SECRET must be at least 64 characters.");
 if((process.env.CSRF_SECRET||"").length<64) fail.push("CSRF_SECRET must be at least 64 characters.");
+if((process.env.BOOKING_LINK_SECRET||"").length<64) fail.push("BOOKING_LINK_SECRET must be at least 64 characters.");
 if(process.env.JWT_SECRET===process.env.CSRF_SECRET) fail.push("JWT_SECRET and CSRF_SECRET must be different.");
+if([process.env.JWT_SECRET,process.env.CSRF_SECRET].includes(process.env.BOOKING_LINK_SECRET)) fail.push("BOOKING_LINK_SECRET must be different from JWT_SECRET and CSRF_SECRET.");
 if(String(process.env.DB_USER||"").toLowerCase()==="root") fail.push("DB_USER must not be root.");
 const origins=String(process.env.APP_ORIGINS||"").split(",").map(x=>x.trim()).filter(Boolean);
 if(!origins.length || origins.some(x=>!x.startsWith("https://"))) fail.push("APP_ORIGINS must use HTTPS.");
@@ -21,6 +23,8 @@ try{
   await db.query("SELECT 1");
   const [[tables]]=await db.query(`SELECT COUNT(*) count FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('users','rental_items','customers','bookings','booking_items','payments')`);
   if(Number(tables.count)<6) fail.push("Required tables are missing. Run npm run migrate.");
+  const [[reviewColumns]]=await db.query(`SELECT COUNT(*) count FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='booking_payment_workflows' AND column_name IN ('reviewed_at','reviewed_by_user_id','review_note','gcash_reference','verified_amount')`);
+  if(Number(reviewColumns.count)<5) fail.push("GCash payment-review columns are missing. Run npm run migrate.");
   const [[admins]]=await db.query("SELECT COUNT(*) count FROM users WHERE role='admin' AND status='active'");
   if(Number(admins.count)<1) fail.push("No active Admin exists.");
   const [[demo]]=await db.query("SELECT COUNT(*) count FROM users WHERE email IN ('admin@bloom-borrow.local')");

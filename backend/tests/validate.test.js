@@ -44,6 +44,13 @@ test("payments must be positive", () => {
   assert.equal(schemas.recordPayment.safeParse({ amount: 100 }).success, true);
 });
 
+test("GCash proof approval needs an amount and reference while rejection needs a reason", () => {
+  assert.equal(schemas.gcashProofReview.safeParse({action:"approve",verified_amount:1000,gcash_reference:"123456789"}).success, true);
+  assert.equal(schemas.gcashProofReview.safeParse({action:"approve",verified_amount:1000,gcash_reference:""}).success, false);
+  assert.equal(schemas.gcashProofReview.safeParse({action:"reject",review_note:"Screenshot is unreadable."}).success, true);
+  assert.equal(schemas.gcashProofReview.safeParse({action:"reject",review_note:""}).success, false);
+});
+
 const calendar = { title: "Wedding set reservation", entry_date: "2026-12-05", entry_type: "reservation" };
 
 test("a calendar entry needs a title, a valid date and a known type", () => {

@@ -255,6 +255,26 @@ export const schemas = {
     notes: optText(500),
   }),
 
+  gcashProofReview: z
+    .object({
+      action: z.enum(["approve", "reject"]),
+      verified_amount: z.preprocess(
+        value => value === "" || value === null || value === undefined ? undefined : value,
+        z.coerce.number().finite("must be a number").gt(0, "must be greater than zero").max(100_000_000, "is too large").optional()
+      ),
+      gcash_reference: optText(120),
+      review_note: optText(500),
+    })
+    .superRefine((value, ctx) => {
+      if (value.action === "approve") {
+        if (value.verified_amount === undefined) ctx.addIssue({code:"custom",path:["verified_amount"],message:"is required when approving proof"});
+        if (!value.gcash_reference) ctx.addIssue({code:"custom",path:["gcash_reference"],message:"is required when approving proof"});
+      }
+      if (value.action === "reject" && !value.review_note) {
+        ctx.addIssue({code:"custom",path:["review_note"],message:"is required when rejecting proof"});
+      }
+    }),
+
   sendInvoice: z.object({
     // Defaults to the booking's customer_email when omitted; only present to
     // let staff redirect a resend to a corrected address.

@@ -77,6 +77,7 @@ export function RentalItemCard({ item, onOpen, onAdd, added, selected }) {
             className={`primary-button shop-add-btn ${added ? "is-added" : ""}`}
             disabled={out}
             onClick={e => { e.stopPropagation(); onAdd?.(item); }}
+            data-no-page-loading
           >
             {added ? "Added ✓" : "Add to Cart"}
           </button>

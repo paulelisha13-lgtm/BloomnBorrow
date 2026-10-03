@@ -3,8 +3,9 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 // The cart is pre-checkout, per-browser state only -- there is no cart table
 // in the existing schema, and none is needed: nothing here touches the
 // database until "Proceed to Rental" submits the real booking. localStorage
-// keeps it alive across page navigations (each /shop/* page mounts its own
-// CartProvider) and browser refreshes.
+// keeps it alive across page navigations and browser refreshes. One provider
+// wraps the application so catalog pages, item popups, drawer, cart, and
+// checkout always read and update the same live state.
 const STORAGE_KEY = "bb_customer_cart";
 const CartContext = createContext(null);
 

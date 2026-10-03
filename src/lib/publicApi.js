@@ -2,6 +2,7 @@
 // handling, but talks to the unauthenticated /api/public/* routes -- no
 // staff session cookie or CSRF token, since guests never log in.
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000/api";
+import { beginActionRequest, finishActionRequest } from "./actionFeedback";
 
 function describeHttpError(status) {
   if (status === 429) return "Too many requests — wait a moment and try again.";
@@ -17,27 +18,49 @@ async function handle(response) {
 }
 
 export async function publicApi(path, options = {}) {
+  const method=String(options.method||"GET").toUpperCase();
+  const feedbackId=beginActionRequest(method);
   let response;
   try {
     response = await fetch(`${API_BASE}${path}`, {
       ...options,
-      method: options.method || "GET",
+      method,
       headers: { "Content-Type": "application/json", ...(options.headers || {}) }
     });
   } catch {
-    throw new Error(`Cannot reach the server at ${API_BASE}. Is the API running?`);
+    const error=new Error(`Cannot reach the server at ${API_BASE}. Is the API running?`);
+    finishActionRequest(feedbackId,{ok:false,message:error.message,method});
+    throw error;
   }
-  return handle(response);
+  try {
+    const data=await handle(response);
+    finishActionRequest(feedbackId,{ok:true,message:data.message,method});
+    return data;
+  } catch(error) {
+    finishActionRequest(feedbackId,{ok:false,message:error.message,method});
+    throw error;
+  }
 }
 
 // For private customer uploads (booking ID and payment proof), which must use
 // multipart/form-data rather than base64/JSON.
 export async function publicApiForm(path, formData) {
+  const method="POST";
+  const feedbackId=beginActionRequest(method);
   let response;
   try {
     response = await fetch(`${API_BASE}${path}`, { method: "POST", body: formData });
   } catch {
-    throw new Error(`Cannot reach the server at ${API_BASE}. Is the API running?`);
+    const error=new Error(`Cannot reach the server at ${API_BASE}. Is the API running?`);
+    finishActionRequest(feedbackId,{ok:false,message:error.message,method});
+    throw error;
   }
-  return handle(response);
+  try {
+    const data=await handle(response);
+    finishActionRequest(feedbackId,{ok:true,message:data.message,method});
+    return data;
+  } catch(error) {
+    finishActionRequest(feedbackId,{ok:false,message:error.message,method});
+    throw error;
+  }
 }

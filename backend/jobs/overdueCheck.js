@@ -1,5 +1,6 @@
 import { db } from "../lib/db.js";
 import { addNotification } from "../lib/notifications.js";
+import { sendBookingLifecycleEmail } from "../lib/bookingEmails.js";
 
 export async function checkOverdueBookings() {
   try {
@@ -18,7 +19,8 @@ export async function checkOverdueBookings() {
           "INSERT INTO booking_status_history(booking_id,from_status,to_status,note) VALUES(?,'rented','overdue','Auto-detected: rental past due date')",
           [b.id]
         );
-        await addNotification({bookingId:b.id,type:"BOOKING_STATUS",title:`Booking ${b.booking_no}: Overdue`,message:`Rental for ${b.customer_name} is past due.`});
+        try{await addNotification({bookingId:b.id,type:"BOOKING_STATUS",title:`Booking ${b.booking_no}: Overdue`,message:`Rental for ${b.customer_name} is past due.`});}catch(error){console.error(`[OVERDUE NOTIFICATION] ${b.booking_no}:`,error.message)}
+        await sendBookingLifecycleEmail({bookingId:b.id,event:"overdue"});
       }
     }
   } catch (e) {

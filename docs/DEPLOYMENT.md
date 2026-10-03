@@ -103,6 +103,8 @@ DB_SSL_REJECT_UNAUTHORIZED=false
 
 JWT_SECRET=REPLACE_64_PLUS_RANDOM_CHARS
 CSRF_SECRET=REPLACE_DIFFERENT_64_PLUS_RANDOM_CHARS
+BOOKING_LINK_SECRET=REPLACE_THIRD_DIFFERENT_64_PLUS_RANDOM_CHARS
+BOOKING_LINK_TTL_HOURS=168
 JWT_EXPIRES_IN=8h
 TRUST_PROXY=1
 ```
@@ -114,7 +116,7 @@ Notes:
   service isn't named `MySQL`, change the prefix to match.
 - **`DB_SSL_REJECT_UNAUTHORIZED=false`** is needed because Railway MySQL uses a
   self-signed internal certificate. Traffic still stays on the private network.
-- Generate the two secrets locally (run twice, use different values):
+- Generate the three secrets locally (run three times, use different values):
   ```bash
   node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
   ```
@@ -163,6 +165,7 @@ don't leave the password variable lying around.
 | `https://your-domain/access/login` | sign in with the admin → lands on `/admin` |
 | Refresh while on `/admin/bookings` | page still loads (SPA fallback works) |
 | Submit a guest booking, then approve it in `/admin/bookings` | status moves `pending → confirmed` |
+| Check the customer's inbox after approval | branded booking-approved email with the correct reference and status link |
 
 ---
 

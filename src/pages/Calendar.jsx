@@ -206,9 +206,11 @@ export function Calendar() {
 
     <div className="admin-page-toolbar">
       <div className="admin-search">
+        <span aria-hidden="true">⌕</span>
         <input aria-label="Search the calendar" placeholder="Search by title, customer, location or notes..." value={search} onChange={e=>setSearch(e.target.value)}/>
       </div>
-      <div className="payment-filters">
+      <div className="admin-toolbar-controls payment-filters">
+        <button className="primary-button" onClick={()=>openNew()} disabled={saving}>+ Add Entry</button>
         <select className="booking-status-select" aria-label="Filter by type" value={typeFilter} onChange={e=>setTypeFilter(e.target.value)}>
           <option value="all">All Types</option>
           {Object.entries(TYPE_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
@@ -217,7 +219,6 @@ export function Calendar() {
           <option value="all">All Statuses</option>
           {Object.entries(ENTRY_STATUS_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
         </select>
-        <button className="primary-button" onClick={()=>openNew()} disabled={saving}>+ Add Entry</button>
       </div>
     </div>
 

@@ -119,7 +119,8 @@ router.delete("/api/admin/customers/:id", authenticate, requireRole("admin"), as
     for(const booking of bookings) {
       await conn.query(`
         UPDATE booking_payment_workflows
-        SET proof_path=NULL,proof_original_name=NULL,proof_uploaded_at=NULL,proof_status='awaiting'
+        SET proof_path=NULL,proof_original_name=NULL,proof_uploaded_at=NULL,proof_status='awaiting',
+            reviewed_at=NULL,reviewed_by_user_id=NULL,review_note=NULL,gcash_reference=NULL,verified_amount=NULL
         WHERE booking_id=?
       `,[booking.id]);
     }

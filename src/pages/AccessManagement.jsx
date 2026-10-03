@@ -1,9 +1,11 @@
 import React, { useState } from "react";
 import { api } from "../lib/api";
 import { Kpi } from "../components/Kpi";
+import { ListPagination } from "../components/ListPagination";
 import { AdminShell } from "../components/layout/AdminShell";
 import { PasswordInput } from "../components/PasswordInput";
 import { SortControls } from "../components/SortControls";
+import { usePagination } from "../hooks/usePagination";
 import { sortRows, useSort } from "../hooks/useSort";
 
 export function AccessManagement() {
@@ -72,6 +74,9 @@ export function AccessManagement() {
   };
   const {sortKey,sortDir,setSort}=useSort("full_name","asc");
   const sorted=sortRows(filtered,sorts,sortKey,sortDir);
+  const pagination=usePagination(sorted.length);
+  const visibleUsers=sorted.slice(pagination.startIndex,pagination.startIndex+pagination.pageSize);
+  const changeSort=key=>{pagination.setPage(1);setSort(key)};
 
   return <AdminShell title="Access Management" subtitle="Manage Admin accounts, status, roles, and access security.">
     <section className="kpi-grid">
@@ -81,18 +86,18 @@ export function AccessManagement() {
     </section>
 
     <div className="admin-page-toolbar">
-      <div className="admin-search"><span>⌕</span><input placeholder="Search by name, email, or phone..." value={search} onChange={e=>setSearch(e.target.value)}/></div>
-      <div className="payment-filters">
-        <select className="booking-status-select" value={roleFilter} onChange={e=>setRoleFilter(e.target.value)}>
+      <div className="admin-search"><span>⌕</span><input placeholder="Search by name, email, or phone..." value={search} onChange={e=>{setSearch(e.target.value);pagination.setPage(1)}}/></div>
+      <div className="admin-toolbar-controls payment-filters">
+        <button className="primary-button" onClick={()=>setModal(true)}>+ Add account</button>
+        <select className="booking-status-select" value={roleFilter} onChange={e=>{setRoleFilter(e.target.value);pagination.setPage(1)}}>
           {roles.map(r=><option key={r} value={r}>{r==="All"?"All roles":r}</option>)}
         </select>
-        <select className="booking-status-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+        <select className="booking-status-select" value={statusFilter} onChange={e=>{setStatusFilter(e.target.value);pagination.setPage(1)}}>
           <option value="All">All statuses</option>
           <option value="active">Active</option>
           <option value="disabled">Disabled</option>
         </select>
-        <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={setSort}/>
-        <button className="primary-button" onClick={()=>setModal(true)}>+ Add account</button>
+        <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={changeSort}/>
       </div>
     </div>
 
@@ -100,9 +105,9 @@ export function AccessManagement() {
 
     <section className="admin-card">
       {loading ? <p>Loading accounts...</p> :
-      <div className="table-wrap"><table>
+      <><div className="table-wrap"><table>
         <thead><tr><th>User</th><th>Email</th><th>Phone</th><th>Role</th><th>Status</th><th>Last login</th><th>Actions</th></tr></thead>
-        <tbody>{sorted.map(u=><tr key={u.id}>
+        <tbody>{visibleUsers.map(u=><tr key={u.id}>
           <td><strong>{u.full_name}</strong></td>
           <td>{u.email}</td>
           <td>{u.phone || "—"}</td>
@@ -114,7 +119,7 @@ export function AccessManagement() {
             <button className="secondary-button small" onClick={()=>toggleStatus(u)}>{u.status==="active"?"Disable":"Enable"}</button>
           </div></td>
         </tr>)}{sorted.length===0&&<tr><td colSpan="7" className="muted" style={{textAlign:"center",padding:"24px"}}>No accounts match your filters.</td></tr>}</tbody>
-      </table></div>}
+      </table></div><ListPagination {...pagination} total={sorted.length} label="accounts" onPageChange={pagination.setPage}/></>}
     </section>
 
     <section className="admin-card access-policy-card">

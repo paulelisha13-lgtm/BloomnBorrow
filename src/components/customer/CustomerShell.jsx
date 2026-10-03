@@ -41,6 +41,39 @@ function InstagramIcon() {
   return <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 8.3a3.7 3.7 0 1 0 0 7.4 3.7 3.7 0 0 0 0-7.4zm0 6.1a2.4 2.4 0 1 1 0-4.8 2.4 2.4 0 0 1 0 4.8zm4.7-6.25a.87.87 0 1 1-1.73 0 .87.87 0 0 1 1.73 0zM20 7.24a5 5 0 0 0-5.24-5.24H9.24A5 5 0 0 0 4 7.24v5.52a5 5 0 0 0 5.24 5.24h5.52A5 5 0 0 0 20 12.76V7.24zM18.6 12.76a3.6 3.6 0 0 1-3.84 3.84H9.24a3.6 3.6 0 0 1-3.84-3.84V7.24A3.6 3.6 0 0 1 9.24 3.4h5.52a3.6 3.6 0 0 1 3.84 3.84v5.52z"/></svg>;
 }
 
+function CustomerTabIcon({ name }) {
+  if (name === "home") return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1V10Z" /></svg>;
+  if (name === "browse") return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2" /><rect x="14" y="3" width="7" height="7" rx="2" /><rect x="3" y="14" width="7" height="7" rx="2" /><rect x="14" y="14" width="7" height="7" rx="2" /></svg>;
+  if (name === "status") return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" /><path d="m9 14 2 2 9-10" /><path d="M9 3h6v4H9z" /></svg>;
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="20" r="1" /><circle cx="19" cy="20" r="1" /><path d="M3 4h2l2.4 10.2a2 2 0 0 0 2 1.5h7.8a2 2 0 0 0 2-1.6L21 7H6" /></svg>;
+}
+
+function CustomerTabBar({ detailRoute }) {
+  const { count } = useCart();
+  const { pathname } = useLocation();
+  const cartActive = pathname === "/shop/cart" || pathname === "/shop/checkout";
+  const tabClass = active => `shop-mobile-tab${active ? " active" : ""}`;
+
+  return <nav className="shop-mobile-tabbar" aria-label="Customer navigation">
+    <NavLink to="/shop" end className={({ isActive }) => tabClass(isActive)}>
+      <span className="shop-mobile-tab-icon"><CustomerTabIcon name="home" /></span>
+      <span>Home</span>
+    </NavLink>
+    <NavLink to="/shop/browse" className={({ isActive }) => tabClass(isActive || detailRoute)} aria-current={detailRoute ? "page" : undefined}>
+      <span className="shop-mobile-tab-icon"><CustomerTabIcon name="browse" /></span>
+      <span>Browse</span>
+    </NavLink>
+    <NavLink to="/shop/status" className={({ isActive }) => tabClass(isActive)}>
+      <span className="shop-mobile-tab-icon"><CustomerTabIcon name="status" /></span>
+      <span>Status</span>
+    </NavLink>
+    <NavLink to="/shop/cart" className={({ isActive }) => tabClass(isActive || cartActive)} aria-current={cartActive ? "page" : undefined} aria-label={`Cart, ${count} item${count === 1 ? "" : "s"}`}>
+      <span className="shop-mobile-tab-icon"><CustomerTabIcon name="cart" />{count > 0 && <span className="shop-mobile-tab-count" aria-hidden="true">{count > 99 ? "99+" : count}</span>}</span>
+      <span>Cart</span>
+    </NavLink>
+  </nav>;
+}
+
 // Mirrors the dark, columned footer pattern the user referenced (logo +
 // link columns + circular social icons + a thin bottom bar), but built
 // entirely from data this system actually has: no invented nav pages,
@@ -88,9 +121,8 @@ function CustomerFooter() {
 // (that's staff-only: sidebar, notification bell, admin profile menu) --
 // this mirrors the slim public-page pattern already used by Login.jsx.
 //
-// Note: CartProvider is NOT mounted here. Pages call useCart() themselves
-// before they render <CustomerShell>, so the provider has to be an ancestor
-// of the page component -- it's mounted once per route in App.jsx instead.
+// CartProvider is mounted once around the customer app in App.jsx so every
+// customer page, drawer, and product modal shares the same cart state.
 export function CustomerShell({ title, subtitle, hero, children, hideFloatingCart, disableModuleTransition }) {
   const { pathname } = useLocation();
   const detailRoute = pathname.startsWith("/shop/") && !["/shop/browse", "/shop/cart", "/shop/checkout", "/shop/status"].includes(pathname);
@@ -125,6 +157,7 @@ export function CustomerShell({ title, subtitle, hero, children, hideFloatingCar
         </main>
       </div>
       <CustomerFooter />
+      <CustomerTabBar detailRoute={detailRoute} />
       {!hideFloatingCart && <CartFab />}
     </div>
   );

@@ -33,7 +33,7 @@ export function CartDrawer({ onClose }) {
       {items.length === 0 ? <div className="shop-cart-drawer-empty">
         <h3>Your cart is empty</h3>
         <p>Browse our items and add what you'd like to rent.</p>
-        <button type="button" className="primary-button" onClick={() => go("/shop/browse")}>Browse items</button>
+        <button type="button" className="primary-button" data-customer-nav onClick={() => go("/shop/browse")}>Browse items</button>
       </div> : <>
         <div className="shop-cart-drawer-list">
           {items.map(x => <div className="shop-cart-drawer-item" key={x.item_id}>
@@ -58,7 +58,7 @@ export function CartDrawer({ onClose }) {
           <div><span>Rental subtotal</span><strong>{peso(dailyTotal)}<small> /day</small></strong></div>
           <div><span>Security deposit</span><strong>{peso(depositTotal)}</strong></div>
           <p>Rental dates and the final total are set on the next step.</p>
-          <button type="button" className="primary-button" onClick={() => go("/shop/checkout")}>Proceed to Rental</button>
+          <button type="button" className="primary-button" data-customer-nav onClick={() => go("/shop/checkout")}>Proceed to Rental</button>
           <button type="button" className="secondary-button" onClick={onClose}>Continue Shopping</button>
         </footer>
       </>}

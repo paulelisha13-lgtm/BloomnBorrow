@@ -168,10 +168,16 @@ CREATE TABLE IF NOT EXISTS booking_payment_workflows (
   proof_path VARCHAR(255) NULL,
   proof_original_name VARCHAR(255) NULL,
   proof_uploaded_at DATETIME NULL,
-  proof_status ENUM('awaiting','submitted','reviewed') NOT NULL DEFAULT 'awaiting',
+  proof_status ENUM('awaiting','submitted','approved','rejected') NOT NULL DEFAULT 'awaiting',
+  reviewed_at DATETIME NULL,
+  reviewed_by_user_id INT UNSIGNED NULL,
+  review_note VARCHAR(500) NULL,
+  gcash_reference VARCHAR(120) NULL,
+  verified_amount DECIMAL(12,2) NULL,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_payment_workflow_booking FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE,
-  CONSTRAINT fk_payment_workflow_sender FOREIGN KEY (instructions_sent_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+  CONSTRAINT fk_payment_workflow_sender FOREIGN KEY (instructions_sent_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_payment_workflow_reviewer FOREIGN KEY (reviewed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS return_inspections (

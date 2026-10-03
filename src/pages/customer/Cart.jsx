@@ -61,7 +61,7 @@ export function CustomerCart() {
 
       <div className="shop-cart-actions">
         <Link className="secondary-button" to="/shop/browse">Continue Shopping</Link>
-        <button type="button" className="primary-button" onClick={() => navigate("/shop/checkout")}>Proceed to Rental</button>
+        <button type="button" className="primary-button" data-customer-nav onClick={() => navigate("/shop/checkout")}>Proceed to Rental</button>
       </div>
     </>}
   </CustomerShell>;

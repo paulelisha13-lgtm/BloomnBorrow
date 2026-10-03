@@ -1,10 +1,12 @@
 import React, { useState } from "react";
 import { api } from "../lib/api";
 import { Kpi } from "../components/Kpi";
+import { ListPagination } from "../components/ListPagination";
 import { AdminShell } from "../components/layout/AdminShell";
 import { SortControls } from "../components/SortControls";
 import { ViewToggle } from "../components/ViewToggle";
 import { sortRows, useSort } from "../hooks/useSort";
+import { usePagination } from "../hooks/usePagination";
 import { useViewMode } from "../hooks/useViewMode";
 import { peso } from "../lib/format";
 import { isAdminUser } from "../lib/roles";
@@ -58,6 +60,9 @@ export function Customers() {
   const {sortKey,sortDir,setSort}=useSort("created_at","desc");
   const sorted=sortRows(filtered,sorts,sortKey,sortDir);
   const [view,setView]=useViewMode("bb.view.customers");
+  const pagination=usePagination(sorted.length);
+  const visibleRows=sorted.slice(pagination.startIndex,pagination.startIndex+pagination.pageSize);
+  const changeSort=key=>{pagination.setPage(1);setSort(key)};
 
   const stats={
     total:rows.length,
@@ -75,12 +80,12 @@ export function Customers() {
     </section>
 
     <div className="admin-page-toolbar">
-      <div className="toolbar-left">
-        <div className="admin-search">
-          <span>⌕</span>
-          <input placeholder="Search by name, email, or phone..." value={search} onChange={e=>setSearch(e.target.value)}/>
-        </div>
-        <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={setSort}/>
+      <div className="admin-search">
+        <span>⌕</span>
+        <input placeholder="Search by name, email, or phone..." value={search} onChange={e=>{setSearch(e.target.value);pagination.setPage(1)}}/>
+      </div>
+      <div className="admin-toolbar-controls">
+        <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={changeSort}/>
         <ViewToggle view={view} onChange={setView}/>
       </div>
     </div>
@@ -90,9 +95,9 @@ export function Customers() {
         <span>👤</span>
         <h3>No customers found</h3>
         <p>{search?"Try adjusting your search.":"No customers registered yet."}</p>
-      </div>:view==="table"?<div className="table-wrap"><table>
+      </div>:<>{view==="table"?<div className="table-wrap"><table>
         <thead><tr><th>Customer</th><th>Phone</th><th>Address</th><th className="num">Bookings</th><th className="num">Lifetime value</th><th>Last booking</th><th></th></tr></thead>
-        <tbody>{sorted.map(c=><tr key={c.id} className="row-clickable" onClick={()=>openDetail(c)}>
+        <tbody>{visibleRows.map(c=><tr key={c.id} className="row-clickable" onClick={()=>openDetail(c)}>
           <td><strong>{c.full_name}</strong><br/><small>{c.email}</small></td>
           <td>{c.phone||"—"}</td>
           <td className="cell-wrap">{[c.address,c.city,c.province].filter(Boolean).join(", ")||"—"}</td>
@@ -106,7 +111,7 @@ export function Customers() {
           </div></td>
         </tr>)}</tbody>
       </table></div>:<div className="customer-card-grid">
-        {sorted.map(c=><article className="customer-detail-card" key={c.id} onClick={()=>openDetail(c)}>
+        {visibleRows.map(c=><article className="customer-detail-card" key={c.id} onClick={()=>openDetail(c)}>
           <div className="customer-card-header">
             <div className="customer-card-title">
               <h3>{c.full_name}</h3>
@@ -129,6 +134,7 @@ export function Customers() {
           </div>
         </article>)}
       </div>}
+      <ListPagination {...pagination} total={sorted.length} label="customers" onPageChange={pagination.setPage}/></>}
     </section>
 
     {detail&&<div className="modal-backdrop" onClick={()=>{setDetail(null);setEditing(false)}}><div className="modal customer-detail-modal" onClick={e=>e.stopPropagation()}>
