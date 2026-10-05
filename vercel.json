@@ -3,7 +3,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://YOUR-BACKEND-HOST/api/:path*" },
+    { "source": "/api/:path*", "destination": "https://bloom-and-borrow-api.onrender.com/api/:path*" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
