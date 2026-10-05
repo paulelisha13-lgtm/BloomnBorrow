@@ -38,7 +38,57 @@ export function fromDisplayName(value) {
   return cleaned || "Bloom & Borrow";
 }
 
+// Brevo (https://www.brevo.com) is used instead of SMTP when BREVO_API_KEY is
+// set. It sends over HTTPS, which hosts that block outbound SMTP (e.g. Render's
+// free plan) still allow. The sender must be a verified sender in Brevo; it
+// defaults to SMTP_USER so one address can serve both transports.
+const BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
+
+function toRecipients(to) {
+  const list = Array.isArray(to) ? to : String(to ?? "").split(",");
+  return list.map(x => String(x).trim()).filter(Boolean).map(email => ({ email }));
+}
+
+async function sendViaBrevo({ to, subject, html, text, attachments }) {
+  const senderEmail = process.env.BREVO_SENDER_EMAIL || process.env.SMTP_USER;
+  if (!senderEmail) throw new Error("Email is not configured. Set BREVO_SENDER_EMAIL on the server.");
+  const payload = {
+    sender: { name: fromDisplayName(process.env.SMTP_FROM_NAME), email: senderEmail },
+    to: toRecipients(to),
+    subject
+  };
+  let htmlContent = html;
+  if (attachments?.length) {
+    // Brevo has no cid: inline images, so inline ones are also embedded as
+    // data: URIs (shown by most clients) and always attached as a plain file.
+    for (const a of attachments) {
+      const content = Buffer.isBuffer(a.content) ? a.content : Buffer.from(a.content ?? "");
+      if (a.cid && htmlContent) {
+        htmlContent = htmlContent.split(`cid:${a.cid}`).join(`data:${a.contentType || "image/png"};base64,${content.toString("base64")}`);
+      }
+    }
+    payload.attachment = attachments.map(a => ({
+      name: a.filename || "attachment",
+      content: (Buffer.isBuffer(a.content) ? a.content : Buffer.from(a.content ?? "")).toString("base64")
+    }));
+  }
+  if (htmlContent) payload.htmlContent = htmlContent;
+  if (text) payload.textContent = text;
+  if (!payload.htmlContent && !payload.textContent) payload.textContent = subject;
+  const response = await fetch(BREVO_ENDPOINT, {
+    method: "POST",
+    headers: { "api-key": process.env.BREVO_API_KEY, "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    let detail = "";
+    try { detail = (await response.json()).message || ""; } catch {}
+    throw new Error(`Email provider rejected the message (${response.status})${detail ? ": " + detail : ""}`);
+  }
+}
+
 export async function sendMail({ to, subject, html, text, attachments }) {
+  if (process.env.BREVO_API_KEY) return sendViaBrevo({ to, subject, html, text, attachments });
   const message = {
     from: `"${fromDisplayName(process.env.SMTP_FROM_NAME)}" <${process.env.SMTP_USER}>`,
     to,

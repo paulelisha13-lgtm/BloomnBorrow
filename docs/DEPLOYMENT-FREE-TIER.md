@@ -111,3 +111,9 @@ This reduces but does not eliminate cold starts, and Render's free monthly hours
 | Upload fails with "Upload storage failed (4xx)" | Wrong bucket name, URL, or key; bucket must exist. 413 → file over 5 MB. |
 | `ER_...` errors during migrate | TiDB/MySQL syntax difference; run migrations locally against TiDB first (step 2.4). |
 | Emails not sending | Check `SMTP_*`; many hosts block port 25; use 587/465 with an app password. |
+
+## Email on the free plan (Brevo)
+Render free instances block outbound SMTP (ports 25/465/587), so Gmail SMTP will not work there. Set `BREVO_API_KEY`
+and `BREVO_SENDER_EMAIL` in Render instead; the mailer then sends over HTTPS. In Brevo: sign up, Senders & IP -> add and
+verify the sender address, SMTP & API -> API keys -> create a key. The free plan has a daily send limit (check Brevo's page).
+If BREVO_API_KEY is unset the app falls back to SMTP (works on paid Render or locally).

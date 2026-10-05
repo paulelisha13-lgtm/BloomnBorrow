@@ -40,6 +40,10 @@ services:
         sync: false
       - key: SUPABASE_BUCKET
         value: bloom-uploads
+      - key: BREVO_API_KEY      # HTTPS email (Render free blocks SMTP)
+        sync: false
+      - key: BREVO_SENDER_EMAIL # a sender verified in Brevo
+        sync: false
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
