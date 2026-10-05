@@ -12,6 +12,7 @@ import crypto from "crypto";
 import { db } from "./lib/db.js";
 import { authenticate, requireStaffCsrf } from "./lib/auth.js";
 import { purgeOldAuditLogs } from "./jobs/auditRetention.js";
+import { runStorageRetention } from "./jobs/storageRetention.js";
 import { checkOverdueBookings } from "./jobs/overdueCheck.js";
 import authRoutes from "./routes/auth.js";
 import usersRoutes from "./routes/users.js";
@@ -124,6 +125,9 @@ setTimeout(checkOverdueBookings, 5000);
 
 setInterval(purgeOldAuditLogs, 24 * 60 * 60 * 1000);
 setTimeout(purgeOldAuditLogs, 15000);
+
+setInterval(runStorageRetention, 24 * 60 * 60 * 1000);
+setTimeout(runStorageRetention, 30000);
 
 // Unknown /api path -> JSON 404 (not Express's default HTML, which the client
 // cannot parse and reports as "Request failed").
