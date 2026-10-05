@@ -36,7 +36,7 @@ router.post("/api/admin/inventory", authenticate, requireRole("admin","manager")
   try {
     const [result] = await db.query(`
       INSERT INTO rental_items(sku,name,category,description,daily_price,original_price,security_deposit,total_quantity,status,image_url,bundle_items)
-      VALUES(?,?,?,?,?,?,?,?,?,'active',?,?)
+      VALUES(?,?,?,?,?,?,?,?,'active',?,?)
     `,[sku,name,category,description||null,daily,original,deposit,qty,image_url||null,bundleItemsValue(req.body.bundle_items)]);
     await audit(req,"CREATE_RENTAL_ITEM",null,{item_id:result.insertId,sku});
     res.status(201).json({id:result.insertId});
