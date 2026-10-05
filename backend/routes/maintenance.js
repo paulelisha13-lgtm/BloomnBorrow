@@ -5,7 +5,7 @@ import { audit } from "../lib/audit.js";
 
 const router = Router();
 
-router.get("/api/admin/maintenance", authenticate, requireRole("admin","staff"), async (_req,res,next) => {
+router.get("/api/admin/maintenance", authenticate, requireRole("admin","manager","staff"), async (_req,res,next) => {
   try {
     const [records]=await db.query(`
       SELECT COALESCE(m.id,0) AS id,r.id AS rental_item_id,m.booking_id,
@@ -24,7 +24,7 @@ router.get("/api/admin/maintenance", authenticate, requireRole("admin","staff"),
   } catch(err) { next(err); }
 });
 
-router.patch("/api/admin/maintenance/:id", authenticate, requireRole("admin","staff"), async (req,res,next) => {
+router.patch("/api/admin/maintenance/:id", authenticate, requireRole("admin","manager","staff"), async (req,res,next) => {
   try {
     const id=Number(req.params.id);
     const status=req.body.status;

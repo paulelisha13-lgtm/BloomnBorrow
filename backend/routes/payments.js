@@ -8,7 +8,7 @@ const router = Router();
 
 // Payments are never deleted: a mistaken entry is voided, which removes it from
 // every total while keeping the record (and who voided it, and why) on file.
-router.patch("/api/admin/payments/:id/void", authenticate, requireRole("admin"), async (req,res) => {
+router.patch("/api/admin/payments/:id/void", authenticate, requireRole("admin","manager"), async (req,res) => {
   const id=Number(req.params.id);
   const reason=String(req.body.reason||"").trim().slice(0,150);
   if(!reason) return res.status(400).json({message:"A reason is required to void a payment."});
@@ -23,7 +23,7 @@ router.patch("/api/admin/payments/:id/void", authenticate, requireRole("admin"),
   res.json({ok:true});
 });
 
-router.get("/api/admin/payments", authenticate, requireRole("admin","staff"), async (_req,res) => {
+router.get("/api/admin/payments", authenticate, requireRole("admin","manager","staff"), async (_req,res) => {
   const [payments]=await db.query(`
     SELECT p.*,b.booking_no,b.customer_name,b.customer_email,u.full_name recorded_by
     FROM payments p JOIN bookings b ON b.id=p.booking_id

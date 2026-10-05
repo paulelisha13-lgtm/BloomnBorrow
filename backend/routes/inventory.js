@@ -12,7 +12,7 @@ const router = Router();
 // never carries a misleading empty array.
 const bundleItemsValue = value => Array.isArray(value) && value.length ? JSON.stringify(value) : null;
 
-router.get("/api/admin/inventory", authenticate, requireRole("admin","staff"), async (_req,res) => {
+router.get("/api/admin/inventory", authenticate, requireRole("admin","manager","staff"), async (_req,res) => {
   const [items] = await db.query(`
     SELECT r.*,
       COALESCE((SELECT SUM(bi.quantity) FROM booking_items bi JOIN bookings b ON b.id=bi.booking_id
@@ -27,7 +27,7 @@ router.get("/api/admin/inventory", authenticate, requireRole("admin","staff"), a
   res.json({items});
 });
 
-router.post("/api/admin/inventory", authenticate, requireRole("admin"), parseBody(schemas.inventoryItem), async (req,res) => {
+router.post("/api/admin/inventory", authenticate, requireRole("admin","manager"), parseBody(schemas.inventoryItem), async (req,res) => {
   const {sku,name,category,description,image_url} = req.body;
   const daily = req.body.daily_price;
   const original = req.body.original_price;
@@ -46,7 +46,7 @@ router.post("/api/admin/inventory", authenticate, requireRole("admin"), parseBod
   }
 });
 
-router.patch("/api/admin/inventory/:id", authenticate, requireRole("admin"), parseBody(schemas.inventoryItem), async (req,res) => {
+router.patch("/api/admin/inventory/:id", authenticate, requireRole("admin","manager"), parseBody(schemas.inventoryItem), async (req,res) => {
   const id=Number(req.params.id);
   const [[old]] = await db.query("SELECT * FROM rental_items WHERE id=?",[id]);
   if(!old) return res.status(404).json({message:"Rental item not found."});
@@ -63,7 +63,7 @@ router.patch("/api/admin/inventory/:id", authenticate, requireRole("admin"), par
   res.json({ok:true});
 });
 
-router.delete("/api/admin/inventory/:id", authenticate, requireRole("admin"), async (req,res) => {
+router.delete("/api/admin/inventory/:id", authenticate, requireRole("admin","manager"), async (req,res) => {
   const id=Number(req.params.id);
   const [[used]] = await db.query("SELECT COUNT(*) count FROM booking_items WHERE rental_item_id=?",[id]);
   if(Number(used.count)>0) {
@@ -77,7 +77,7 @@ router.delete("/api/admin/inventory/:id", authenticate, requireRole("admin"), as
   res.json({ok:true,deleted:true});
 });
 
-router.get("/api/admin/items/:id/conditions", authenticate, requireRole("admin","staff"), async (req,res) => {
+router.get("/api/admin/items/:id/conditions", authenticate, requireRole("admin","manager","staff"), async (req,res) => {
   const itemId=Number(req.params.id);
   const [[item]]=await db.query("SELECT id,name,sku FROM rental_items WHERE id=?",[itemId]);
   if(!item) return res.status(404).json({message:"Item not found."});
@@ -91,7 +91,7 @@ router.get("/api/admin/items/:id/conditions", authenticate, requireRole("admin",
   res.json({item,conditions});
 });
 
-router.post("/api/admin/items/:id/conditions", authenticate, requireRole("admin","staff"), async (req,res) => {
+router.post("/api/admin/items/:id/conditions", authenticate, requireRole("admin","manager","staff"), async (req,res) => {
   const itemId=Number(req.params.id);
   const [[item]]=await db.query("SELECT id FROM rental_items WHERE id=?",[itemId]);
   if(!item) return res.status(404).json({message:"Item not found."});

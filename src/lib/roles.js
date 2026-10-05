@@ -1,9 +1,15 @@
 import { getStoredUser } from "./api";
 
-// Admins have full access; staff handle day-to-day work (bookings, payments,
-// customers, incidents, maintenance) but not settings, users, reports, deletes,
-// voids or inventory edits. The server enforces the same split.
+// Admins have full access. Managers have the same access except Access
+// Management (users) and the Audit Log. Staff handle day-to-day work (bookings,
+// payments, customers, incidents, maintenance) but not settings, users, reports,
+// deletes, voids or inventory edits. The server enforces the same split.
 export function isAdminUser() {
+  return ["admin", "manager"].includes(getStoredUser()?.role);
+}
+
+// Only full admins can manage users and read the audit log.
+export function isFullAdminUser() {
   return getStoredUser()?.role === "admin";
 }
 

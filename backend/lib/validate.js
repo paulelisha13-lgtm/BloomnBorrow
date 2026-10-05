@@ -73,7 +73,7 @@ export const schemas = {
     full_name: name,
     email,
     phone: z.string().trim().max(32).optional().default(""),
-    role: z.enum(["admin", "staff"]),
+    role: z.enum(["admin", "manager", "staff"]),
     password,
   }),
 

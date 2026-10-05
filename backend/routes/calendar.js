@@ -26,7 +26,7 @@ function readRange(query) {
 // Month view: everything scheduled in the visible window, calendar entries
 // alongside the real rental bookings so the schedule is useful without having
 // to duplicate every booking. Bookings come back flagged read-only.
-router.get("/api/admin/calendar", authenticate, requireRole("admin","staff"), async (req,res,next) => {
+router.get("/api/admin/calendar", authenticate, requireRole("admin","manager","staff"), async (req,res,next) => {
   try {
     const range = readRange(req.query);
     if (!range) return res.status(400).json({message:"A valid from and to date range is required."});
@@ -59,7 +59,7 @@ router.get("/api/admin/calendar", authenticate, requireRole("admin","staff"), as
   } catch (err) { next(err); }
 });
 
-router.get("/api/admin/calendar/:id", authenticate, requireRole("admin","staff"), async (req,res,next) => {
+router.get("/api/admin/calendar/:id", authenticate, requireRole("admin","manager","staff"), async (req,res,next) => {
   try {
     const id = Number(req.params.id);
     const [[entry]] = await db.query(
@@ -74,7 +74,7 @@ router.get("/api/admin/calendar/:id", authenticate, requireRole("admin","staff")
   } catch (err) { next(err); }
 });
 
-router.post("/api/admin/calendar", authenticate, requireRole("admin","staff"), parseBody(schemas.calendarEntry), async (req,res,next) => {
+router.post("/api/admin/calendar", authenticate, requireRole("admin","manager","staff"), parseBody(schemas.calendarEntry), async (req,res,next) => {
   try {
     const b = req.body;
     const [result] = await db.query(
@@ -94,7 +94,7 @@ router.post("/api/admin/calendar", authenticate, requireRole("admin","staff"), p
   } catch (err) { next(err); }
 });
 
-router.patch("/api/admin/calendar/:id", authenticate, requireRole("admin","staff"), parseBody(schemas.calendarEntry), async (req,res,next) => {
+router.patch("/api/admin/calendar/:id", authenticate, requireRole("admin","manager","staff"), parseBody(schemas.calendarEntry), async (req,res,next) => {
   try {
     const id = Number(req.params.id);
     const [[before]] = await db.query(
@@ -133,7 +133,7 @@ router.patch("/api/admin/calendar/:id", authenticate, requireRole("admin","staff
 
 // Admin-only, like every other delete in the app. Cancelling is the soft
 // option staff have: it sets status='cancelled' through the PATCH route above.
-router.delete("/api/admin/calendar/:id", authenticate, requireRole("admin"), async (req,res,next) => {
+router.delete("/api/admin/calendar/:id", authenticate, requireRole("admin","manager"), async (req,res,next) => {
   try {
     const id = Number(req.params.id);
     const [[entry]] = await db.query("SELECT id,title,entry_date,entry_type FROM calendar_entries WHERE id=? LIMIT 1",[id]);

@@ -312,12 +312,26 @@ textarea{min-height:90px;resize:vertical}
 /* ACCESS MANAGEMENT */
 .role-pill{display:inline-flex;padding:5px 9px;border-radius:20px;font-size:9px;font-weight:850;text-transform:capitalize}
 .role-pill.admin{background:#e5f3fb;color:#236b8e}
+.role-pill.manager{background:#f1eafb;color:#6a4a9c}
+.access-notice{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0 0 14px;padding:12px 14px;border-radius:12px;background:#e7f6ee;color:#1d6b43;font-size:13px;font-weight:700}
+.access-notice button{border:0;background:transparent;font-size:18px;cursor:pointer;color:inherit}
+.reset-modal{width:min(480px,100%)}
+.reset-target{margin:-8px 0 16px;font-size:13px;line-height:1.5}
+.password-rules{list-style:none;margin:14px 0 0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-size:12px;color:var(--muted)}
+.password-rules li:before{content:"○";margin-right:7px}
+.password-rules li.ok{color:#1d6b43;font-weight:700}
+.password-rules li.ok:before{content:"✓"}
+.reset-mismatch{display:block;margin-top:8px;color:#b3261e;font-weight:700}
+.reset-modal .modal-actions{align-items:center;flex-wrap:wrap}
+.modal-spacer{flex:1}
+.permission-grid span.denied{text-decoration:line-through;opacity:.6}
+.permission-grid span.denied:before{content:"✕";color:#b3261e}
 .access-actions{display:flex;gap:6px;align-items:center}.secondary-button.small{padding:7px 10px;font-size:10px}
-.access-policy-card{margin-top:14px}.permission-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.access-policy-card{margin-top:14px}.permission-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 .permission-grid>div{border:1px solid var(--line);border-radius:14px;padding:16px;display:grid;gap:8px}
 .permission-grid strong{font-size:16px;margin-bottom:4px}.permission-grid span{font-size:11px;color:var(--muted)}
 .permission-grid span:before{content:"✓";color:var(--brand);font-weight:900;margin-right:7px}
-@media(max-width:800px){.permission-grid{grid-template-columns:1fr}}
+@media(max-width:1000px){.permission-grid{grid-template-columns:1fr}}
 
 
 /* PHASE 2B - AVAILABILITY + GUEST BOOKING */

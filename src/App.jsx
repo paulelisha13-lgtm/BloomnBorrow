@@ -34,19 +34,19 @@ function AdminRoutes({ location }) {
     <Route path="/shop/checkout" element={<CustomerRentalForm/>}/>
     <Route path="/shop/status" element={<CustomerBookingStatus/>}/>
     <Route path="/shop/:id" element={<CustomerItemDetail/>}/>
-    <Route path="/admin" element={<ProtectedRoute roles={["admin","staff"]}><AdminDashboard/></ProtectedRoute>}/>
-    <Route path="/admin/inventory" element={<ProtectedRoute roles={["admin","staff"]}><Inventory/></ProtectedRoute>}/>
-    <Route path="/admin/bookings" element={<ProtectedRoute roles={["admin","staff"]}><Bookings/></ProtectedRoute>}/>
-    <Route path="/admin/bookings/new" element={<ProtectedRoute roles={["admin","staff"]}><AddBooking/></ProtectedRoute>}/>
-    <Route path="/admin/customers" element={<ProtectedRoute roles={["admin","staff"]}><Customers/></ProtectedRoute>}/>
-    <Route path="/admin/payments" element={<ProtectedRoute roles={["admin","staff"]}><Payments/></ProtectedRoute>}/>
-    <Route path="/admin/calendar" element={<ProtectedRoute roles={["admin","staff"]}><Calendar/></ProtectedRoute>}/>
-    <Route path="/admin/reports" element={<ProtectedRoute roles={["admin"]}><Reports/></ProtectedRoute>}/>
-    <Route path="/admin/maintenance" element={<ProtectedRoute roles={["admin","staff"]}><Maintenance/></ProtectedRoute>}/>
+    <Route path="/admin" element={<ProtectedRoute roles={["admin","manager","staff"]}><AdminDashboard/></ProtectedRoute>}/>
+    <Route path="/admin/inventory" element={<ProtectedRoute roles={["admin","manager","staff"]}><Inventory/></ProtectedRoute>}/>
+    <Route path="/admin/bookings" element={<ProtectedRoute roles={["admin","manager","staff"]}><Bookings/></ProtectedRoute>}/>
+    <Route path="/admin/bookings/new" element={<ProtectedRoute roles={["admin","manager","staff"]}><AddBooking/></ProtectedRoute>}/>
+    <Route path="/admin/customers" element={<ProtectedRoute roles={["admin","manager","staff"]}><Customers/></ProtectedRoute>}/>
+    <Route path="/admin/payments" element={<ProtectedRoute roles={["admin","manager","staff"]}><Payments/></ProtectedRoute>}/>
+    <Route path="/admin/calendar" element={<ProtectedRoute roles={["admin","manager","staff"]}><Calendar/></ProtectedRoute>}/>
+    <Route path="/admin/reports" element={<ProtectedRoute roles={["admin","manager"]}><Reports/></ProtectedRoute>}/>
+    <Route path="/admin/maintenance" element={<ProtectedRoute roles={["admin","manager","staff"]}><Maintenance/></ProtectedRoute>}/>
     <Route path="/admin/access" element={<ProtectedRoute roles={["admin"]}><AccessManagement/></ProtectedRoute>}/>
     <Route path="/admin/audit" element={<ProtectedRoute roles={["admin"]}><AuditLog/></ProtectedRoute>}/>
-    <Route path="/admin/settings" element={<ProtectedRoute roles={["admin"]}><Settings/></ProtectedRoute>}/>
-    <Route path="/admin/account-settings" element={<ProtectedRoute roles={["admin","staff"]}><AccountSettings/></ProtectedRoute>}/>
+    <Route path="/admin/settings" element={<ProtectedRoute roles={["admin","manager"]}><Settings/></ProtectedRoute>}/>
+    <Route path="/admin/account-settings" element={<ProtectedRoute roles={["admin","manager","staff"]}><AccountSettings/></ProtectedRoute>}/>
     <Route path="*" element={<Navigate to="/admin" replace/>}/>
   </Routes>
 }

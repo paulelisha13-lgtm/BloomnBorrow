@@ -7,7 +7,7 @@ import { removeUpload } from "../lib/upload.js";
 
 const router = Router();
 
-router.get("/api/admin/customers/:id/score", authenticate, requireRole("admin","staff"), async (req,res) => {
+router.get("/api/admin/customers/:id/score", authenticate, requireRole("admin","manager","staff"), async (req,res) => {
   const customerId=Number(req.params.id);
   const [[customer]]=await db.query("SELECT id,full_name FROM customers WHERE id=?",[customerId]);
   if(!customer) return res.status(404).json({message:"Customer not found."});
@@ -46,7 +46,7 @@ router.get("/api/admin/customers/:id/score", authenticate, requireRole("admin","
   res.json({customer,score,rating,totalBookings,completedBookings,lateReturns,damages,totalSpent});
 });
 
-router.get("/api/admin/customers", authenticate, requireRole("admin","staff"), async (_req,res) => {
+router.get("/api/admin/customers", authenticate, requireRole("admin","manager","staff"), async (_req,res) => {
   const [customers]=await db.query(`
     SELECT c.*,
       COUNT(b.id) booking_count,
@@ -59,7 +59,7 @@ router.get("/api/admin/customers", authenticate, requireRole("admin","staff"), a
   res.json({customers});
 });
 
-router.get("/api/admin/customers/:id", authenticate, requireRole("admin","staff"), async (req,res) => {
+router.get("/api/admin/customers/:id", authenticate, requireRole("admin","manager","staff"), async (req,res) => {
   const id=Number(req.params.id);
   const [[customer]]=await db.query(`
     SELECT c.*,COUNT(b.id) booking_count,
@@ -78,7 +78,7 @@ router.get("/api/admin/customers/:id", authenticate, requireRole("admin","staff"
   res.json({customer:{...customer,recent_bookings:bookings}});
 });
 
-router.patch("/api/admin/customers/:id", authenticate, requireRole("admin","staff"), parseBody(schemas.updateCustomer), async (req,res) => {
+router.patch("/api/admin/customers/:id", authenticate, requireRole("admin","manager","staff"), parseBody(schemas.updateCustomer), async (req,res) => {
   const id=Number(req.params.id);
   const [[existing]]=await db.query("SELECT id,full_name,email,phone,city,address,province,postal_code FROM customers WHERE id=?",[id]);
   if(!existing) return res.status(404).json({message:"Customer not found."});
@@ -91,7 +91,7 @@ router.patch("/api/admin/customers/:id", authenticate, requireRole("admin","staf
   res.json({customer:updated});
 });
 
-router.delete("/api/admin/customers/:id", authenticate, requireRole("admin"), async (req,res) => {
+router.delete("/api/admin/customers/:id", authenticate, requireRole("admin","manager"), async (req,res) => {
   const id=Number(req.params.id);
   const conn=await db.getConnection();
   let bookings=[];

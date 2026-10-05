@@ -5,7 +5,7 @@ import { getSetting } from "../lib/settings.js";
 
 const router = Router();
 
-router.get("/api/admin/dashboard", authenticate, requireRole("admin","staff"), async (_req,res) => {
+router.get("/api/admin/dashboard", authenticate, requireRole("admin","manager","staff"), async (_req,res) => {
   const [[stats]] = await db.query(`
     SELECT
       (SELECT COUNT(*) FROM bookings WHERE DATE(created_at)=CURDATE()) AS today_bookings,
@@ -61,7 +61,7 @@ router.get("/api/admin/dashboard", authenticate, requireRole("admin","staff"), a
   res.json({stats,recent,months,daily});
 });
 
-router.get("/api/admin/escalations", authenticate, requireRole("admin","staff"), async (_req,res) => {
+router.get("/api/admin/escalations", authenticate, requireRole("admin","manager","staff"), async (_req,res) => {
   const [overdue]=await db.query(`
     SELECT b.id,b.booking_no,b.status,b.start_date,b.end_date,b.grand_total,
       b.customer_id,b.deposit_total,
@@ -87,7 +87,7 @@ router.get("/api/admin/escalations", authenticate, requireRole("admin","staff"),
   res.json({escalated,stats});
 });
 
-router.get("/api/admin/reports", authenticate, requireRole("admin"), async (_req,res,next) => {
+router.get("/api/admin/reports", authenticate, requireRole("admin","manager"), async (_req,res,next) => {
   try {
     const validStatuses = ["confirmed","ready","rented","overdue","returned","completed"];
     const placeholders = validStatuses.map(()=>"?").join(",");

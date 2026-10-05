@@ -19,7 +19,7 @@ import { bookingStatusUrl } from "../lib/bookingAccess.js";
 
 const router = Router();
 
-router.post("/api/admin/availability/check", authenticate, requireRole("admin","staff"), parseBody(schemas.availabilityCheck), async (req,res) => {
+router.post("/api/admin/availability/check", authenticate, requireRole("admin","manager","staff"), parseBody(schemas.availabilityCheck), async (req,res) => {
   const start = parseDateOnly(req.body.start_date);
   const end = parseDateOnly(req.body.end_date);
   const requested = Array.isArray(req.body.items) ? req.body.items : [];
@@ -42,7 +42,7 @@ router.post("/api/admin/availability/check", authenticate, requireRole("admin","
   res.json({available:checks.every(x=>x.available),items:checks});
 });
 
-router.get("/api/admin/bookings", authenticate, requireRole("admin","staff"), async (_req,res) => {
+router.get("/api/admin/bookings", authenticate, requireRole("admin","manager","staff"), async (_req,res) => {
   const [rows] = await db.query(`
     SELECT b.id,b.booking_no,b.customer_name,b.start_date,b.end_date,b.grand_total,b.status,b.payment_status,b.created_at,
            GROUP_CONCAT(CONCAT(bi.item_name,' × ',bi.quantity) ORDER BY bi.id SEPARATOR ', ') AS items,
@@ -57,7 +57,7 @@ router.get("/api/admin/bookings", authenticate, requireRole("admin","staff"), as
   res.json({bookings:rows});
 });
 
-router.post("/api/admin/bookings", authenticate, requireRole("admin","staff"), requireStaffCsrf, parseBody(schemas.adminBooking), async (req,res,next) => {
+router.post("/api/admin/bookings", authenticate, requireRole("admin","manager","staff"), requireStaffCsrf, parseBody(schemas.adminBooking), async (req,res,next) => {
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
@@ -76,7 +76,7 @@ router.post("/api/admin/bookings", authenticate, requireRole("admin","staff"), r
   } finally { conn.release(); }
 });
 
-router.get("/api/admin/bookings/:id", authenticate, requireRole("admin","staff"), async (req,res) => {
+router.get("/api/admin/bookings/:id", authenticate, requireRole("admin","manager","staff"), async (req,res) => {
   const booking=await bookingDetailById(Number(req.params.id));
   if(!booking) return res.status(404).json({message:"Booking not found."});
   res.json({booking});
@@ -85,21 +85,21 @@ router.get("/api/admin/bookings/:id", authenticate, requireRole("admin","staff")
 // Serves the customer's uploaded ID document. Never web-accessible on its
 // own (the file lives outside dist/ and is not registered with
 // express.static) — this authenticated route is the only way to reach it.
-router.get("/api/admin/bookings/:id/id-document", authenticate, requireRole("admin","staff"), async (req,res) => {
+router.get("/api/admin/bookings/:id/id-document", authenticate, requireRole("admin","manager","staff"), async (req,res) => {
   const [[booking]] = await db.query("SELECT id_document_path,id_document_original_name FROM bookings WHERE id=?",[Number(req.params.id)]);
   if (!booking || !booking.id_document_path) return res.status(404).json({message:"No ID document on file for this booking."});
   const sent = await sendUpload(res,"id-documents",booking.id_document_path,{name:booking.id_document_original_name});
   if (!sent) return res.status(404).json({message:"No ID document on file for this booking."});
 });
 
-router.get("/api/admin/bookings/:id/payment-proof", authenticate, requireRole("admin","staff"), async (req,res) => {
+router.get("/api/admin/bookings/:id/payment-proof", authenticate, requireRole("admin","manager","staff"), async (req,res) => {
   const [[proof]] = await db.query("SELECT proof_path,proof_original_name FROM booking_payment_workflows WHERE booking_id=?",[Number(req.params.id)]);
   if (!proof?.proof_path) return res.status(404).json({message:"No payment proof has been uploaded for this booking."});
   const sent = await sendUpload(res,"payment-proofs",proof.proof_path,{name:proof.proof_original_name,inline:true});
   if (!sent) return res.status(404).json({message:"The payment proof file is no longer available."});
 });
 
-router.patch("/api/admin/bookings/:id/payment-proof/review", authenticate, requireRole("admin","staff"), parseBody(schemas.gcashProofReview), async (req,res,next) => {
+router.patch("/api/admin/bookings/:id/payment-proof/review", authenticate, requireRole("admin","manager","staff"), parseBody(schemas.gcashProofReview), async (req,res,next) => {
   const id=Number(req.params.id);
   if(!Number.isInteger(id)||id<=0) return res.status(400).json({message:"Invalid booking ID."});
   const {action,verified_amount,gcash_reference,review_note}=req.body;
@@ -252,7 +252,7 @@ router.patch("/api/admin/bookings/:id/payment-proof/review", authenticate, requi
   });
 });
 
-router.delete("/api/admin/bookings/:id", authenticate, requireRole("admin"), async (req,res) => {
+router.delete("/api/admin/bookings/:id", authenticate, requireRole("admin","manager"), async (req,res) => {
   const id=Number(req.params.id);
   const [[booking]]=await db.query("SELECT id,booking_no,customer_name,customer_email,status,grand_total FROM bookings WHERE id=?",[id]);
   if(!booking) return res.status(404).json({message:"Booking not found."});
@@ -279,7 +279,7 @@ router.delete("/api/admin/bookings/:id", authenticate, requireRole("admin"), asy
   res.json({ok:true});
 });
 
-router.patch("/api/admin/bookings/:id/status", authenticate, requireRole("admin","staff"), async (req,res) => {
+router.patch("/api/admin/bookings/:id/status", authenticate, requireRole("admin","manager","staff"), async (req,res) => {
   const id=Number(req.params.id);
   const to=String(req.body.status||"");
   const note=String(req.body.note||"").slice(0,255);
@@ -299,7 +299,7 @@ router.patch("/api/admin/bookings/:id/status", authenticate, requireRole("admin"
   res.json({ok:true,...lifecycleEmailResponse(delivery,`Booking marked ${to}.`)});
 });
 
-router.patch("/api/admin/bookings/:id/reschedule", authenticate, requireRole("admin","staff"), parseBody(schemas.reschedule), async (req,res) => {
+router.patch("/api/admin/bookings/:id/reschedule", authenticate, requireRole("admin","manager","staff"), parseBody(schemas.reschedule), async (req,res) => {
   const id=Number(req.params.id);
   const start=parseDateOnly(req.body.start_date), end=parseDateOnly(req.body.end_date);
   if(!start || !end || end<start) return res.status(400).json({message:"Valid dates are required."});
@@ -328,7 +328,7 @@ router.patch("/api/admin/bookings/:id/reschedule", authenticate, requireRole("ad
   res.json({ok:true,grand_total:grand,...lifecycleEmailResponse(delivery,"Booking dates updated.")});
 });
 
-router.post("/api/admin/bookings/:id/payments", authenticate, requireRole("admin","staff"), parseBody(schemas.recordPayment), async (req,res) => {
+router.post("/api/admin/bookings/:id/payments", authenticate, requireRole("admin","manager","staff"), parseBody(schemas.recordPayment), async (req,res) => {
   const bookingId=Number(req.params.id);
   const amount=req.body.amount;
   const type=req.body.payment_type;
@@ -344,7 +344,7 @@ router.post("/api/admin/bookings/:id/payments", authenticate, requireRole("admin
   res.status(201).json({id:result.insertId});
 });
 
-router.post("/api/admin/bookings/:id/return-inspection", authenticate, requireRole("admin","staff"), async (req,res) => {
+router.post("/api/admin/bookings/:id/return-inspection", authenticate, requireRole("admin","manager","staff"), async (req,res) => {
   const bookingId=Number(req.params.id);
   if(!Number.isInteger(bookingId)||bookingId<=0) return res.status(400).json({message:"Invalid booking ID."});
   const conditionAfter=String(req.body.condition_after||"Good").trim();
@@ -430,7 +430,7 @@ router.post("/api/admin/bookings/:id/return-inspection", authenticate, requireRo
   res.json({ok:true,late_days:lateDays,late_fee:lateFee,damage_charge:damage,deposit_refund:refund,...lifecycleEmailResponse(delivery,"Return inspection recorded.")});
 });
 
-router.post("/api/admin/bookings/:id/complete", authenticate, requireRole("admin","staff"), async (req,res) => {
+router.post("/api/admin/bookings/:id/complete", authenticate, requireRole("admin","manager","staff"), async (req,res) => {
   const id=Number(req.params.id);
   const booking=await bookingDetailById(id);
   if(!booking) return res.status(404).json({message:"Booking not found."});
@@ -449,7 +449,7 @@ router.post("/api/admin/bookings/:id/complete", authenticate, requireRole("admin
   res.json({ok:true,...lifecycleEmailResponse(delivery,"Rental completed.")});
 });
 
-router.post("/api/admin/bookings/:id/send-gcash-instructions", authenticate, requireRole("admin","staff"), requireStaffCsrf, (req,res,next) => {
+router.post("/api/admin/bookings/:id/send-gcash-instructions", authenticate, requireRole("admin","manager","staff"), requireStaffCsrf, (req,res,next) => {
   gcashQrUpload(req,res,(err) => {
     if (err) return res.status(400).json({message:err.message || "Could not process the GCash QR code."});
     if (!req.file) return res.status(400).json({message:"Choose the GCash QR code image to send."});
@@ -500,7 +500,7 @@ router.post("/api/admin/bookings/:id/send-gcash-instructions", authenticate, req
   res.json({ok:true,sent_to:booking.customer_email});
 });
 
-router.post("/api/admin/bookings/:id/send-invoice", authenticate, requireRole("admin","staff"), requireStaffCsrf, parseBody(schemas.sendInvoice), async (req,res) => {
+router.post("/api/admin/bookings/:id/send-invoice", authenticate, requireRole("admin","manager","staff"), requireStaffCsrf, parseBody(schemas.sendInvoice), async (req,res) => {
   const id = Number(req.params.id);
   const booking = await bookingDetailById(id);
   if (!booking) return res.status(404).json({message:"Booking not found."});
@@ -521,7 +521,7 @@ router.post("/api/admin/bookings/:id/send-invoice", authenticate, requireRole("a
   res.json({ok:true, sent_to: to});
 });
 
-router.post("/api/admin/bookings/:id/send-status-email", authenticate, requireRole("admin","staff"), requireStaffCsrf, async (req,res) => {
+router.post("/api/admin/bookings/:id/send-status-email", authenticate, requireRole("admin","manager","staff"), requireStaffCsrf, async (req,res) => {
   const id=Number(req.params.id);
   const booking=await bookingDetailById(id);
   if(!booking)return res.status(404).json({message:"Booking not found."});
@@ -543,7 +543,7 @@ router.post("/api/admin/bookings/:id/send-status-email", authenticate, requireRo
   res.json({ok:true,email_sent:true,message:`Current ${booking.status} status emailed to the customer.`});
 });
 
-router.post("/api/admin/overdue-check", authenticate, requireRole("admin"), async (req,res) => {
+router.post("/api/admin/overdue-check", authenticate, requireRole("admin","manager"), async (req,res) => {
   const before = Date.now();
   await checkOverdueBookings();
   await audit(req,"RUN_OVERDUE_CHECK");
