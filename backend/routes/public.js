@@ -6,10 +6,8 @@ import { createBooking, getAvailability, bookingDetailById } from "../lib/bookin
 import { parseDateOnly } from "../lib/dates.js";
 import { getSettings } from "../lib/settings.js";
 import { sendMail } from "../lib/mailer.js";
-import { idDocumentUpload, paymentProofUpload, PAYMENT_PROOFS_DIR } from "../lib/upload.js";
+import { idDocumentUpload, paymentProofUpload, removeUpload } from "../lib/upload.js";
 import { addNotification } from "../lib/notifications.js";
-import fs from "fs";
-import path from "path";
 import { peso, escHtml } from "../lib/format.js";
 import { INVOICE_BRANDING_KEYS } from "../lib/invoiceTemplate.js";
 import { sendBookingLifecycleEmail } from "../lib/bookingEmails.js";
@@ -141,11 +139,11 @@ router.post("/api/public/bookings", bookingLimiter, (req,res,next) => {
   // wrote to disk -- parseBody has no reason to know about uploads.
   if (typeof req.body.items === "string") {
     try { req.body.items = JSON.parse(req.body.items); }
-    catch { fs.unlink(req.file.path, () => {}); return res.status(400).json({message:"items must be a valid list."}); }
+    catch { removeUpload("id-documents", req.file.filename); return res.status(400).json({message:"items must be a valid list."}); }
   }
   const result = schemas.customerBooking.safeParse(req.body);
   if (!result.success) {
-    fs.unlink(req.file.path, () => {});
+    removeUpload("id-documents", req.file.filename);
     const issue = result.error.issues[0];
     const field = issue.path.join(".");
     return res.status(400).json({message: field ? `${field} ${issue.message}` : issue.message});
@@ -185,7 +183,7 @@ router.post("/api/public/bookings", bookingLimiter, (req,res,next) => {
     },confirmation_email_sent:confirmationDelivery.sent});
   } catch (error) {
     try { await conn.rollback(); } catch {}
-    fs.unlink(req.file.path, () => {}); // the booking never happened, so don't keep the file
+    removeUpload("id-documents", req.file.filename); // the booking never happened, so don't keep the file
     if (error.statusCode) return res.status(error.statusCode).json({message:error.message});
     next(error);
   } finally { conn.release(); }
@@ -251,7 +249,7 @@ router.post("/api/public/bookings/payment-proof", bookingLimiter, (req,res,next)
     next();
   });
 }, async (req,res,next) => {
-  const removeNewFile = () => { if (req.file?.path) fs.unlink(req.file.path, () => {}); };
+  const removeNewFile = () => { if (req.file?.filename) removeUpload("payment-proofs", req.file.filename); };
   try {
     const accessToken = String(req.body.access_token || "").trim();
     const access = accessToken ? verifyBookingAccessToken(accessToken) : null;
@@ -304,7 +302,7 @@ router.post("/api/public/bookings/payment-proof", bookingLimiter, (req,res,next)
       WHERE booking_id=?
     `,[req.file.filename,req.file.originalname,booking.id]);
     if (booking.proof_path && booking.proof_path !== req.file.filename) {
-      fs.unlink(path.join(PAYMENT_PROOFS_DIR,path.basename(booking.proof_path)),() => {});
+      removeUpload("payment-proofs", booking.proof_path);
     }
     await addNotification({
       bookingId:booking.id,

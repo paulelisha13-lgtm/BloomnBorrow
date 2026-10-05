@@ -1,0 +1,50 @@
+services:
+  - type: web
+    name: bloom-and-borrow-api
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm ci
+    startCommand: npm run migrate && npm run start:production
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: APP_ORIGINS        # https://<your-vercel-domain>
+        sync: false
+      - key: JWT_SECRET         # 64+ chars
+        sync: false
+      - key: CSRF_SECRET        # 64+ chars
+        sync: false
+      - key: BOOKING_LINK_SECRET
+        sync: false
+      - key: PUBLIC_APP_URL
+        sync: false
+      - key: TRUST_PROXY
+        value: 2
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: 4000
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: DB_SSL
+        value: true
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        value: bloom-uploads
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false

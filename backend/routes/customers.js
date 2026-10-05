@@ -3,9 +3,7 @@ import { authenticate, requireRole } from "../lib/auth.js";
 import { db } from "../lib/db.js";
 import { parseBody, schemas } from "../lib/validate.js";
 import { audit, changedFields } from "../lib/audit.js";
-import { ID_DOCUMENTS_DIR, PAYMENT_PROOFS_DIR } from "../lib/upload.js";
-import fs from "fs";
-import path from "path";
+import { removeUpload } from "../lib/upload.js";
 
 const router = Router();
 
@@ -131,8 +129,8 @@ router.delete("/api/admin/customers/:id", authenticate, requireRole("admin"), as
     throw error;
   } finally { conn.release(); }
   for(const booking of bookings) {
-    if(booking.id_document_path) fs.unlink(path.join(ID_DOCUMENTS_DIR,path.basename(booking.id_document_path)),()=>{});
-    if(booking.proof_path) fs.unlink(path.join(PAYMENT_PROOFS_DIR,path.basename(booking.proof_path)),()=>{});
+    removeUpload("id-documents",booking.id_document_path);
+    removeUpload("payment-proofs",booking.proof_path);
   }
   await audit(req,"DELETE_CUSTOMER",null,{customer_id:id,anonymized_booking_count:bookings.length});
   res.json({ok:true,anonymized_booking_count:bookings.length});

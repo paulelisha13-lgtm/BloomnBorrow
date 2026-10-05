@@ -5,9 +5,7 @@ import { db } from "../lib/db.js";
 import { checkOverdueBookings } from "../jobs/overdueCheck.js";
 import { audit } from "../lib/audit.js";
 import { getAvailability, bookingDetailById, createBooking, validTransitions, recalcPaymentStatus } from "../lib/bookings.js";
-import fs from "fs";
-import path from "path";
-import { gcashQrUpload, ID_DOCUMENTS_DIR, PAYMENT_PROOFS_DIR } from "../lib/upload.js";
+import { gcashQrUpload, removeUpload, sendUpload } from "../lib/upload.js";
 import { lateDaysSince, parseDateOnly, rentalDays, toDateOnly } from "../lib/dates.js";
 import { generateIncidentNo } from "../lib/incidents.js";
 import { addNotification } from "../lib/notifications.js";
@@ -90,18 +88,15 @@ router.get("/api/admin/bookings/:id", authenticate, requireRole("admin","staff")
 router.get("/api/admin/bookings/:id/id-document", authenticate, requireRole("admin","staff"), async (req,res) => {
   const [[booking]] = await db.query("SELECT id_document_path,id_document_original_name FROM bookings WHERE id=?",[Number(req.params.id)]);
   if (!booking || !booking.id_document_path) return res.status(404).json({message:"No ID document on file for this booking."});
-  const filePath = path.join(ID_DOCUMENTS_DIR, path.basename(booking.id_document_path));
-  if (!fs.existsSync(filePath)) return res.status(404).json({message:"No ID document on file for this booking."});
-  res.download(filePath, booking.id_document_original_name || path.basename(filePath));
+  const sent = await sendUpload(res,"id-documents",booking.id_document_path,{name:booking.id_document_original_name});
+  if (!sent) return res.status(404).json({message:"No ID document on file for this booking."});
 });
 
 router.get("/api/admin/bookings/:id/payment-proof", authenticate, requireRole("admin","staff"), async (req,res) => {
   const [[proof]] = await db.query("SELECT proof_path,proof_original_name FROM booking_payment_workflows WHERE booking_id=?",[Number(req.params.id)]);
   if (!proof?.proof_path) return res.status(404).json({message:"No payment proof has been uploaded for this booking."});
-  const filePath = path.join(PAYMENT_PROOFS_DIR,path.basename(proof.proof_path));
-  if (!fs.existsSync(filePath)) return res.status(404).json({message:"The payment proof file is no longer available."});
-  const displayName = path.basename(proof.proof_original_name || proof.proof_path).replace(/["\r\n]/g,"_");
-  res.sendFile(filePath,{headers:{"Content-Disposition":`inline; filename="${displayName}"`}});
+  const sent = await sendUpload(res,"payment-proofs",proof.proof_path,{name:proof.proof_original_name,inline:true});
+  if (!sent) return res.status(404).json({message:"The payment proof file is no longer available."});
 });
 
 router.patch("/api/admin/bookings/:id/payment-proof/review", authenticate, requireRole("admin","staff"), parseBody(schemas.gcashProofReview), async (req,res,next) => {
@@ -279,7 +274,7 @@ router.delete("/api/admin/bookings/:id", authenticate, requireRole("admin"), asy
     await conn.rollback();
     throw error;
   } finally { conn.release(); }
-  if(paymentWorkflow?.proof_path) fs.unlink(path.join(PAYMENT_PROOFS_DIR,path.basename(paymentWorkflow.proof_path)),()=>{});
+  if(paymentWorkflow?.proof_path) removeUpload("payment-proofs",paymentWorkflow.proof_path);
   await audit(req,"DELETE_BOOKING",null,{booking_id:id,booking_no:booking.booking_no,status:booking.status,grand_total:booking.grand_total});
   res.json({ok:true});
 });
