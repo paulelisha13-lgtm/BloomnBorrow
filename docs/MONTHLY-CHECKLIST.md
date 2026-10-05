@@ -3,7 +3,8 @@
 About 10 minutes. Do this on the same day each month, for example the 1st.
 
 ## 1. Is the system up? (1 minute)
-- [ ] Open https://bloomn-borrow.vercel.app and check that items load.
+- [ ] Open https://bloomn-borrow.vercel.app (admin site: shows the staff login).
+- [ ] Open https://bloom-and-borrow.vercel.app (customer site): it should show the shop, items load, and `/admin` or `/access/login` there redirects to `/shop`. (Rules live in `vercel.json`; only `bloomn-borrow.vercel.app` is treated as the admin host.)
 - [ ] Open https://bloom-and-borrow-api.onrender.com/api/health. It should show `{"ok":true}`.
 - [ ] UptimeRobot dashboard: the monitor shows **Up**, and you got no down-alert emails.
 

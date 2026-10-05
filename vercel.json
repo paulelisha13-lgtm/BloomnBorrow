@@ -2,7 +2,20 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "redirects": [
+    {
+      "source": "/((?!shop(?:/|$)|assets/|api/|[^/]+\\.[A-Za-z0-9]+$).*)",
+      "missing": [{ "type": "host", "value": "bloomn-borrow.vercel.app" }],
+      "destination": "/shop",
+      "permanent": false
+    }
+  ],
   "rewrites": [
+    {
+      "source": "/api/((?!public/|health$).*)",
+      "missing": [{ "type": "host", "value": "bloomn-borrow.vercel.app" }],
+      "destination": "/blocked-on-customer-site"
+    },
     { "source": "/api/:path*", "destination": "https://bloom-and-borrow-api.onrender.com/api/:path*" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
