@@ -3,6 +3,7 @@ import path from "path";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
 import multer from "multer";
+import sharp from "sharp";
 
 // Uploads are private. Locally they go to backend/uploads (outside dist/ and
 // never registered with express.static). On hosts with an ephemeral disk
@@ -33,6 +34,38 @@ export function removeUpload(kind, filename) {
   fetch(objectUrl(kind, filename), { method: "DELETE", headers: authHeaders }).catch(() => {});
 }
 
+// Like removeUpload but awaitable: resolves true only when the file is gone
+// (already missing counts), so retention jobs clear the DB reference only
+// after the file is really deleted.
+export async function deleteUpload(kind, filename) {
+  if (!filename) return true;
+  if (!useRemote) {
+    try { await fs.promises.unlink(path.join(LOCAL_DIRS[kind], path.basename(filename))); return true; }
+    catch (error) { return error.code === "ENOENT"; }
+  }
+  try {
+    const res = await fetch(objectUrl(kind, filename), { method: "DELETE", headers: authHeaders });
+    return res.ok || res.status === 404;
+  } catch { return false; }
+}
+
+// Shrinks phone-sized photos before storing them (free storage is small).
+// Strips EXIF (location data), applies orientation, caps the long side, and
+// keeps the original format. Keeps the original bytes if anything fails or the
+// result is not smaller, and leaves PDFs untouched.
+const MAX_IMAGE_SIDE = 2000;
+export async function compressImage(body, mimetype) {
+  try {
+    let image = sharp(body, { failOn: "none" }).rotate().resize({ width: MAX_IMAGE_SIDE, height: MAX_IMAGE_SIDE, fit: "inside", withoutEnlargement: true });
+    if (mimetype === "image/jpeg") image = image.jpeg({ quality: 82, mozjpeg: true });
+    else if (mimetype === "image/png") image = image.png({ compressionLevel: 9, palette: true });
+    else if (mimetype === "image/webp") image = image.webp({ quality: 82 });
+    else return body;
+    const out = await image.toBuffer();
+    return out.length < body.length ? out : body;
+  } catch { return body; }
+}
+
 // Streams a stored upload to the response. Resolves false if it doesn't exist.
 export async function sendUpload(res, kind, filename, { name, inline = false } = {}) {
   const base = path.basename(filename);
@@ -54,9 +87,11 @@ export async function sendUpload(res, kind, filename, { name, inline = false } =
   return true;
 }
 
-// multer storage engine that writes to Supabase Storage; sets file.filename
-// (and file.path) like diskStorage does, so routes can pass it to removeUpload.
-function supabaseStorage(kind, extByMime) {
+// multer storage engine for both backends: buffers the upload, compresses
+// images, then writes to Supabase Storage (or backend/uploads locally). Sets
+// file.filename (and file.path) like diskStorage does, so routes can pass it
+// to removeUpload.
+function uploadStorage(kind, extByMime) {
   return {
     _handleFile(_req, file, cb) {
       const chunks = [];
@@ -64,14 +99,18 @@ function supabaseStorage(kind, extByMime) {
       file.stream.on("error", cb);
       file.stream.on("end", async () => {
         try {
-          const body = Buffer.concat(chunks);
+          const body = await compressImage(Buffer.concat(chunks), file.mimetype);
           const filename = `${crypto.randomUUID()}${extByMime[file.mimetype] || ""}`;
-          const upstream = await fetch(objectUrl(kind, filename), {
-            method: "POST",
-            headers: { ...authHeaders, "Content-Type": file.mimetype, "x-upsert": "false" },
-            body
-          });
-          if (!upstream.ok) throw new Error(`Upload storage failed (${upstream.status}).`);
+          if (useRemote) {
+            const upstream = await fetch(objectUrl(kind, filename), {
+              method: "POST",
+              headers: { ...authHeaders, "Content-Type": file.mimetype, "x-upsert": "false" },
+              body
+            });
+            if (!upstream.ok) throw new Error(`Upload storage failed (${upstream.status}).`);
+          } else {
+            await fs.promises.writeFile(path.join(LOCAL_DIRS[kind], filename), body);
+          }
           cb(null, { filename, path: filename, size: body.length });
         } catch (error) { cb(error); }
       });
@@ -82,10 +121,7 @@ function supabaseStorage(kind, extByMime) {
 
 const EXT_BY_MIME = { "image/jpeg": ".jpg", "image/png": ".png", "application/pdf": ".pdf" };
 
-const storage = useRemote ? supabaseStorage("id-documents", EXT_BY_MIME) : multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, ID_DOCUMENTS_DIR),
-  filename: (_req, file, cb) => cb(null, `${crypto.randomUUID()}${EXT_BY_MIME[file.mimetype] || ""}`)
-});
+const storage = uploadStorage("id-documents", EXT_BY_MIME);
 
 export const idDocumentUpload = multer({
   storage,
@@ -97,10 +133,7 @@ export const idDocumentUpload = multer({
 }).single("id_document");
 
 const PAYMENT_PROOF_EXTENSIONS = { "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp" };
-const paymentProofStorage = useRemote ? supabaseStorage("payment-proofs", PAYMENT_PROOF_EXTENSIONS) : multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, PAYMENT_PROOFS_DIR),
-  filename: (_req, file, cb) => cb(null, `${crypto.randomUUID()}${PAYMENT_PROOF_EXTENSIONS[file.mimetype] || ""}`)
-});
+const paymentProofStorage = uploadStorage("payment-proofs", PAYMENT_PROOF_EXTENSIONS);
 
 // Payment screenshots are private in the same way as ID documents: only an
 // authenticated booking route can serve them back to staff.
