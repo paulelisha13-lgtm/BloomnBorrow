@@ -6,11 +6,11 @@ SET @has_favorites = (SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE
 SET @has_addresses = (SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='customer_saved_addresses');
 
 SET @rows_accounts = 0, @rows_favorites = 0, @rows_addresses = 0;
-SET @q = IF(@has_accounts>0, 'SELECT COUNT(*) INTO @rows_accounts FROM customer_accounts', 'SELECT 0 INTO @rows_accounts');
+SET @q = IF(@has_accounts>0, 'SET @rows_accounts = (SELECT COUNT(*) FROM customer_accounts)', 'SET @rows_accounts = 0');
 PREPARE stmt FROM @q; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-SET @q = IF(@has_favorites>0, 'SELECT COUNT(*) INTO @rows_favorites FROM customer_favorites', 'SELECT 0 INTO @rows_favorites');
+SET @q = IF(@has_favorites>0, 'SET @rows_favorites = (SELECT COUNT(*) FROM customer_favorites)', 'SET @rows_favorites = 0');
 PREPARE stmt FROM @q; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-SET @q = IF(@has_addresses>0, 'SELECT COUNT(*) INTO @rows_addresses FROM customer_saved_addresses', 'SELECT 0 INTO @rows_addresses');
+SET @q = IF(@has_addresses>0, 'SET @rows_addresses = (SELECT COUNT(*) FROM customer_saved_addresses)', 'SET @rows_addresses = 0');
 PREPARE stmt FROM @q; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 SET @all_empty = (@rows_accounts + @rows_favorites + @rows_addresses) = 0;
