@@ -181,6 +181,7 @@ export function Bookings() {
     return matchSearch&&matchStatus;
   });
   const sorts={
+    newest:{label:"Newest booking",get:b=>Number(b.id)||0},
     start_date:{label:"Start date",get:b=>Date.parse(b.start_date)||0},
     end_date:{label:"End date",get:b=>Date.parse(b.end_date)||0},
     booking_no:{label:"Booking #",get:b=>b.booking_no||""},
@@ -188,7 +189,7 @@ export function Bookings() {
     grand_total:{label:"Total",get:b=>Number(b.grand_total)||0},
     status:{label:"Status",get:b=>b.status||""}
   };
-  const {sortKey,sortDir,setSort}=useSort("start_date","desc");
+  const {sortKey,sortDir,setSort}=useSort("start_date","desc",{newest:"desc"});
   const sorted=sortRows(filtered,sorts,sortKey,sortDir);
   const pageCount=Math.max(1,Math.ceil(sorted.length/BOOKINGS_PER_PAGE));
   const currentPage=Math.min(page,pageCount);
