@@ -3,6 +3,19 @@ import { Link, useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import { peso } from "../../lib/format";
 
+const READ_STORAGE_KEY = "bnb_admin_notifications_read";
+
+// A notification counts as read only while its content is unchanged.
+const notifSignature = n => `${n.type}|${n.status || ""}|${n.title}|${n.message}`;
+
+function loadReadMap() {
+  try { return JSON.parse(localStorage.getItem(READ_STORAGE_KEY)) || {}; } catch { return {}; }
+}
+
+function saveReadMap(map) {
+  try { localStorage.setItem(READ_STORAGE_KEY, JSON.stringify(map)); } catch {}
+}
+
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
@@ -63,7 +76,13 @@ export function NotificationBell() {
         });
       });
       notifs.sort((a, b) => new Date(b.time) - new Date(a.time));
-      setNotifications(notifs.slice(0, 20));
+      const readMap = loadReadMap();
+      const visible = notifs.slice(0, 20).map(n => ({ ...n, read: readMap[n.id] === notifSignature(n) }));
+      // Drop stored entries for notifications that no longer exist.
+      const pruned = {};
+      visible.forEach(n => { if (n.read) pruned[n.id] = readMap[n.id]; });
+      saveReadMap(pruned);
+      setNotifications(visible);
     } catch (e) {}
     finally { setLoading(false); }
   };
@@ -84,9 +103,19 @@ export function NotificationBell() {
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  const markAllRead = () => setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  const markRead = items => {
+    const map = loadReadMap();
+    items.forEach(n => { map[n.id] = notifSignature(n); });
+    saveReadMap(map);
+  };
+
+  const markAllRead = () => {
+    markRead(notifications);
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  };
 
   const goTo = (n) => {
+    markRead([n]);
     setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, read: true } : x));
     setOpen(false);
     if (n.link) navigate(n.link);
