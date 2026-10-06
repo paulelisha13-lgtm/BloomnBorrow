@@ -31,21 +31,41 @@ export async function getAvailability(conn, itemId, startDate, endDate) {
 // route so both land in the exact same tables/statuses through one code
 // path: resolve-or-create the customer, lock+check availability per item,
 // price the line items, then insert bookings/booking_items/status_history.
-export async function createBooking(conn, input, { historyNote, changedByUserId = null, idDocument = null } = {}) {
+//
+// matchExistingByEmail is for guests (no staff to pick "Existing Customer"):
+// a returning email links the booking to its customer record instead of
+// failing, but the saved record is never edited from guest input -- the
+// booking just snapshots the details typed in this time.
+export async function createBooking(conn, input, { historyNote, changedByUserId = null, idDocument = null, matchExistingByEmail = false } = {}) {
   let customer;
+  let snapshot = null;
   if (input.customer_id) {
     [[customer]] = await conn.query("SELECT * FROM customers WHERE id=? FOR UPDATE", [input.customer_id]);
     if (!customer) { const error = new Error("Customer not found."); error.statusCode = 404; throw error; }
+    if (customer.status === "blocked") { const error = new Error("This customer is blocked and cannot make new bookings."); error.statusCode = 409; throw error; }
   } else {
-    const [[duplicate]] = await conn.query("SELECT id FROM customers WHERE email=? LIMIT 1 FOR UPDATE", [input.email]);
-    if (duplicate) { const error = new Error("A customer with this email already exists. Choose Existing Customer and select that record."); error.statusCode = 409; throw error; }
+    const [[duplicate]] = await conn.query("SELECT * FROM customers WHERE email=? LIMIT 1 FOR UPDATE", [input.email]);
+    if (duplicate && matchExistingByEmail) {
+      // Deliberately vague: don't confirm to a guest that the email is on file.
+      if (duplicate.status === "blocked") { const error = new Error("We can't process this request online. Please contact us to book."); error.statusCode = 403; throw error; }
+      customer = duplicate;
+      snapshot = {
+        full_name: input.full_name, phone: input.phone, city: input.city || null,
+        address: input.address || null, province: input.province || null, postal_code: input.postal_code || null
+      };
+    } else if (duplicate) { const error = new Error("A customer with this email already exists. Choose Existing Customer and select that record."); error.statusCode = 409; throw error; }
+  }
+  if (!customer) {
     const [customerResult] = await conn.query(`
       INSERT INTO customers(full_name,email,phone,city,address,province,postal_code,status)
       VALUES(?,?,?,?,?,?,?,'active')
     `, [input.full_name, input.email, input.phone, input.city || null, input.address || null, input.province || null, input.postal_code || null]);
     [[customer]] = await conn.query("SELECT * FROM customers WHERE id=?", [customerResult.insertId]);
   }
-  if (input.fulfillment === "delivery" && !String(customer.address || "").trim()) { const error = new Error("This customer needs a complete delivery address before booking."); error.statusCode = 400; throw error; }
+  // What this booking records: the guest's typed details for a matched
+  // returning customer, otherwise the customer record itself.
+  const contact = snapshot ? { ...customer, ...snapshot } : customer;
+  if (input.fulfillment === "delivery" && !String(contact.address || "").trim()) { const error = new Error("This customer needs a complete delivery address before booking."); error.statusCode = 400; throw error; }
   if (new Set(input.items.map(x => x.item_id)).size !== input.items.length) { const error = new Error("Add each rental item only once; adjust its quantity instead."); error.statusCode = 400; throw error; }
 
   const start = parseDateOnly(input.start_date);
@@ -81,7 +101,7 @@ export async function createBooking(conn, input, { historyNote, changedByUserId 
       (customer_id,customer_name,customer_email,customer_phone,city,delivery_address,province,postal_code,start_date,end_date,
        fulfillment,payment_method,payment_status,status,rental_subtotal,deposit_total,delivery_fee,grand_total,notes,id_document_path,id_document_original_name)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'unpaid','pending',?,?,?,?,?,?,?)
-  `, [customer.id, customer.full_name, customer.email, customer.phone, customer.city, customer.address, customer.province, customer.postal_code,
+  `, [customer.id, contact.full_name, contact.email, contact.phone, contact.city, contact.address, contact.province, contact.postal_code,
      input.start_date, input.end_date, input.fulfillment, input.payment_method, rentalSubtotal, depositTotal, deliveryFee, grandTotal, input.notes || null,
      idDocument?.path || null, idDocument?.originalName || null]);
   const bookingId = result.insertId;
@@ -94,7 +114,7 @@ export async function createBooking(conn, input, { historyNote, changedByUserId 
   `, [bookingId, row.item.id, row.item.name, row.quantity, row.dailyPrice, row.deposit, days, row.lineRental, row.lineDeposit, row.feePerPiece, row.lineDelivery]);
   await conn.query("INSERT INTO booking_status_history(booking_id,from_status,to_status,changed_by_user_id,note) VALUES(?,NULL,'pending',?,?)", [bookingId, changedByUserId, historyNote || "Booking created"]);
 
-  return { bookingId, bookingNo, customer, grandTotal };
+  return { bookingId, bookingNo, customer: contact, grandTotal };
 }
 
 export async function recalcPaymentStatus(bookingId, conn=db) {

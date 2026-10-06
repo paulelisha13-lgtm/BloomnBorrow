@@ -156,6 +156,7 @@ router.post("/api/public/bookings", bookingLimiter, (req,res,next) => {
     await conn.beginTransaction();
     const { bookingId, bookingNo, customer, grandTotal } = await createBooking(conn, req.body, {
       historyNote: "Customer self-service booking request",
+      matchExistingByEmail: true,
       idDocument: { path: req.file.filename, originalName: req.file.originalname }
     });
     await conn.commit();
