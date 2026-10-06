@@ -3,6 +3,7 @@ import { api } from "../lib/api";
 import { AdminShell } from "../components/layout/AdminShell";
 import { Kpi } from "../components/Kpi";
 import { isAdminUser } from "../lib/roles";
+import { useDiscardGuard } from "../components/DiscardGuard";
 
 const TYPE_LABELS={booking:"Booking",reservation:"Reservation",note:"Note",event:"Event"};
 const ENTRY_STATUS_LABELS={pending:"Pending",confirmed:"Confirmed",cancelled:"Cancelled",completed:"Completed"};
@@ -64,6 +65,9 @@ export function Calendar() {
   const [statusFilter,setStatusFilter]=useState("all");
   const [openDay,setOpenDay]=useState(null);
   const [editor,setEditor]=useState(null);
+  // Form as it was when the editor opened, so closing can tell if it changed.
+  const [editorBaseline,setEditorBaseline]=useState("");
+  const editorGuard=useDiscardGuard(Boolean(editor)&&JSON.stringify(editor.form)!==editorBaseline,()=>setEditor(null));
   const [saving,setSaving]=useState(false);
   const [deleteEntryTarget,setDeleteEntryTarget]=useState(null);
   const [deletingEntry,setDeletingEntry]=useState(false);
@@ -159,8 +163,8 @@ export function Calendar() {
     return Array.from({length:last-first+1},(_,i)=>first+i);
   },[anchor.year]);
 
-  const openNew=(date=todayKey())=>setEditor({id:null,form:blankForm(date)});
-  const openEdit=entry=>setEditor({id:entry.id,form:entryToForm(entry)});
+  const openNew=(date=todayKey())=>{const form=blankForm(date);setEditorBaseline(JSON.stringify(form));setEditor({id:null,form})};
+  const openEdit=entry=>{const form=entryToForm(entry);setEditorBaseline(JSON.stringify(form));setEditor({id:entry.id,form})};
 
   const save=async()=>{
     if(!editor) return;
@@ -318,8 +322,8 @@ export function Calendar() {
       <div className="modal-actions"><button className="secondary-button" onClick={()=>openNew(openDay)}>+ Add on this day</button><button className="primary-button" onClick={()=>setOpenDay(null)}>Close</button></div>
     </div></div>}
 
-    {editor&&<div className="modal-backdrop" onClick={()=>setEditor(null)}><div className="modal cal-entry-modal" onClick={e=>e.stopPropagation()}>
-      <div className="modal-head"><div><span className="eyebrow">{editor.id?"Edit Entry":"New Entry"}</span><h2>{editor.id?"Update Calendar Entry":TYPE_LABELS[editor.form.entry_type]}</h2></div><button type="button" onClick={()=>setEditor(null)}>×</button></div>
+    {editor&&<div className="modal-backdrop" onClick={editorGuard.requestClose}><div className="modal cal-entry-modal" onClick={e=>e.stopPropagation()}>
+      <div className="modal-head"><div><span className="eyebrow">{editor.id?"Edit Entry":"New Entry"}</span><h2>{editor.id?"Update Calendar Entry":TYPE_LABELS[editor.form.entry_type]}</h2></div><button type="button" onClick={editorGuard.requestClose}>×</button></div>
       <div className="form-grid">
         <label>Type<select value={editor.form.entry_type} onChange={e=>setEditor({...editor,form:{...editor.form,entry_type:e.target.value}})}>{Object.entries(TYPE_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>
         <label>Status<select value={editor.form.status} onChange={e=>setEditor({...editor,form:{...editor.form,status:e.target.value}})}>{Object.entries(ENTRY_STATUS_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>
@@ -336,8 +340,9 @@ export function Calendar() {
         <label className="span-2">Details<textarea value={editor.form.details} onChange={e=>setEditor({...editor,form:{...editor.form,details:e.target.value}})} placeholder="Optional"/></label>
         <label className="span-2">Notes<textarea value={editor.form.notes} onChange={e=>setEditor({...editor,form:{...editor.form,notes:e.target.value}})} placeholder="Optional"/></label>
       </div>
-      <div className="modal-actions"><button className="secondary-button" onClick={()=>setEditor(null)}>Cancel</button><button className="primary-button" onClick={save} disabled={saving}>{saving?"Saving...":editor.id?"Save Changes":"Add to Calendar"}</button></div>
+      <div className="modal-actions"><button className="secondary-button" onClick={editorGuard.requestClose}>Cancel</button><button className="primary-button" onClick={save} disabled={saving}>{saving?"Saving...":editor.id?"Save Changes":"Add to Calendar"}</button></div>
     </div></div>}
+    {editorGuard.discardDialog}
 
     {deleteEntryTarget&&<div className="modal-backdrop" onClick={()=>setDeleteEntryTarget(null)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
       <h3>Delete Entry</h3>

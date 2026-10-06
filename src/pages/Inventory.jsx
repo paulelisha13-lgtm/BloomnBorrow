@@ -10,6 +10,9 @@ import { usePagination } from "../hooks/usePagination";
 import { useViewMode } from "../hooks/useViewMode";
 import { peso } from "../lib/format";
 import { isAdminUser } from "../lib/roles";
+import { useDiscardGuard } from "../components/DiscardGuard";
+
+const BLANK_CONDITION={condition_status:"good",condition_type:"after_return",notes:"",booking_id:""};
 
 // Package/bundle contents round-trip as { name, quantity }. Quantity is kept
 // as a string here so the number input stays controlled exactly like the
@@ -35,9 +38,14 @@ export function Inventory() {
   const [conditions,setConditions]=useState([]);
   const [conditionLoading,setConditionLoading]=useState(false);
   const [addConditionModal,setAddConditionModal]=useState(false);
-  const [conditionForm,setConditionForm]=useState({condition_status:"good",condition_type:"after_return",notes:"",booking_id:""});
+  const [conditionForm,setConditionForm]=useState(BLANK_CONDITION);
   const blank={sku:"",name:"",category:"Events",description:"",daily_price:"",original_price:"",security_deposit:"",total_quantity:1,status:"active",image_url:"",bundle_items:[]};
   const [form,setForm]=useState(blank);
+  // Snapshot of the form when it was opened, so closing can tell whether the
+  // admin actually changed anything.
+  const [baseline,setBaseline]=useState("");
+  const itemGuard=useDiscardGuard(modal&&JSON.stringify(form)!==baseline,()=>setModal(false));
+  const conditionGuard=useDiscardGuard(addConditionModal&&JSON.stringify(conditionForm)!==JSON.stringify(BLANK_CONDITION),()=>{setAddConditionModal(false);setConditionForm(BLANK_CONDITION)});
 
   const bundleRows=Array.isArray(form.bundle_items)?form.bundle_items:[];
   const setBundleRow=(i,key,value)=>setForm(f=>({...f,bundle_items:f.bundle_items.map((row,idx)=>idx===i?{...row,[key]:value}:row)}));
@@ -46,8 +54,8 @@ export function Inventory() {
 
   const load=()=>api("/admin/inventory").then(d=>setRows(d.items||[])).catch(e=>setError(e.message));
   React.useEffect(()=>{load();},[]);
-  const openNew=()=>{setEditing(null);setForm(blank);setModal(true)};
-  const openEdit=(x)=>{setEditing(x);setForm({...x,bundle_items:toBundleRows(x.bundle_items)});setModal(true)};
+  const openNew=()=>{setEditing(null);setForm(blank);setBaseline(JSON.stringify(blank));setModal(true)};
+  const openEdit=(x)=>{const next={...x,bundle_items:toBundleRows(x.bundle_items)};setEditing(x);setForm(next);setBaseline(JSON.stringify(next));setModal(true)};
   const save=async(e)=>{e.preventDefault();setError("");try{await api(editing?`/admin/inventory/${editing.id}`:"/admin/inventory",{method:editing?"PATCH":"POST",body:JSON.stringify(form)});setModal(false);load()}catch(err){setError(err.message)}};
   const confirmDelete=(x)=>{setDeleteModal(x)};
   const remove=async()=>{if(!deleteModal)return;setDeleteLoading(true);try{await api(`/admin/inventory/${deleteModal.id}`,{method:"DELETE"});setDeleteModal(null);load()}catch(e){setError(e.message)}finally{setDeleteLoading(false)}};
@@ -67,7 +75,7 @@ export function Inventory() {
     try{
       await api(`/admin/items/${conditionItem.id}/conditions`,{method:"POST",body:JSON.stringify(conditionForm)});
       setAddConditionModal(false);
-      setConditionForm({condition_status:"good",condition_type:"after_return",notes:"",booking_id:""});
+      setConditionForm(BLANK_CONDITION);
       viewConditions(conditionItem);
     }catch(e){setError(e.message)}
   };
@@ -185,8 +193,8 @@ export function Inventory() {
       <ListPagination {...pagination} total={sorted.length} label="items" onPageChange={pagination.setPage}/></>}
     </section>
 
-    {modal&&<div className="modal-backdrop" onClick={()=>setModal(false)}><form className="modal" onSubmit={save} onClick={e=>e.stopPropagation()}>
-      <div className="modal-head"><div><span className="eyebrow">Inventory</span><h2>{editing?"Edit":"Rent"}</h2></div><button type="button" onClick={()=>setModal(false)}>×</button></div>
+    {modal&&<div className="modal-backdrop" onClick={itemGuard.requestClose}><form className="modal" onSubmit={save} onClick={e=>e.stopPropagation()}>
+      <div className="modal-head"><div><span className="eyebrow">Inventory</span><h2>{editing?"Edit":"Rent"}</h2></div><button type="button" onClick={itemGuard.requestClose}>×</button></div>
       <div className="form-grid">
         <label>SKU<input required value={form.sku} onChange={e=>setForm({...form,sku:e.target.value})}/></label><label>Item name<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label>
         <label>Category<input required value={form.category} onChange={e=>setForm({...form,category:e.target.value})}/></label><label>Status<select value={form.status} onChange={e=>setForm({...form,status:e.target.value})}><option>active</option><option>inactive</option><option>maintenance</option></select></label>
@@ -204,8 +212,9 @@ export function Inventory() {
             {bundleRows.length===0&&<p className="bundle-hint">Leave empty when this is a single rental item. With contents listed, the customer catalog shows it as a package and the details panel lists everything inside.</p>}
           </div>
         </label>
-      </div><div className="modal-actions"><button type="button" className="secondary-button" onClick={()=>setModal(false)}>Cancel</button><button type="submit" className="primary-button">Save item</button></div>
+      </div><div className="modal-actions"><button type="button" className="secondary-button" onClick={itemGuard.requestClose}>Cancel</button><button type="submit" className="primary-button">Save item</button></div>
     </form></div>}
+    {itemGuard.discardDialog}
 
     {deleteModal&&<div className="modal-backdrop" onClick={()=>setDeleteModal(null)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
       <h3>Delete Item</h3>
@@ -240,8 +249,8 @@ export function Inventory() {
       </div>}
     </div></div>}
 
-    {addConditionModal&&conditionItem&&<div className="modal-backdrop" onClick={()=>setAddConditionModal(false)}><div className="modal" onClick={e=>e.stopPropagation()}>
-      <div className="modal-head"><div><span className="eyebrow">Add Condition Record</span><h2>{conditionItem.name}</h2></div><button type="button" onClick={()=>setAddConditionModal(false)}>×</button></div>
+    {addConditionModal&&conditionItem&&<div className="modal-backdrop" onClick={conditionGuard.requestClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+      <div className="modal-head"><div><span className="eyebrow">Add Condition Record</span><h2>{conditionItem.name}</h2></div><button type="button" onClick={conditionGuard.requestClose}>×</button></div>
       <div className="form-grid">
         <label>Condition
           <select value={conditionForm.condition_status} onChange={e=>setConditionForm({...conditionForm,condition_status:e.target.value})}>
@@ -263,7 +272,8 @@ export function Inventory() {
         </label>
         <label className="span-2">Notes<textarea value={conditionForm.notes} onChange={e=>setConditionForm({...conditionForm,notes:e.target.value})} placeholder="Optional notes about the condition..."/></label>
       </div>
-      <div className="modal-actions"><button className="secondary-button" onClick={()=>setAddConditionModal(false)}>Cancel</button><button className="primary-button" onClick={addCondition}>Save Record</button></div>
+      <div className="modal-actions"><button className="secondary-button" onClick={conditionGuard.requestClose}>Cancel</button><button className="primary-button" onClick={addCondition}>Save Record</button></div>
     </div></div>}
+    {conditionGuard.discardDialog}
   </AdminShell>
 }

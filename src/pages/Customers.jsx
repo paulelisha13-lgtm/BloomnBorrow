@@ -10,6 +10,7 @@ import { usePagination } from "../hooks/usePagination";
 import { useViewMode } from "../hooks/useViewMode";
 import { peso } from "../lib/format";
 import { isAdminUser } from "../lib/roles";
+import { useDiscardGuard } from "../components/DiscardGuard";
 
 export function Customers() {
   const [rows,setRows]=useState([]);
@@ -27,8 +28,13 @@ export function Customers() {
   const load=()=>api("/admin/customers").then(d=>setRows(d.customers||[])).catch(e=>setError(e.message));
   React.useEffect(()=>{load()},[]);
   const del=async()=>{if(!deleteConfirm)return;setDeleting(true);try{await api(`/admin/customers/${deleteConfirm.id}`,{method:"DELETE"});setDeleteConfirm(null);setDetail(null);load()}catch(e){setError(e.message)}finally{setDeleting(false)}};
-  const startEdit=()=>{setEditForm({full_name:detail.full_name||"",email:detail.email||"",phone:detail.phone||"",city:detail.city||"",address:detail.address||"",province:detail.province||"",postal_code:detail.postal_code||""});setEditing(true);setEditError("")};
+  // Form as it was when editing began, so closing can tell if it changed.
+  const [editBaseline,setEditBaseline]=useState("");
+  const editDirty=editing&&JSON.stringify(editForm)!==editBaseline;
+  const startEdit=()=>{const f={full_name:detail.full_name||"",email:detail.email||"",phone:detail.phone||"",city:detail.city||"",address:detail.address||"",province:detail.province||"",postal_code:detail.postal_code||""};setEditForm(f);setEditBaseline(JSON.stringify(f));setEditing(true);setEditError("")};
   const cancelEdit=()=>{setEditing(false);setEditError("")};
+  const cancelGuard=useDiscardGuard(editDirty,cancelEdit);
+  const closeGuard=useDiscardGuard(editDirty,()=>{setDetail(null);setEditing(false)});
   const saveCustomer=async()=>{setSaving(true);setEditError("");try{const data=await api(`/admin/customers/${detail.id}`,{method:"PATCH",body:JSON.stringify(editForm)});setDetail({...detail,...data.customer});setEditing(false);load()}catch(e){setEditError(e.message)}finally{setSaving(false)}};
 
   const loadScore=async(c)=>{
@@ -43,7 +49,7 @@ export function Customers() {
     setRenterScore(null);
     loadScore(c);
   };
-  const openEdit=async c=>{try{const data=await api(`/admin/customers/${c.id}`);const d=data.customer;setDetail(d);setEditForm({full_name:d.full_name||"",email:d.email||"",phone:d.phone||"",city:d.city||"",address:d.address||"",province:d.province||"",postal_code:d.postal_code||""});setEditing(true);setEditError("")}catch(e){setError(e.message)}};
+  const openEdit=async c=>{try{const data=await api(`/admin/customers/${c.id}`);const d=data.customer;const f={full_name:d.full_name||"",email:d.email||"",phone:d.phone||"",city:d.city||"",address:d.address||"",province:d.province||"",postal_code:d.postal_code||""};setDetail(d);setEditForm(f);setEditBaseline(JSON.stringify(f));setEditing(true);setEditError("")}catch(e){setError(e.message)}};
 
   const filtered=rows.filter(c=>{
     const matchSearch=(c.full_name||"").toLowerCase().includes(search.toLowerCase())||(c.email||"").toLowerCase().includes(search.toLowerCase())||(c.phone||"").includes(search);
@@ -137,8 +143,8 @@ export function Customers() {
       <ListPagination {...pagination} total={sorted.length} label="customers" onPageChange={pagination.setPage}/></>}
     </section>
 
-    {detail&&<div className="modal-backdrop" onClick={()=>{setDetail(null);setEditing(false)}}><div className="modal customer-detail-modal" onClick={e=>e.stopPropagation()}>
-      <button className="booking-modal-close" onClick={()=>{setDetail(null);setEditing(false)}}>×</button>
+    {detail&&<div className="modal-backdrop" onClick={closeGuard.requestClose}><div className="modal customer-detail-modal" onClick={e=>e.stopPropagation()}>
+      <button className="booking-modal-close" onClick={closeGuard.requestClose}>×</button>
       <div className="customer-detail-header">
         <div>
           {editing?<input className="customer-edit-input" value={editForm.full_name} onChange={e=>setEditForm({...editForm,full_name:e.target.value})} placeholder="Full name"/>:<h2>{detail.full_name}</h2>}
@@ -153,7 +159,7 @@ export function Customers() {
         <label>Postal code<input value={editForm.postal_code} onChange={e=>setEditForm({...editForm,postal_code:e.target.value})} placeholder="Postal code"/></label>
         <label className="span-2">Address<textarea value={editForm.address} onChange={e=>setEditForm({...editForm,address:e.target.value})} placeholder="Address" rows={2}/></label>
         <div className="modal-actions">
-          <button type="button" className="secondary-button" onClick={cancelEdit}>Cancel</button>
+          <button type="button" className="secondary-button" onClick={cancelGuard.requestClose}>Cancel</button>
           <button className="primary-button" disabled={saving} onClick={saveCustomer}>{saving?"Saving...":"Save Changes"}</button>
         </div>
       </div>:<><div className="customer-detail-grid">
@@ -202,6 +208,8 @@ export function Customers() {
         </div>
       </div>}
     </div></div>}
+    {closeGuard.discardDialog}
+    {cancelGuard.discardDialog}
 
     {deleteConfirm&&<div className="modal-backdrop" onClick={()=>setDeleteConfirm(null)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
       <h3>Delete Customer</h3>

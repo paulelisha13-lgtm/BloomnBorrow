@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useDiscardGuard } from "../components/DiscardGuard";
 import { api } from "../lib/api";
 import { Kpi } from "../components/Kpi";
 import { ListPagination } from "../components/ListPagination";
@@ -22,6 +23,11 @@ export function AccessManagement() {
   const [resetError,setResetError] = useState("");
   const [resetting,setResetting] = useState(false);
   const [notice,setNotice] = useState("");
+  // Untouched starting values, so closing a form only asks for confirmation
+  // when something was actually typed.
+  const initialForm = React.useRef(form).current;
+  const createGuard = useDiscardGuard(modal && JSON.stringify(form)!==JSON.stringify(initialForm), () => { setModal(false); setForm(initialForm); });
+  const resetGuard = useDiscardGuard(Boolean(resetTarget) && Boolean(resetForm.password||resetForm.confirm), () => setResetTarget(null));
 
   const load = async () => {
     setLoading(true);
@@ -53,7 +59,7 @@ export function AccessManagement() {
   };
 
   const openReset = (u) => { setResetTarget(u); setResetForm({password:"",confirm:""}); setResetError(""); };
-  const closeReset = () => { if(!resetting) setResetTarget(null); };
+  const closeReset = () => { if(!resetting) resetGuard.requestClose(); };
   const randomInt = max => crypto.getRandomValues(new Uint32Array(1))[0]%max;
   const generatePassword = () => {
     const sets=["ABCDEFGHJKLMNPQRSTUVWXYZ","abcdefghijkmnopqrstuvwxyz","23456789","!@#$%^&*?-_"];
@@ -176,8 +182,8 @@ export function AccessManagement() {
       <div className="modal-actions"><button type="button" className="secondary-button" onClick={generatePassword}>Generate strong password</button><span className="modal-spacer"/><button type="button" className="secondary-button" onClick={closeReset} disabled={resetting}>Cancel</button><button className="primary-button" disabled={resetting||!passwordOk||pw!==resetForm.confirm}>{resetting?"Resetting...":"Reset password"}</button></div>
     </form></div>}
 
-    {modal && <div className="modal-backdrop" onClick={()=>setModal(false)}><form className="modal" onSubmit={create} onClick={e=>e.stopPropagation()}>
-      <div className="modal-head"><div><span className="eyebrow">Staff access</span><h2>Create account</h2></div><button type="button" onClick={()=>setModal(false)}>×</button></div>
+    {modal && <div className="modal-backdrop" onClick={createGuard.requestClose}><form className="modal" onSubmit={create} onClick={e=>e.stopPropagation()}>
+      <div className="modal-head"><div><span className="eyebrow">Staff access</span><h2>Create account</h2></div><button type="button" onClick={createGuard.requestClose}>×</button></div>
       <div className="form-grid">
         <label>Full name<input required value={form.full_name} onChange={e=>setForm({...form,full_name:e.target.value})}/></label>
         <label>Email<input type="email" required value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></label>
@@ -185,7 +191,9 @@ export function AccessManagement() {
         <label>Role<select value={form.role} onChange={e=>setForm({...form,role:e.target.value})}><option value="admin">Admin</option><option value="manager">Manager</option><option value="staff">Staff</option></select></label>
         <label className="span-2">Temporary password<PasswordInput autoComplete="new-password" required minLength="14" placeholder="14+ chars: upper, lower, number, symbol" value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/></label>
       </div>
-      <div className="modal-actions"><button type="button" className="secondary-button" onClick={()=>setModal(false)}>Cancel</button><button className="primary-button">Create account</button></div>
+      <div className="modal-actions"><button type="button" className="secondary-button" onClick={createGuard.requestClose}>Cancel</button><button className="primary-button">Create account</button></div>
     </form></div>}
+    {createGuard.discardDialog}
+    {resetGuard.discardDialog}
   </AdminShell>
 }

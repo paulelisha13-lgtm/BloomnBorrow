@@ -1786,3 +1786,6 @@ tr.table-subrow .payment-transaction-row{border:0}
   .shop-shell *,.shop-shell *::before,.shop-shell *::after,.shop-detail-backdrop,.shop-detail-backdrop *{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
   .shop-shell :is(.primary-button,.secondary-button,.mini-button,.shop-chip,.shop-float-cart):not(:disabled):active,.shop-shell .shop-item-card:hover,.shop-shell .shop-item-card:active,.shop-detail-modal :is(.primary-button,.secondary-button,.mini-button):not(:disabled):active,.shop-detail-modal .shop-item-card:hover,.shop-detail-modal .shop-item-card:active{transform:none!important}
 }
+
+/* Unsaved-changes confirmation: always above the form it guards. */
+.discard-backdrop{z-index:95}

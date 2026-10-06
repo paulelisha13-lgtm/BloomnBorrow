@@ -11,7 +11,9 @@ import { useBusinessProfile } from "../hooks/useBusinessProfile";
 import { peso } from "../lib/format";
 import { balanceStatus, openInvoice, paymentBreakdown } from "../lib/invoice";
 import { isAdminUser } from "../lib/roles";
+import { useDiscardGuard } from "../components/DiscardGuard";
 
+const BLANK_INSPECT={condition:"Good",damage_charge:"0",maintenance_required:false};
 const DEFAULT_GCASH_INSTRUCTIONS = "Please scan the attached GCash QR code and pay the rental total shown in this email. After payment, open Check Status on the Bloom & Borrow website and upload your payment screenshot for review.";
 const BOOKINGS_PER_PAGE = 10;
 
@@ -30,7 +32,7 @@ export function Bookings() {
   const [deleteBookingTarget,setDeleteBookingTarget]=useState(null);
   const [deletingBooking,setDeletingBooking]=useState(false);
   const [showInspectModal,setShowInspectModal]=useState(false);
-  const [inspectForm,setInspectForm]=useState({condition:"Good",damage_charge:"0",maintenance_required:false});
+  const [inspectForm,setInspectForm]=useState(BLANK_INSPECT);
   const [inspectSubmitting,setInspectSubmitting]=useState(false);
   const [sendingInvoice,setSendingInvoice]=useState(false);
   const [invoiceSent,setInvoiceSent]=useState(false);
@@ -49,6 +51,14 @@ export function Bookings() {
   const [proofReviewForm,setProofReviewForm]=useState({verified_amount:"",gcash_reference:"",review_note:""});
   const [proofReviewError,setProofReviewError]=useState("");
   const [proofReviewSubmitting,setProofReviewSubmitting]=useState(false);
+  // Each form modal remembers how it looked when opened, so closing it only
+  // asks for confirmation when something was actually entered or changed.
+  const [paymentBaseline,setPaymentBaseline]=useState("");
+  const [proofBaseline,setProofBaseline]=useState("");
+  const paymentGuard=useDiscardGuard(showPaymentModal&&JSON.stringify(paymentForm)!==paymentBaseline,()=>setShowPaymentModal(false));
+  const inspectGuard=useDiscardGuard(showInspectModal&&JSON.stringify(inspectForm)!==JSON.stringify(BLANK_INSPECT),()=>setShowInspectModal(false));
+  const gcashGuard=useDiscardGuard(showGcashModal&&(Boolean(gcashQr)||gcashInstructions!==DEFAULT_GCASH_INSTRUCTIONS),()=>setShowGcashModal(false));
+  const proofGuard=useDiscardGuard(Boolean(proofReviewMode)&&JSON.stringify(proofReviewForm)!==proofBaseline,()=>setProofReviewMode(null));
   const [actionNotice,setActionNotice]=useState("");
   const business=useBusinessProfile();
 
@@ -93,7 +103,9 @@ export function Bookings() {
     const outstanding=paymentBreakdown(detail).outstanding;
     setProofReviewMode(mode);
     setProofReviewError("");
-    setProofReviewForm({verified_amount:mode==="approve"?String(outstanding):"",gcash_reference:"",review_note:""});
+    const form={verified_amount:mode==="approve"?String(outstanding):"",gcash_reference:"",review_note:""};
+    setProofReviewForm(form);
+    setProofBaseline(JSON.stringify(form));
   };
 
   const submitProofReview=async()=>{
@@ -132,7 +144,9 @@ export function Bookings() {
 
   const openPaymentModal=()=>{
     const balances=paymentBreakdown(detail);
-    setPaymentForm({amount:String(balances.rentalBalance||balances.depositBalance||0),method:detail.payment_method||"cash",payment_type:balances.rentalBalance>0?"rental":"deposit",notes:""});
+    const form={amount:String(balances.rentalBalance||balances.depositBalance||0),method:detail.payment_method||"cash",payment_type:balances.rentalBalance>0?"rental":"deposit",notes:""};
+    setPaymentForm(form);
+    setPaymentBaseline(JSON.stringify(form));
     setShowPaymentModal(true);
   };
 
@@ -161,7 +175,7 @@ export function Bookings() {
   };
 
   const reschedule=async()=>{const start=window.prompt("New start date (YYYY-MM-DD):",String(detail.start_date).slice(0,10));if(!start)return;const end=window.prompt("New end date (YYYY-MM-DD):",String(detail.end_date).slice(0,10));if(!end)return;await act(`/admin/bookings/${detail.id}/reschedule`,{start_date:start,end_date:end})};
-  const openInspect=()=>{setInspectForm({condition:"Good",damage_charge:"0",maintenance_required:false});setShowInspectModal(true)};
+  const openInspect=()=>{setInspectForm(BLANK_INSPECT);setShowInspectModal(true)};
   const submitInspect=async()=>{setInspectSubmitting(true);try{const data=await api(`/admin/bookings/${detail.id}/return-inspection`,{method:"POST",body:JSON.stringify({condition_after:inspectForm.condition,damage_charge:Number(inspectForm.damage_charge),maintenance_required:inspectForm.maintenance_required})});setShowInspectModal(false);if(inspectForm.maintenance_required){navigate("/admin/maintenance")}else{const bookingId=detail.id;await open(bookingId);await load();setActionNotice(data.message||"Return inspection recorded.")}}catch(e){setError(e.message)}finally{setInspectSubmitting(false)}};
 
   const completeRental=async()=>{
@@ -382,8 +396,8 @@ export function Bookings() {
       </div>
     </div></div>})()}
 
-    {showPaymentModal&&detail&&<div className="modal-backdrop" onClick={()=>setShowPaymentModal(false)}><div className="modal payment-modal" onClick={e=>e.stopPropagation()}>
-      <button className="booking-modal-close" onClick={()=>setShowPaymentModal(false)}>×</button>
+    {showPaymentModal&&detail&&<div className="modal-backdrop" onClick={paymentGuard.requestClose}><div className="modal payment-modal" onClick={e=>e.stopPropagation()}>
+      <button className="booking-modal-close" onClick={paymentGuard.requestClose}>×</button>
       <div className="payment-modal-header">
         <span className="eyebrow">Record Payment</span>
         <h2>{detail.booking_no}</h2>
@@ -413,7 +427,7 @@ export function Bookings() {
         </label>
       </div>
       <div className="payment-modal-footer">
-        <button className="secondary-button" onClick={()=>setShowPaymentModal(false)}>Cancel</button>
+        <button className="secondary-button" onClick={paymentGuard.requestClose}>Cancel</button>
         <button className="primary-button" disabled={paymentSubmitting||!paymentForm.amount||Number(paymentForm.amount)<=0} onClick={submitPayment}>{paymentSubmitting?"Processing...":`Confirm ${peso(Number(paymentForm.amount||0))}`}</button>
       </div>
     </div></div>}
@@ -437,7 +451,7 @@ export function Bookings() {
       </div>
     </div></div>}
 
-    {showGcashModal&&detail&&<div className="modal-backdrop" onClick={()=>!sendingGcash&&setShowGcashModal(false)}><div className="modal confirm-modal gcash-email-modal" onClick={e=>e.stopPropagation()}>
+    {showGcashModal&&detail&&<div className="modal-backdrop" onClick={()=>!sendingGcash&&gcashGuard.requestClose()}><div className="modal confirm-modal gcash-email-modal" onClick={e=>e.stopPropagation()}>
       <h3>Send GCash Payment Email</h3>
       <p>Send the QR code and payment instructions for <strong>{detail.booking_no}</strong> to <strong>{detail.customer_email}</strong>.</p>
       <div className="gcash-email-total"><span>Rental total</span><strong>{peso(Number(detail.grand_total))}</strong></div>
@@ -450,13 +464,13 @@ export function Bookings() {
       </label>
       {gcashError&&<div className="login-error">{gcashError}</div>}
       <div className="confirm-modal-actions">
-        <button className="secondary-button" disabled={sendingGcash} onClick={()=>setShowGcashModal(false)}>Cancel</button>
+        <button className="secondary-button" disabled={sendingGcash} onClick={gcashGuard.requestClose}>Cancel</button>
         <button className="primary-button" disabled={sendingGcash||!gcashQr||!gcashInstructions.trim()} onClick={sendGcashInstructions}>{sendingGcash?"Sending…":"Send Email"}</button>
       </div>
     </div></div>}
 
-    {proofReviewMode&&detail&&<div className="modal-backdrop" onClick={()=>!proofReviewSubmitting&&setProofReviewMode(null)}><div className="modal gcash-review-modal" onClick={e=>e.stopPropagation()}>
-      <div className="modal-head"><div><span className="eyebrow">GCash Verification</span><h2>{proofReviewMode==="approve"?"Approve Payment Proof":"Reject Payment Proof"}</h2></div><button type="button" disabled={proofReviewSubmitting} onClick={()=>setProofReviewMode(null)}>×</button></div>
+    {proofReviewMode&&detail&&<div className="modal-backdrop" onClick={()=>!proofReviewSubmitting&&proofGuard.requestClose()}><div className="modal gcash-review-modal" onClick={e=>e.stopPropagation()}>
+      <div className="modal-head"><div><span className="eyebrow">GCash Verification</span><h2>{proofReviewMode==="approve"?"Approve Payment Proof":"Reject Payment Proof"}</h2></div><button type="button" disabled={proofReviewSubmitting} onClick={proofGuard.requestClose}>×</button></div>
       <p className="gcash-review-intro">Booking <strong>{detail.booking_no}</strong> · {detail.customer_name}</p>
       <a className="secondary-button gcash-review-proof-link" href={`${API_BASE}/admin/bookings/${detail.id}/payment-proof`} target="_blank" rel="noreferrer">Open submitted screenshot</a>
       {proofReviewMode==="approve"?<div className="gcash-review-fields">
@@ -473,7 +487,7 @@ export function Bookings() {
       </div>}
       {proofReviewError&&<div className="login-error">{proofReviewError}</div>}
       <div className="modal-actions">
-        <button className="secondary-button" disabled={proofReviewSubmitting} onClick={()=>setProofReviewMode(null)}>Cancel</button>
+        <button className="secondary-button" disabled={proofReviewSubmitting} onClick={proofGuard.requestClose}>Cancel</button>
         <button className={proofReviewMode==="approve"?"primary-button":"danger-button"} disabled={proofReviewSubmitting} onClick={submitProofReview}>{proofReviewSubmitting?"Saving…":proofReviewMode==="approve"?"Approve and Record Payment":"Reject and Notify Customer"}</button>
       </div>
     </div></div>}
@@ -506,8 +520,8 @@ export function Bookings() {
       </div>
     </div></div>}
 
-    {showInspectModal&&detail&&<div className="modal-backdrop" onClick={()=>setShowInspectModal(false)}><div className="modal inspect-modal" onClick={e=>e.stopPropagation()}>
-      <button className="booking-modal-close" onClick={()=>setShowInspectModal(false)}>×</button>
+    {showInspectModal&&detail&&<div className="modal-backdrop" onClick={inspectGuard.requestClose}><div className="modal inspect-modal" onClick={e=>e.stopPropagation()}>
+      <button className="booking-modal-close" onClick={inspectGuard.requestClose}>×</button>
       <div className="inspect-modal-header">
         <span className="eyebrow">Return Item</span>
         <h2>{detail.booking_no}</h2>
@@ -537,9 +551,13 @@ export function Bookings() {
         </label>
       </div>
       <div className="inspect-modal-footer">
-        <button className="secondary-button" onClick={()=>setShowInspectModal(false)}>Cancel</button>
+        <button className="secondary-button" onClick={inspectGuard.requestClose}>Cancel</button>
         <button className="primary-button" disabled={inspectSubmitting||!inspectForm.condition} onClick={submitInspect}>{inspectSubmitting?"Processing...":"Confirm Return"}</button>
       </div>
     </div></div>}
+    {paymentGuard.discardDialog}
+    {inspectGuard.discardDialog}
+    {gcashGuard.discardDialog}
+    {proofGuard.discardDialog}
   </AdminShell>
 }
