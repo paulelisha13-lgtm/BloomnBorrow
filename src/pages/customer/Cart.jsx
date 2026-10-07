@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { CustomerShell } from "../../components/customer/CustomerShell";
+import { CustomerProgress } from "../../components/customer/CustomerProgress";
 import { useCart } from "../../context/CartContext";
 import { peso } from "../../lib/format";
 
@@ -28,12 +29,13 @@ export function CustomerCart() {
     setQuantity(x.item_id, requested);
   };
 
-  return <CustomerShell title="Your cart" subtitle="Review your selected items before continuing.">
+  return <CustomerShell title="Review your cart" subtitle="Confirm quantities and estimated daily costs before entering your rental details.">
     {items.length === 0 ? <div className="admin-card inventory-empty">
       <h3>Your cart is empty</h3>
       <p>Browse our items and add what you'd like to rent.</p>
       <Link className="primary-button" to="/shop/browse">Browse items</Link>
     </div> : <>
+      <CustomerProgress current="cart"/>
       <div className="shop-cart-list">
         {items.map(x => <div className="admin-card shop-cart-row" key={x.item_id}>
           {x.image_url ? <img src={x.image_url} alt={x.name} /> : <div className="inventory-card-noimage shop-cart-thumb">🌸</div>}
@@ -43,10 +45,13 @@ export function CustomerCart() {
             <small>{peso(x.daily_price)}/day · {peso(x.security_deposit)} deposit</small>
           </div>
           <div className="shop-cart-qty">
-            <label>Qty
-              <input type="number" min="1" max={x.available_quantity || undefined} value={x.quantity} onChange={e => changeQuantity(x, e.target.value)} />
-            </label>
-            {qtyErrors[x.item_id] && <small className="shop-qty-zero">{qtyErrors[x.item_id]}</small>}
+            <span>Quantity</span>
+            <div className="shop-qty-stepper">
+              <button type="button" onClick={()=>changeQuantity(x,x.quantity-1)} disabled={x.quantity<=1} aria-label={`Decrease ${x.name} quantity`}>−</button>
+              <input type="number" min="1" max={x.available_quantity || undefined} value={x.quantity} onChange={e => changeQuantity(x, e.target.value)} aria-label={`${x.name} quantity`}/>
+              <button type="button" onClick={()=>changeQuantity(x,x.quantity+1)} disabled={x.quantity>=(x.available_quantity??Infinity)} aria-label={`Increase ${x.name} quantity`}>+</button>
+            </div>
+            {qtyErrors[x.item_id] && <small className="shop-qty-zero" role="alert">{qtyErrors[x.item_id]}</small>}
           </div>
           <strong className="shop-cart-line-total">{peso(x.daily_price * x.quantity)}<span>/day</span></strong>
           <button type="button" className="mini-button danger" onClick={() => removeItem(x.item_id)}>Remove</button>

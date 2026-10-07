@@ -80,9 +80,9 @@ export function Customers() {
     {error&&<div className="login-error">{error}</div>}
 
     <section className="kpi-grid">
-      <Kpi index={0} icon="👤" label="Total customers" value={stats.total} detail="All registered"/>
-      <Kpi index={1} icon="▣" label="Total bookings" value={stats.bookings} detail="Across all customers"/>
-      <Kpi index={2} icon="💰" label="Total value" value={peso(stats.totalValue)} detail="Lifetime revenue"/>
+      <Kpi index={0} label="Total customers" value={stats.total} detail="All registered"/>
+      <Kpi index={1} label="Total bookings" value={stats.bookings} detail="Across all customers"/>
+      <Kpi index={2} label="Total value" value={peso(stats.totalValue)} detail="Lifetime revenue"/>
     </section>
 
     <div className="admin-page-toolbar">

@@ -117,10 +117,10 @@ export function Inventory() {
     {error&&<div className="login-error">{error}</div>}
 
     <section className="kpi-grid">
-      <Kpi index={0} icon="📦" label="Total items" value={stats.total} detail="All rental items"/>
-      <Kpi index={1} icon="✓" label="Active" value={stats.active} detail="Available for rent"/>
-      <Kpi index={2} icon="🔧" label="Maintenance" value={stats.maintenance} detail="Under maintenance"/>
-      <Kpi index={3} icon="📊" label="Available" value={stats.totalStock-stats.totalReserved} detail={`${stats.totalReserved} reserved`}/>
+      <Kpi index={0} label="Total items" value={stats.total} detail="All rental items"/>
+      <Kpi index={1} label="Active" value={stats.active} detail="Available for rent"/>
+      <Kpi index={2} label="Maintenance" value={stats.maintenance} detail="Under maintenance"/>
+      <Kpi index={3} label="Available" value={stats.totalStock-stats.totalReserved} detail={`${stats.totalReserved} reserved`}/>
     </section>
 
     <div className="admin-page-toolbar">
@@ -129,7 +129,7 @@ export function Inventory() {
         <input placeholder="Search by name or SKU..." value={search} onChange={e=>{setSearch(e.target.value);pagination.setPage(1)}}/>
       </div>
       <div className="admin-toolbar-controls inventory-filters">
-        {isAdminUser()&&<button className="primary-button" onClick={openNew}>+ Rent Item</button>}
+        {isAdminUser()&&<button className="primary-button" onClick={openNew}>+ Add Rental Item</button>}
         <select value={categoryFilter} onChange={e=>{setCategoryFilter(e.target.value);pagination.setPage(1)}}>
           {categories.map(c=><option key={c}>{c}</option>)}
         </select>

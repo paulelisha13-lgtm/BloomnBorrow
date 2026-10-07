@@ -117,9 +117,9 @@ export function AccessManagement() {
 
   return <AdminShell title="Access Management" subtitle="Manage Admin accounts, status, roles, and access security.">
     <section className="kpi-grid">
-      <Kpi icon="♜" label="Total staff" value={users.length} detail="Admin accounts"/>
-      <Kpi icon="✓" label="Active accounts" value={users.filter(x=>x.status==="active").length} detail="Allowed to sign in"/>
-      <Kpi icon="A" label="Admins" value={users.filter(x=>x.role==="admin").length} detail="Full system access"/>
+      <Kpi label="Total staff" value={users.length} detail="Admin accounts"/>
+      <Kpi label="Active accounts" value={users.filter(x=>x.status==="active").length} detail="Allowed to sign in"/>
+      <Kpi label="Admins" value={users.filter(x=>x.role==="admin").length} detail="Full system access"/>
     </section>
 
     <div className="admin-page-toolbar">

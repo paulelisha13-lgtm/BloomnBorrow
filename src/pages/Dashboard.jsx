@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { BookingTable } from "../components/BookingTable";
 import { Kpi } from "../components/Kpi";
 import { AdminShell } from "../components/layout/AdminShell";
+import { AdminIcon } from "../components/layout/AdminIcon";
 import { peso } from "../lib/format";
 
 function DashboardRevenueBarChart({ rows=[] }) {
@@ -72,7 +73,16 @@ export function AdminDashboard() {
   const [data,setData]=useState(null);
   const [updatedAt,setUpdatedAt]=useState(null);
   const [escalations,setEscalations]=useState(null);
-  const load=React.useCallback(()=>api("/admin/dashboard").then(d=>{setData(d);setUpdatedAt(new Date())}).catch(()=>{}),[]);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState("");
+  const load=React.useCallback(()=>{
+    setLoading(true);
+    setError("");
+    return api("/admin/dashboard")
+      .then(d=>{setData(d);setUpdatedAt(new Date())})
+      .catch(e=>setError(e.message||"Dashboard data could not be loaded."))
+      .finally(()=>setLoading(false));
+  },[]);
   const loadEscalations=React.useCallback(()=>api("/admin/escalations").then(d=>setEscalations(d)).catch(()=>{}),[]);
   React.useEffect(()=>{load();loadEscalations();const id=setInterval(()=>{load();loadEscalations()},60000);return()=>clearInterval(id)},[load,loadEscalations]);
   const s=data?.stats || {};
@@ -81,19 +91,27 @@ export function AdminDashboard() {
   const sevenDayBookings=daily.reduce((sum,x)=>sum+Number(x.bookings||0),0);
   const escStats=escalations?.stats||{};
 
-  return <AdminShell title="Dashboard" subtitle="Live overview of your rental business.">
+  const updatedLabel=updatedAt?`Updated ${updatedAt.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}`:"Waiting for data";
+
+  return <AdminShell title="Dashboard" subtitle="A clear view of today’s bookings, rentals, payments, and operational priorities.">
+    {error&&<div className="admin-alert admin-alert-error" role="alert"><div><strong>We couldn’t refresh the dashboard.</strong><span>{error}</span></div><button type="button" className="secondary-button" onClick={load}>Try again</button></div>}
+    {loading&&!data?<div className="dashboard-loading" role="status" aria-live="polite">
+      <span className="sr-only">Loading dashboard</span>
+      <div className="dashboard-skeleton-grid">{[0,1,2,3].map(x=><i key={x}/>)}</div>
+      <div className="dashboard-skeleton-panels"><i/><i/></div>
+    </div>:<>
     <section className="kpi-grid">
-      <Kpi index={0} icon="▣" label="Today's bookings" value={s.today_bookings ?? 0} detail={`${s.upcoming_reservations ?? 0} upcoming`} to="/admin/bookings"/>
-      <Kpi index={1} icon="↗" label="Active rentals" value={s.active_rentals ?? 0} detail="Currently rented" to="/admin/bookings"/>
-      <Kpi index={2} icon="!" pulseIcon label="Overdue rentals" value={s.overdue_rentals ?? 0} detail="Needs attention" to="/admin/bookings"/>
-      <Kpi index={3} icon="₱" currency label="Revenue today" value={Number(s.revenue_today ?? 0)} detail={`${s.pending_payments ?? 0} pending payments`} to="/admin/payments"/>
+      <Kpi index={0} label="Today's bookings" value={s.today_bookings ?? 0} detail={`${s.upcoming_reservations ?? 0} upcoming`} to="/admin/bookings"/>
+      <Kpi index={1} label="Active rentals" value={s.active_rentals ?? 0} detail="Currently rented" to="/admin/bookings"/>
+      <Kpi index={2} label="Overdue rentals" value={s.overdue_rentals ?? 0} detail="Needs attention" to="/admin/bookings"/>
+      <Kpi index={3} currency label="Revenue today" value={Number(s.revenue_today ?? 0)} detail={`${s.pending_payments ?? 0} pending payments`} to="/admin/payments"/>
     </section>
 
     <div className="dashboard-layout">
       <div className="dashboard-analytics-row">
         <section className="admin-card dashboard-chart-card">
-          <div className="card-heading"><div><span>Revenue · last 7 days</span><h2>Collections trend</h2></div><button className="chart-refresh" onClick={load}>Refresh</button></div>
-          <div className="chart-summary"><strong>{peso(sevenDayRevenue)}</strong><small>{updatedAt?"Updated just now":"Loading…"}</small></div>
+          <div className="card-heading"><div><span>Revenue · last 7 days</span><h2>Collections trend</h2></div><button type="button" className="chart-refresh" onClick={load} disabled={loading}><AdminIcon name="refresh" size={15}/>{loading?"Refreshing…":"Refresh"}</button></div>
+          <div className="chart-summary"><strong>{peso(sevenDayRevenue)}</strong><small>{updatedLabel}</small></div>
           <DashboardRevenueBarChart rows={daily}/>
           {daily.length>0&&daily.every(row=>Number(row.revenue||0)===0)&&<p className="chart-empty">No revenue activity for this period.</p>}
         </section>
@@ -111,19 +129,23 @@ export function AdminDashboard() {
           <div className="card-heading"><div><span>Recent bookings</span><h2>Latest reservations</h2></div><Link to="/admin/bookings">View all</Link></div>
           <BookingTable rows={(data?.recent||[]).map(b=>({id:b.booking_no,customer:b.customer_name,item:b.items||"—",dates:`${String(b.start_date).slice(0,10)} → ${String(b.end_date).slice(0,10)}`,total:Number(b.grand_total),status:b.status[0].toUpperCase()+b.status.slice(1)}))}/>
         </section>
-        <section className="admin-card inventory-card"><div className="card-heading"><div><span>Operations</span><h2>Attention needed</h2></div></div><div className="ops-summary"><span><b>{s.unavailable_items ?? 0}</b> unavailable / maintenance items</span><span><b>{s.pending_payments ?? 0}</b> bookings with balance</span><span><b>{s.overdue_rentals ?? 0}</b> overdue rentals</span></div></section>
+        <section className="admin-card inventory-card"><div className="card-heading"><div><span>Operations</span><h2>Attention needed</h2></div></div><div className="ops-summary">
+          <Link to="/admin/maintenance"><span><AdminIcon name="maintenance"/></span><div><b>{s.unavailable_items ?? 0}</b><small>Unavailable or in maintenance</small></div><AdminIcon name="arrowRight" size={16}/></Link>
+          <Link to="/admin/payments"><span><AdminIcon name="payments"/></span><div><b>{s.pending_payments ?? 0}</b><small>Bookings with a balance</small></div><AdminIcon name="arrowRight" size={16}/></Link>
+          <Link to="/admin/bookings"><span><AdminIcon name="alert"/></span><div><b>{s.overdue_rentals ?? 0}</b><small>Overdue rentals</small></div><AdminIcon name="arrowRight" size={16}/></Link>
+        </div></section>
         <section className="admin-card upcoming-card"><div className="card-heading"><div><span>Workflow</span><h2>Quick actions</h2></div></div><div className="quick-actions">
-          <Link className="quick-action-card" to="/admin/bookings">
-            <span>Manage bookings</span>
+          <Link className="quick-action-card" to="/admin/bookings/new">
+            <span className="quick-action-icon"><AdminIcon name="plus"/></span><strong>Create booking</strong><small>Add a walk-in rental</small>
           </Link>
           <Link className="quick-action-card" to="/admin/inventory">
-            <span>Manage inventory</span>
+            <span className="quick-action-icon"><AdminIcon name="inventory"/></span><strong>Inventory</strong><small>Items and availability</small>
           </Link>
           <Link className="quick-action-card" to="/admin/payments">
-            <span>Payments</span>
+            <span className="quick-action-icon"><AdminIcon name="payments"/></span><strong>Payments</strong><small>Balances and receipts</small>
           </Link>
           <Link className="quick-action-card" to="/admin/maintenance">
-            <span>Maintenance</span>
+            <span className="quick-action-icon"><AdminIcon name="maintenance"/></span><strong>Maintenance</strong><small>Resolve item issues</small>
           </Link>
         </div></section>
       </div>
@@ -154,6 +176,6 @@ export function AdminDashboard() {
           </div>
         </section>
       </div>}
-    </div>
+    </div></>}
   </AdminShell>;
 }

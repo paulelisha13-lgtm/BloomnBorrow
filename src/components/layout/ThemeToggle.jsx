@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { AdminIcon } from "./AdminIcon";
 
 export function ThemeToggle() {
   const [dark, setDark] = useState(() => {
@@ -8,5 +9,8 @@ export function ThemeToggle() {
     document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
     try { localStorage.setItem("bloom_borrow_theme", dark ? "dark" : "light"); } catch {}
   }, [dark]);
-  return <button className="theme-toggle" onClick={() => setDark(d => !d)} title={dark ? "Switch to light mode" : "Switch to dark mode"}>{dark ? "☀️" : "🌙"}</button>;
+  const label=dark ? "Switch to light mode" : "Switch to dark mode";
+  return <button type="button" className="theme-toggle" onClick={() => setDark(d => !d)} title={label} aria-label={label} aria-pressed={dark}>
+    <AdminIcon name={dark ? "sun" : "moon"}/>
+  </button>;
 }

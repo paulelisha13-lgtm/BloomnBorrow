@@ -93,10 +93,10 @@ export function Reports() {
     {error&&<div className="login-error">Unable to load report data: {error}</div>}
     {loading&&!report ? <section className="admin-card report-loading">Loading report data...</section> : <>
       <section className="kpi-grid">
-        <Kpi icon="↗" label="Monthly revenue" value={formatReportCurrency(summary.monthly_revenue,currency)} detail={changeLabel(summary.monthly_revenue_change)}/>
-        <Kpi icon="▦" label="Total rentals" value={Number(summary.total_rentals||0)} detail={changeLabel(summary.rental_change)}/>
-        <Kpi icon="★" label="Top item" value={top?.item_name || "No data"} detail={`${Number(top?.rented_quantity||0)} rented units`}/>
-        <Kpi icon="%" label="Utilization" value={`${Number(summary.utilization||0).toFixed(1)}%`} detail={`${Number(summary.currently_rented_units||0)} of ${Number(summary.total_rentable_units||0)} units rented`}/>
+        <Kpi label="Monthly revenue" value={formatReportCurrency(summary.monthly_revenue,currency)} detail={changeLabel(summary.monthly_revenue_change)}/>
+        <Kpi label="Total rentals" value={Number(summary.total_rentals||0)} detail={changeLabel(summary.rental_change)}/>
+        <Kpi label="Top item" value={top?.item_name || "No data"} detail={`${Number(top?.rented_quantity||0)} rented units`}/>
+        <Kpi label="Utilization" value={`${Number(summary.utilization||0).toFixed(1)}%`} detail={`${Number(summary.currently_rented_units||0)} of ${Number(summary.total_rentable_units||0)} units rented`}/>
       </section>
       <div className="dashboard-grid reports-grid">
         <section className="admin-card stat-card revenue-report-card">

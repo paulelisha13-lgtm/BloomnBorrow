@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import { peso } from "../../lib/format";
+import { AdminIcon } from "./AdminIcon";
 
 const READ_STORAGE_KEY = "bnb_admin_notifications_read";
 
@@ -122,11 +123,11 @@ export function NotificationBell() {
   };
 
   const getIcon = (type) => {
-    if (type === "payment_proof") return "₱";
-    if (type === "booking_new") return "📋";
-    if (type === "booking_overdue") return "⚠";
-    if (type === "low_stock") return "🔴";
-    return "🔄";
+    if (type === "payment_proof") return "receipt";
+    if (type === "booking_new") return "bookings";
+    if (type === "booking_overdue") return "alert";
+    if (type === "low_stock") return "inventory";
+    return "refresh";
   };
 
   const getTypeClass = (type) => {
@@ -138,27 +139,27 @@ export function NotificationBell() {
   };
 
   return <div className="notification-bell" ref={menuRef}>
-    <button type="button" className="notification-trigger" aria-label="Notifications" onClick={() => setOpen(v => !v)}>
-      🔔
-      {unreadCount > 0 && <span className="notification-badge">{unreadCount}</span>}
+    <button type="button" className="notification-trigger" aria-label={unreadCount?`Notifications, ${unreadCount} unread`:"Notifications"} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(v => !v)}>
+      <AdminIcon name="bell"/>
+      {unreadCount > 0 && <span className="notification-badge" aria-hidden="true">{unreadCount>99?"99+":unreadCount}</span>}
     </button>
-    {open && <div className="notification-dropdown">
+    {open && <div className="notification-dropdown" role="dialog" aria-label="Notifications">
       <div className="notification-header">
         <div><strong>Notifications</strong><small>{unreadCount} unread</small></div>
-        {unreadCount > 0 && <button onClick={markAllRead}>Mark all read</button>}
+        {unreadCount > 0 && <button type="button" onClick={markAllRead}>Mark all read</button>}
       </div>
       <div className="notification-list">
         {loading && notifications.length === 0 ? <div className="notification-empty">Loading notifications...</div> :
         notifications.length === 0 ? <div className="notification-empty">No notifications yet.</div> :
-        notifications.map(n => <div className={`notification-item ${n.read ? "read" : ""} ${getTypeClass(n.type)}`} key={n.id} role="button" tabIndex={0} onClick={() => goTo(n)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); goTo(n); } }}>
-          <span className="notification-icon">{getIcon(n.type)}</span>
+        notifications.map(n => <button type="button" className={`notification-item ${n.read ? "read" : ""} ${getTypeClass(n.type)}`} key={n.id} aria-label={`${n.title}${n.read?"":", unread"}. ${n.message}`} onClick={() => goTo(n)}>
+          <span className="notification-icon"><AdminIcon name={getIcon(n.type)} size={18}/></span>
           <div className="notification-content">
             <strong>{n.title}</strong>
             <p>{n.message}</p>
             <small>{n.detail}</small>
           </div>
-          {n.read ? <span className="notification-go">→</span> : <span className="notification-dot"></span>}
-        </div>)}
+          {n.read ? <AdminIcon name="arrowRight" size={16} className="notification-go"/> : <span className="notification-dot" aria-hidden="true"></span>}
+        </button>)}
       </div>
       <div className="notification-footer">
         {notifications.some(n=>n.type==="low_stock")?

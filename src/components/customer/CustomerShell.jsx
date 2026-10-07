@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { Logo } from "../Logo";
 import { useCart } from "../../context/CartContext";
@@ -12,6 +12,7 @@ function CartFab() {
   const { count } = useCart();
   const [bump, setBump] = useState(false);
   const [open, setOpen] = useState(false);
+  const closeCart=useCallback(()=>setOpen(false),[]);
   const prev = useRef(count);
   useEffect(() => {
     if (count !== prev.current) {
@@ -30,7 +31,7 @@ function CartFab() {
       <span>Cart</span>
       <span className={`shop-cart-count ${bump ? "bump" : ""}`}>{count}</span>
     </button>
-    {open && <CartDrawer onClose={() => setOpen(false)} />}
+    {open && <CartDrawer onClose={closeCart} />}
   </>;
 }
 
@@ -124,8 +125,10 @@ function CustomerFooter() {
 // CartProvider is mounted once around the customer app in App.jsx so every
 // customer page, drawer, and product modal shares the same cart state.
 export function CustomerShell({ title, subtitle, hero, children, hideFloatingCart, disableModuleTransition }) {
+  const { count } = useCart();
   const { pathname } = useLocation();
   const detailRoute = pathname.startsWith("/shop/") && !["/shop/browse", "/shop/cart", "/shop/checkout", "/shop/status"].includes(pathname);
+  const cartRoute = pathname === "/shop/cart" || pathname === "/shop/checkout";
 
   // Route changes should begin at the new module's heading. Item-detail
   // overlays do not mount a new shell, so opening/closing one keeps the
@@ -134,8 +137,13 @@ export function CustomerShell({ title, subtitle, hero, children, hideFloatingCar
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, [pathname]);
 
+  useEffect(()=>{
+    document.title=`${title || "Rentals"} | Bloom & Borrow`;
+  },[title]);
+
   return (
     <div className="shop-shell">
+      <a className="skip-link" href="#shop-main-content">Skip to main content</a>
       <header className="shop-header">
         <div className="shop-header-inner">
           <Logo to="/shop" />
@@ -143,14 +151,15 @@ export function CustomerShell({ title, subtitle, hero, children, hideFloatingCar
             <NavLink to="/shop" end>Home</NavLink>
             <NavLink to="/shop/browse" className={({ isActive }) => isActive || detailRoute ? "active" : undefined} aria-current={detailRoute ? "page" : undefined}>Browse</NavLink>
             <NavLink to="/shop/status">Check Status</NavLink>
+            <NavLink to="/shop/cart" className={({isActive})=>isActive||cartRoute?"active shop-nav-cart":"shop-nav-cart"} aria-current={cartRoute?"page":undefined}>Cart {count>0&&<span aria-label={`${count} item${count===1?"":"s"}`}>{count>99?"99+":count}</span>}</NavLink>
           </nav>
         </div>
       </header>
       <div className={`shop-module-enter ${hero ? "has-hero" : ""} ${disableModuleTransition ? "no-enter" : ""}`}>
         {hero}
-        <main className="shop-main">
+        <main className="shop-main" id="shop-main-content" tabIndex="-1">
           {(title || subtitle) && <div className="shop-page-head">
-            {title && <h1>{title}</h1>}
+            {title && <h1 id="shop-page-title">{title}</h1>}
             {subtitle && <p>{subtitle}</p>}
           </div>}
           {children}
@@ -158,7 +167,7 @@ export function CustomerShell({ title, subtitle, hero, children, hideFloatingCar
       </div>
       <CustomerFooter />
       <CustomerTabBar detailRoute={detailRoute} />
-      {!hideFloatingCart && <CartFab />}
+      {!hideFloatingCart && !cartRoute && <CartFab />}
     </div>
   );
 }

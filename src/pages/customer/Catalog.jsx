@@ -24,8 +24,14 @@ export function CustomerCatalog() {
   // is up, so the customer can see which item they're looking at.
   const [selected, setSelected] = useState(null);
 
-  useEffect(() => {
+  const loadItems = () => {
+    setLoading(true);
+    setError("");
     publicApi("/public/items").then(d => setItems(d.items || [])).catch(e => setError(e.message)).finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadItems();
   }, []);
 
   // So a customer who opens an item and comes back doesn't lose their place
@@ -58,23 +64,28 @@ export function CustomerCatalog() {
     setTimeout(() => setAdded(id => id === item.id ? null : id), 900);
   };
 
-  return <CustomerShell title="Browse Rentals" subtitle="Available items from our current inventory.">
-    {error && <div className="login-error">{error}</div>}
+  const clearFilters=()=>{setSearch("");setCategory("")};
+
+  return <CustomerShell title="Browse rentals" subtitle="Search our current inventory, compare daily rates, and add available items to your cart.">
+    {error && <div className="shop-inline-alert" role="alert"><div><strong>We couldn’t load the catalog.</strong><span>{error}</span></div><button type="button" className="secondary-button" onClick={loadItems}>Try again</button></div>}
 
     <div className="shop-toolbar">
       <div className="admin-search shop-search">
-        <span>⌕</span>
-        <input placeholder="Search items…" value={search} onChange={e => setSearch(e.target.value)} />
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+        <input type="search" aria-label="Search rental items" placeholder="Search by item or category…" value={search} onChange={e => setSearch(e.target.value)} />
+        {search&&<button type="button" className="shop-search-clear" aria-label="Clear search" onClick={()=>setSearch("")}>×</button>}
       </div>
 
       <nav className="shop-category-nav" aria-label="Categories">
-        <button type="button" className={`shop-chip ${!category ? "active" : ""}`} onClick={() => setCategory("")}>All</button>
-        {categories.map(cat => <button type="button" key={cat} className={`shop-chip ${category === cat ? "active" : ""}`} onClick={() => setCategory(cat)}>{cat}</button>)}
+        <button type="button" className={`shop-chip ${!category ? "active" : ""}`} aria-pressed={!category} onClick={() => setCategory("")}>All</button>
+        {categories.map(cat => <button type="button" key={cat} className={`shop-chip ${category === cat ? "active" : ""}`} aria-pressed={category===cat} onClick={() => setCategory(cat)}>{cat}</button>)}
       </nav>
     </div>
 
-    {loading ? <div className="admin-card inventory-empty" role="status" aria-live="polite">Loading items…</div> :
-      filtered.length === 0 ? <div className="admin-card inventory-empty"><h3>No items found</h3><p>{search || category ? "Try adjusting your search or filters." : "Please check back soon."}</p></div> :
+    {!loading&&!error&&<div className="shop-results-meta" role="status"><span>{filtered.length} rental item{filtered.length===1?"":"s"}</span>{(search||category)&&<button type="button" onClick={clearFilters}>Clear filters</button>}</div>}
+
+    {loading ? <div className="shop-catalog-skeleton" role="status" aria-live="polite"><span className="sr-only">Loading rental items</span>{[0,1,2,3,4,5,6,7].map(x=><i key={x}/>)}</div> :
+      error ? null : filtered.length === 0 ? <div className="admin-card inventory-empty"><h3>No matching rentals</h3><p>{search || category ? "Try a different search or clear the selected category." : "Please check back soon."}</p>{(search||category)&&<button type="button" className="secondary-button" onClick={clearFilters}>Clear filters</button>}</div> :
       <div className="shop-item-grid shop-async-reveal">
         {filtered.map(item => <RentalItemCard
           key={item.id}

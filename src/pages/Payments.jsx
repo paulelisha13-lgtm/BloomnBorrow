@@ -114,10 +114,10 @@ export function Payments() {
     {error&&<div className="login-error">{error}</div>}
 
     <section className="kpi-grid">
-      <Kpi index={0} icon="💰" label="Net collections" value={peso(stats.net)} detail={`${rows.length} transactions`}/>
-      <Kpi index={1} icon="↩" label="Refunds" value={peso(stats.refunds)} detail="Deposit/refund transactions"/>
-      <Kpi index={2} icon="✓" label="Completed" value={stats.completed} detail="Valid transactions"/>
-      <Kpi index={3} icon="⏳" label="Pending" value={stats.pending} detail="Awaiting confirmation"/>
+      <Kpi index={0} label="Net collections" value={peso(stats.net)} detail={`${rows.length} transactions`}/>
+      <Kpi index={1} label="Refunds" value={peso(stats.refunds)} detail="Deposit/refund transactions"/>
+      <Kpi index={2} label="Completed" value={stats.completed} detail="Valid transactions"/>
+      <Kpi index={3} label="Pending" value={stats.pending} detail="Awaiting confirmation"/>
     </section>
 
     <div className="admin-page-toolbar">
@@ -185,7 +185,7 @@ export function Payments() {
         ])}</tbody>
       </table></div>:<div className="payment-card-grid">
         {visibleGroups.map(g=><article className={`payment-card ${expanded===g.booking_id?"payment-card-expanded":""}`} key={g.booking_id}>
-          <div className="payment-card-top" onClick={()=>setExpanded(expanded===g.booking_id?null:g.booking_id)}>
+          <div className="payment-card-top" role="button" tabIndex="0" aria-expanded={expanded===g.booking_id} aria-label={`${expanded===g.booking_id?"Hide":"Show"} payments for ${g.booking_no}`} onClick={()=>setExpanded(expanded===g.booking_id?null:g.booking_id)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();setExpanded(expanded===g.booking_id?null:g.booking_id)}}}>
             <div className="payment-card-icon-wrap">
               <span className="payment-card-icon">{g.hasRefund?"↩":g.payments[0]?.payment_type==="deposit"?"🔒":"💵"}</span>
             </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { CustomerShell } from "../../components/customer/CustomerShell";
 import { PriceDisplay } from "../../components/PriceDisplay";
@@ -36,6 +36,7 @@ export function CustomerItemDetail() {
   const [quantity, setQuantity] = useState(1);
   const [toast, setToast] = useState(false);
   const [relatedAdded, setRelatedAdded] = useState(null);
+  const closeRef=useRef(null);
 
   useEffect(() => {
     setLoading(true);
@@ -52,14 +53,23 @@ export function CustomerItemDetail() {
     }).catch(e => setLoadError(e.message)).finally(() => setLoading(false));
   }, [id]);
 
-  const close = () => navigate(-1);
+  const close = () => background ? navigate(-1) : navigate("/shop/browse",{replace:true});
+
+  useEffect(()=>{
+    const previousOverflow=document.body.style.overflow;
+    document.body.style.overflow="hidden";
+    const focusTimer=setTimeout(()=>closeRef.current?.focus(),0);
+    const onKeyDown=e=>{if(e.key==="Escape")close()};
+    window.addEventListener("keydown",onKeyDown);
+    return()=>{clearTimeout(focusTimer);window.removeEventListener("keydown",onKeyDown);document.body.style.overflow=previousOverflow};
+  },[id,background]);
 
   if (loading) return <Shell background={background}><div className="modal-backdrop shop-detail-backdrop" onClick={close}><div className="shop-detail-modal shop-detail-modal-small" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-busy="true">
-    <button type="button" className="booking-modal-close" onClick={close} aria-label="Close">×</button>
+    <button ref={closeRef} type="button" className="booking-modal-close" onClick={close} aria-label="Close">×</button>
     <p className="shop-detail-status-text" role="status">Loading item…</p>
   </div></div></Shell>;
   if (loadError || !item) return <Shell background={background}><div className="modal-backdrop shop-detail-backdrop" onClick={close}><div className="shop-detail-modal shop-detail-modal-small" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
-    <button type="button" className="booking-modal-close" onClick={close} aria-label="Close">×</button>
+    <button ref={closeRef} type="button" className="booking-modal-close" onClick={close} aria-label="Close">×</button>
     <h3>Item not found</h3>
     <p className="shop-detail-status-text">{loadError || "This item may no longer be available."}</p>
     <Link className="secondary-button" to="/shop/browse">Back to browsing</Link>
@@ -100,10 +110,10 @@ export function CustomerItemDetail() {
   if (savings) specs.push(["You save", peso(savings.save)]);
 
   return <Shell background={background}>
-    {toast && <div className="shop-toast">✓ Added to cart</div>}
+    {toast && <div className="shop-toast" role="status" aria-live="polite">✓ Added to cart</div>}
     <div className="modal-backdrop shop-detail-backdrop" onClick={close}>
       <div className="shop-detail-modal" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={item.name}>
-        <button type="button" className="booking-modal-close" onClick={close} aria-label="Close">×</button>
+        <button ref={closeRef} type="button" className="booking-modal-close" onClick={close} aria-label="Close item details">×</button>
 
         <div className="shop-detail-content">
         <div className="shop-detail-grid">
@@ -128,7 +138,7 @@ export function CustomerItemDetail() {
             <div className="shop-detail-actions">
               <div className="shop-qty-stepper">
                 <button type="button" onClick={() => step(-1)} disabled={out} aria-label="Decrease quantity">−</button>
-                <input type="number" min="1" max={item.available_quantity || 1} value={quantity} disabled={out} onChange={e => setQuantity(e.target.value.replace(/[^\d]/g, ""))} />
+                <input type="number" min="1" max={item.available_quantity || 1} value={quantity} disabled={out} aria-label={`${item.name} quantity`} onChange={e => setQuantity(e.target.value.replace(/[^\d]/g, ""))} />
                 <button type="button" onClick={() => step(1)} disabled={out} aria-label="Increase quantity">+</button>
               </div>
               <button type="button" className="primary-button shop-detail-addbtn" disabled={out} onClick={addToCart}>

@@ -76,6 +76,7 @@ export function RentalItemCard({ item, onOpen, onAdd, added, selected }) {
             type="button"
             className={`primary-button shop-add-btn ${added ? "is-added" : ""}`}
             disabled={out}
+            aria-label={out?`${item.name} is unavailable`:`Add ${item.name} to cart`}
             onClick={e => { e.stopPropagation(); onAdd?.(item); }}
             data-no-page-loading
           >

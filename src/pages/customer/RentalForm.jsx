@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { CustomerShell } from "../../components/customer/CustomerShell";
+import { CustomerProgress } from "../../components/customer/CustomerProgress";
 import { PrivacyConsentModal } from "../../components/customer/PrivacyConsentModal";
 import { useCart } from "../../context/CartContext";
 import { publicApi, publicApiForm } from "../../lib/publicApi";
@@ -35,6 +36,8 @@ export function CustomerRentalForm() {
   const [result, setResult] = useState(null);
   const [business, setBusiness] = useState(null);
   const [agreed, setAgreed] = useState(false);
+  const now=new Date();
+  const minRentalDate=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
 
   useEffect(() => { if (items.length === 0 && !result) navigate("/shop/cart", { replace: true }); }, [items, result, navigate]);
   useEffect(() => { publicApi("/public/business-info").then(d => setBusiness(d.business || {})).catch(() => {}); }, []);
@@ -116,6 +119,7 @@ export function CustomerRentalForm() {
     const isGcash = (result.payment_method || form.payment_method) === "gcash";
     return <CustomerShell hideFloatingCart>
       <section className="admin-card shop-success" aria-labelledby="request-success-title">
+        <CustomerProgress current="confirmation"/>
         <div className="shop-success-mark" aria-hidden="true">✓</div>
         <p className="home-eyebrow">Request confirmation</p>
         <h1 id="request-success-title">Request Submitted Successfully</h1>
@@ -151,9 +155,10 @@ export function CustomerRentalForm() {
   </CustomerShell>;
 
   return <CustomerShell title="Complete your rental request" subtitle="Fill out the information below. Review your booking summary before submitting." hideFloatingCart>
-    <div className="shop-request-layout">
+    <CustomerProgress current="details"/>
+    <form className="shop-request-layout" onSubmit={e=>{e.preventDefault();openConfirm()}}>
       <div className="shop-request-main">
-        {error && <div className="login-error">{error}</div>}
+        {error && <div className="login-error" role="alert">{error}</div>}
 
         <section className="admin-card form-section shop-request-section">
           <div className="form-section-title"><span>1</span><div><h2>Customer information</h2><p>Your personal and contact details.</p></div></div>
@@ -169,7 +174,7 @@ export function CustomerRentalForm() {
         <section className="admin-card form-section shop-request-section">
           <div className="form-section-title"><span>2</span><div><h2>Rental information</h2><p>Set your rental period and preferred options.</p></div></div>
           <div className="form-grid shop-request-rental-fields">
-            <div className="form-group"><label>Rental start date <span className="required">*</span></label><input required type="date" value={form.start_date} onChange={e => setForm({ ...form, start_date:e.target.value })} /></div>
+            <div className="form-group"><label>Rental start date <span className="required">*</span></label><input required type="date" min={minRentalDate} value={form.start_date} onChange={e => setForm({ ...form, start_date:e.target.value })} /></div>
             <div className="form-group"><label>Rental end date <span className="required">*</span></label><input required type="date" min={form.start_date || undefined} value={form.end_date} onChange={e => setForm({ ...form, end_date:e.target.value })} /></div>
             <div className="form-group"><label>Fulfillment</label><select value={form.fulfillment} onChange={e => setForm({ ...form, fulfillment:e.target.value })}><option value="pickup">Pickup</option><option value="delivery">Delivery</option></select></div>
             <div className="form-group"><label>Payment method</label><select value={form.payment_method} onChange={e => setForm({ ...form, payment_method:e.target.value })}><option value="cash">Cash</option><option value="gcash">GCash</option><option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select></div>
@@ -185,7 +190,7 @@ export function CustomerRentalForm() {
               <div className="shop-request-item-name"><strong>{x.name}</strong><small>{x.category}</small></div>
               <div><small>Quantity</small><strong>{x.quantity}</strong></div>
               <div><small>Duration</small><strong>{days} day{days === 1 ? "" : "s"}</strong></div>
-              <div className={`shop-request-availability ${availability[x.item_id]?.available ? "ok" : availability[x.item_id] ? "bad" : ""}`}>{!form.start_date || !form.end_date ? "Select dates" : availability[x.item_id] ? (availability[x.item_id].available ? `Available: ${availability[x.item_id].available_quantity}` : `Only ${availability[x.item_id].available_quantity} available`) : "Checking..."}</div>
+              <div className={`shop-request-availability ${availability[x.item_id]?.available ? "ok" : availability[x.item_id] ? "bad" : ""}`} aria-live="polite">{!form.start_date || !form.end_date ? "Select dates" : availability[x.item_id] ? (availability[x.item_id].available ? `Available: ${availability[x.item_id].available_quantity}` : `Only ${availability[x.item_id].available_quantity} available`) : "Checking..."}</div>
               <div className="shop-request-item-total"><strong>{peso(x.rental)}</strong><small>Rental total</small></div>
             </article>)}
           </div>
@@ -195,10 +200,10 @@ export function CustomerRentalForm() {
         <section className="admin-card form-section shop-request-section">
           <div className="form-section-title"><span>4</span><div><h2>Upload ID</h2><p>A valid ID is required for verification.</p></div></div>
           <div className="shop-request-upload">
-            <div className="form-group"><label>ID document <span className="required">*</span></label><input type="file" accept={ID_TYPES.join(",")} onChange={onPickFile} /></div>
+            <div className="form-group"><label>ID document <span className="required">*</span></label><input required type="file" accept={ID_TYPES.join(",")} onChange={onPickFile} /></div>
             <small>Accepted formats: JPG, PNG, PDF. Maximum size: 5MB.</small>
           </div>
-          {idFileError && <div className="login-error">{idFileError}</div>}
+          {idFileError && <div className="login-error" role="alert">{idFileError}</div>}
           {idFile && <div className="shop-file-preview"><span>{idFile.name}</span><button type="button" className="mini-button" onClick={() => setIdFile(null)}>Replace</button></div>}
         </section>
       </div>
@@ -219,29 +224,29 @@ export function CustomerRentalForm() {
           <div><span>Security deposit</span><strong>{peso(depositSubtotal)}</strong></div>
           <div className="grand"><span>Estimated total</span><strong>{peso(total)}</strong></div>
         </div>
-        <button type="button" className="primary-button shop-request-submit" onClick={openConfirm}>Request to Rent</button>
+        <button type="submit" className="primary-button shop-request-submit">Review Rental Request</button>
         <p className="shop-request-safe">Your information is used only to process and verify this rental request.</p>
         <button type="button" className="secondary-button shop-request-back" onClick={() => setLeaveConfirm(true)}>Back to Cart</button>
         {(business?.business_phone || business?.business_email || business?.business_address) && <div className="shop-request-contact">
           <strong>Business contact</strong>
-          {business.business_phone && <span>{business.business_phone}</span>}
-          {business.business_email && <span>{business.business_email}</span>}
+          {business.business_phone && <a href={`tel:${business.business_phone}`}>{business.business_phone}</a>}
+          {business.business_email && <a href={`mailto:${business.business_email}`}>{business.business_email}</a>}
           {business.business_address && <span>{business.business_address}</span>}
         </div>}
       </aside>
-    </div>
+    </form>
 
-    {leaveConfirm && <div className="modal-backdrop" onClick={() => setLeaveConfirm(false)}><div className="modal confirm-modal" onClick={e => e.stopPropagation()}>
-      <h3>Leave Rental Request?</h3>
-      <p>Going back to the cart will clear everything you've entered in this rental request.</p>
+    {leaveConfirm && <div className="modal-backdrop" onClick={() => setLeaveConfirm(false)}><div className="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="leave-request-title" aria-describedby="leave-request-description" onClick={e => e.stopPropagation()}>
+      <h3 id="leave-request-title">Leave Rental Request?</h3>
+      <p id="leave-request-description">Going back to the cart will clear everything you've entered in this rental request.</p>
       <div className="confirm-modal-actions">
-        <button className="secondary-button" onClick={() => setLeaveConfirm(false)}>Cancel</button>
-        <button className="primary-button" data-customer-nav onClick={confirmBackToCart}>Continue</button>
+        <button type="button" className="secondary-button" onClick={() => setLeaveConfirm(false)}>Cancel</button>
+        <button type="button" className="primary-button" data-customer-nav onClick={confirmBackToCart}>Continue</button>
       </div>
     </div></div>}
 
-    {confirming && <div className="modal-backdrop" onClick={() => !submitting && setConfirming(false)}><div className="modal confirm-modal confirm-modal-review" onClick={e => e.stopPropagation()}>
-      <h3>Confirm your rental request</h3>
+    {confirming && <div className="modal-backdrop" onClick={() => !submitting && setConfirming(false)}><div className="modal confirm-modal confirm-modal-review" role="dialog" aria-modal="true" aria-labelledby="confirm-request-title" onClick={e => e.stopPropagation()}>
+      <h3 id="confirm-request-title">Confirm your rental request</h3>
       <div className="shop-review-list">
         {lines.map(x => <div key={x.item_id}><span>{x.name} × {x.quantity}</span><strong>{peso(x.rental)}</strong></div>)}
         <div><span>Dates</span><strong>{form.start_date} → {form.end_date} ({days} day{days === 1 ? "" : "s"})</strong></div>
@@ -254,8 +259,8 @@ export function CustomerRentalForm() {
       </div>
       <p className="muted">Confirming sends this request to our team. It will be marked as waiting for approval — this is not a confirmed booking yet.</p>
       <div className="confirm-modal-actions">
-        <button className="secondary-button" disabled={submitting} onClick={() => setConfirming(false)}>Edit</button>
-        <button className={`primary-button ${submitting ? "is-loading" : ""}`} disabled={submitting} aria-busy={submitting} onClick={submit}>{submitting ? "Confirming…" : "Continue to Confirm"}</button>
+        <button type="button" className="secondary-button" disabled={submitting} onClick={() => setConfirming(false)}>Edit details</button>
+        <button type="button" className={`primary-button ${submitting ? "is-loading" : ""}`} disabled={submitting} aria-busy={submitting} onClick={submit}>{submitting ? "Submitting…" : "Submit Rental Request"}</button>
       </div>
     </div></div>}
   </CustomerShell>;

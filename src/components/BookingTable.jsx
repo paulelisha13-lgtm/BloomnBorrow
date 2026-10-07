@@ -2,5 +2,17 @@ import React from "react";
 import { peso } from "../lib/format";
 
 export function BookingTable({ rows=[] }) {
-  return <div className="table-wrap"><table><thead><tr><th>Booking</th><th>Customer</th><th>Item</th><th>Dates</th><th>Total</th><th>Status</th><th></th></tr></thead><tbody>{rows.map(b=><tr key={b.id}><td><strong>{b.id}</strong></td><td>{b.customer}</td><td>{b.item}</td><td>{b.dates}</td><td>{peso(b.total)}</td><td><span className={`status-pill ${b.status.toLowerCase()}`}>{b.status}</span></td><td>•••</td></tr>)}</tbody></table></div>
+  if(!rows.length)return <div className="shared-empty-state"><strong>No recent bookings</strong><span>New reservations will appear here.</span></div>;
+  return <div className="table-wrap dashboard-booking-table"><table>
+    <caption className="sr-only">Recent bookings</caption>
+    <thead><tr><th scope="col">Booking</th><th scope="col">Customer</th><th scope="col">Item</th><th scope="col">Dates</th><th scope="col">Total</th><th scope="col">Status</th></tr></thead>
+    <tbody>{rows.map(b=><tr key={b.id}>
+      <td data-label="Booking"><strong>{b.id}</strong></td>
+      <td data-label="Customer">{b.customer}</td>
+      <td data-label="Item">{b.item}</td>
+      <td data-label="Dates">{b.dates}</td>
+      <td data-label="Total" className="num">{peso(b.total)}</td>
+      <td data-label="Status"><span className={`status-pill ${b.status.toLowerCase()}`}>{b.status}</span></td>
+    </tr>)}</tbody>
+  </table></div>
 }

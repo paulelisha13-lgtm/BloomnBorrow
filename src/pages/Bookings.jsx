@@ -232,10 +232,10 @@ export function Bookings() {
     {error&&<div className="login-error">{error}</div>}
 
     <section className="kpi-grid">
-      <Kpi index={0} icon="📋" label="Total bookings" value={stats.total} detail="All time"/>
-      <Kpi index={1} icon="⏳" label="Pending" value={stats.pending} detail="Awaiting approval"/>
-      <Kpi index={2} icon="🔄" label="Active" value={stats.active} detail="Confirmed / ready / rented"/>
-      <Kpi index={3} icon="⚠" pulseIcon label="Overdue" value={stats.overdue} detail="Needs attention"/>
+      <Kpi index={0} label="Total bookings" value={stats.total} detail="All time"/>
+      <Kpi index={1} label="Pending" value={stats.pending} detail="Awaiting approval"/>
+      <Kpi index={2} label="Active" value={stats.active} detail="Confirmed / ready / rented"/>
+      <Kpi index={3} label="Overdue" value={stats.overdue} detail="Needs attention"/>
     </section>
 
     <div className="admin-page-toolbar">

@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCart } from "../../context/CartContext";
 import { peso } from "../../lib/format";
@@ -9,25 +9,29 @@ import { peso } from "../../lib/format";
 export function CartDrawer({ onClose }) {
   const navigate = useNavigate();
   const { items, count, setQuantity, removeItem } = useCart();
+  const closeRef=useRef(null);
   const dailyTotal = items.reduce((sum, x) => sum + x.daily_price * x.quantity, 0);
   const depositTotal = items.reduce((sum, x) => sum + x.security_deposit * x.quantity, 0);
 
   useEffect(() => {
+    const previousOverflow=document.body.style.overflow;
+    document.body.style.overflow="hidden";
+    closeRef.current?.focus();
     const onKey = e => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow=previousOverflow; };
   }, [onClose]);
 
   const go = to => { onClose(); navigate(to); };
 
   return <div className="shop-cart-drawer-backdrop" onClick={onClose}>
-    <aside className="shop-cart-drawer" onClick={e => e.stopPropagation()} aria-label="Cart">
+    <aside className="shop-cart-drawer" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="cart-drawer-title">
       <header className="shop-cart-drawer-head">
         <div>
-          <h2>Your Cart</h2>
+          <h2 id="cart-drawer-title">Your Cart</h2>
           <small>{count} item{count === 1 ? "" : "s"}</small>
         </div>
-        <button type="button" className="booking-modal-close" onClick={onClose} aria-label="Close cart">×</button>
+        <button ref={closeRef} type="button" className="booking-modal-close" onClick={onClose} aria-label="Close cart">×</button>
       </header>
 
       {items.length === 0 ? <div className="shop-cart-drawer-empty">
@@ -43,9 +47,9 @@ export function CartDrawer({ onClose }) {
               <small>{x.category} · {peso(x.daily_price)}/day</small>
               <div className="shop-cart-drawer-item-foot">
                 <div className="shop-qty-stepper">
-                  <button type="button" onClick={() => setQuantity(x.item_id, x.quantity - 1)} disabled={x.quantity <= 1} aria-label="Decrease quantity">−</button>
-                  <input type="number" min="1" max={x.available_quantity || undefined} value={x.quantity} onChange={e => setQuantity(x.item_id, Number(e.target.value) || 1)} aria-label="Quantity" />
-                  <button type="button" onClick={() => setQuantity(x.item_id, x.quantity + 1)} disabled={x.quantity >= (x.available_quantity ?? Infinity)} aria-label="Increase quantity">+</button>
+                  <button type="button" onClick={() => setQuantity(x.item_id, x.quantity - 1)} disabled={x.quantity <= 1} aria-label={`Decrease ${x.name} quantity`}>−</button>
+                  <input type="number" min="1" max={x.available_quantity || undefined} value={x.quantity} onChange={e => setQuantity(x.item_id, Number(e.target.value) || 1)} aria-label={`${x.name} quantity`} />
+                  <button type="button" onClick={() => setQuantity(x.item_id, x.quantity + 1)} disabled={x.quantity >= (x.available_quantity ?? Infinity)} aria-label={`Increase ${x.name} quantity`}>+</button>
                 </div>
                 <strong className="shop-cart-drawer-line-total">{peso(x.daily_price * x.quantity)}<span>/day</span></strong>
               </div>

@@ -24,6 +24,30 @@ const readableStatus = value => String(value || "Not available")
   .replace(/_/g, " ")
   .replace(/\b\w/g, letter => letter.toUpperCase());
 
+const BOOKING_STEPS = [
+  ["pending","Request received"],
+  ["confirmed","Approved"],
+  ["ready","Ready for pickup or delivery"],
+  ["rented","Rental in progress"],
+  ["returned","Items returned"],
+  ["completed","Complete"]
+];
+
+function BookingProgress({ status }) {
+  if(["cancelled","rejected"].includes(status))return <section className="shop-booking-progress is-closed" aria-label="Booking progress">
+    <h3>Booking progress</h3>
+    <ol><li className="complete"><span aria-hidden="true">✓</span><strong>Request received</strong></li><li className="current"><span aria-hidden="true">!</span><strong>{status==="rejected"?"Request declined":"Booking cancelled"}</strong></li></ol>
+  </section>;
+  const effective=status==="overdue"?"rented":status;
+  const currentIndex=Math.max(0,BOOKING_STEPS.findIndex(([key])=>key===effective));
+  return <section className="shop-booking-progress" aria-label="Booking progress">
+    <h3>Booking progress</h3>
+    <ol>{BOOKING_STEPS.map(([key,label],index)=><li key={key} className={index<currentIndex?"complete":index===currentIndex?"current":""} aria-current={index===currentIndex?"step":undefined}>
+      <span aria-hidden="true">{index<currentIndex?"✓":index+1}</span><strong>{label}</strong>
+    </li>)}</ol>
+  </section>;
+}
+
 export function CustomerBookingStatus() {
   const [bookingNo, setBookingNo] = useState("");
   const [email, setEmail] = useState("");
@@ -117,12 +141,13 @@ export function CustomerBookingStatus() {
 
     {!accessToken && <section className="admin-card shop-booking-form shop-status-lookup">
       <form onSubmit={submit} className="shop-status-lookup-form">
-        {error && <div className="login-error">{error}</div>}
+        {error && <div className="login-error" role="alert">{error}</div>}
         <div className="shop-status-fields">
-          <label>Booking number<input value={bookingNo} onChange={e => setBookingNo(e.target.value)} placeholder="RF-000006" autoComplete="off" required /></label>
+          <label>Booking number<input value={bookingNo} onChange={e => setBookingNo(e.target.value.toUpperCase())} placeholder="RF-000006" autoComplete="off" aria-describedby="booking-number-help" required /></label>
           <label>Email address<input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" required /></label>
           <button type="submit" className={`primary-button ${loading ? "is-loading" : ""}`} disabled={loading} aria-busy={loading}>{loading ? "Checking..." : "Check status"}</button>
         </div>
+        <p className="shop-status-help" id="booking-number-help">You can find your booking number in the confirmation shown after submitting your request or in your rental email.</p>
       </form>
     </section>}
 
@@ -132,6 +157,7 @@ export function CustomerBookingStatus() {
         <span className={`status-pill ${booking.status}`}>{STATUS_LABELS[booking.status] || readableStatus(booking.status)}</span>
       </div>
       {accessToken && <p className="shop-status-private-note">You opened this booking through a private email link. Do not forward or share it.</p>}
+      <BookingProgress status={booking.status}/>
       <dl className="shop-status-details">
         <div>
           <dt>Rental period</dt>
@@ -154,7 +180,7 @@ export function CustomerBookingStatus() {
         <h3>GCash payment</h3>
         {!booking.gcash_instructions_sent ? <p>Your GCash QR code and payment instructions will be emailed after Admin reviews and approves your request.</p> :
           ["cancelled","rejected","completed"].includes(booking.status) ? <p>This request is closed, so payment proof uploads are no longer available.</p> :
-          booking.payment_proof_status === "submitted" ? <div className="shop-proof-complete"><strong>Payment proof under review</strong><span>Admin has received your screenshot. No further action is needed until the review is complete.</span></div> :
+          booking.payment_proof_status === "submitted" ? <div className="shop-proof-complete" role="status"><strong>Payment proof under review</strong><span>Admin has received your screenshot. No further action is needed until the review is complete.</span></div> :
           <>
             {booking.payment_proof_status === "approved" && <div className="shop-proof-complete"><strong>Payment proof approved</strong><span>{peso(Number(booking.payment_verified_amount||0))} was verified and recorded{booking.payment_reference?` · Ref ${booking.payment_reference}`:""}.{Number(booking.balance_due||0)<=0?" Your booking is now fully paid.":` Remaining balance: ${peso(Number(booking.balance_due||0))}.`}</span></div>}
             {booking.payment_proof_status === "rejected" && <div className="shop-proof-rejected"><strong>Replacement screenshot required</strong><span>{booking.payment_proof_review_note}</span></div>}
@@ -164,7 +190,8 @@ export function CustomerBookingStatus() {
               <label>Payment screenshot
                 <input type="file" accept={PROOF_TYPES.join(",")} onChange={chooseProof} required />
               </label>
-              {proofError && <div className="login-error">{proofError}</div>}
+              {proofFile&&<span className="shop-proof-selected">Selected: {proofFile.name}</span>}
+              {proofError && <div className="login-error" role="alert">{proofError}</div>}
               <button className={`primary-button ${uploadingProof ? "is-loading" : ""}`} disabled={uploadingProof || !proofFile} aria-busy={uploadingProof}>{uploadingProof ? "Uploading…" : booking.payment_proof_status === "rejected"?"Upload Replacement Proof":"Upload Payment Proof"}</button>
               <small>JPG, PNG, or WebP · up to 5MB</small>
             </form>}

@@ -99,16 +99,21 @@ export function CustomerHome() {
   const { addItem } = useCart();
   const heroRef = useRef(null);
   const [items, setItems] = useState([]);
+  const [loadingItems,setLoadingItems]=useState(true);
+  const [catalogError,setCatalogError]=useState("");
   const [added, setAdded] = useState(null);
   const [selected, setSelected] = useState(null);
 
   useHeroParallax(heroRef);
 
-  // The homepage must stay useful even if the API is down, so a failed
-  // load just hides the featured section instead of showing an error page.
-  useEffect(() => {
-    publicApi("/public/items").then(d => setItems(d.items || [])).catch(() => {});
-  }, []);
+  // Keep the homepage useful if the API is unavailable: the main journey
+  // remains visible while the featured section shows a small retry state.
+  const loadFeatured=()=>{
+    setLoadingItems(true);
+    setCatalogError("");
+    publicApi("/public/items").then(d => setItems(d.items || [])).catch(e => setCatalogError(e.message||"The catalog is temporarily unavailable.")).finally(()=>setLoadingItems(false));
+  };
+  useEffect(() => { loadFeatured(); }, []);
 
   const featured = items.filter(x => x.available_quantity > 0).slice(0, 4);
 
@@ -136,6 +141,9 @@ export function CustomerHome() {
           <Link className="primary-button" to="/shop/browse">Browse Rentals</Link>
           <Link className="secondary-button" to="/shop/status">Check Booking Status</Link>
         </div>
+        <div className="home-trust-row home-hero-reveal" style={{ "--hero-delay": "500ms", "--hero-duration": "540ms" }} aria-label="Rental benefits">
+          <span>No account required</span><span>Live availability</span><span>Easy status tracking</span>
+        </div>
       </div>
     </section>
   );
@@ -156,7 +164,11 @@ export function CustomerHome() {
       </div>
     </section>
 
-    {featured.length > 0 && <section className="home-section">
+    {loadingItems&&<section className="home-section" aria-label="Loading featured rentals"><div className="home-section-head"><p className="home-eyebrow">Our catalog</p><h2>Ready to rent today</h2></div><div className="shop-catalog-skeleton"><span className="sr-only">Loading featured rentals</span>{[0,1,2,3].map(x=><i key={x}/>)}</div></section>}
+
+    {!loadingItems&&catalogError&&<section className="home-section"><div className="shop-inline-alert" role="alert"><div><strong>Featured rentals are unavailable right now.</strong><span>{catalogError}</span></div><button type="button" className="secondary-button" onClick={loadFeatured}>Try again</button></div></section>}
+
+    {!loadingItems&&!catalogError&&featured.length > 0 && <section className="home-section">
       <div className="home-section-head">
         <p className="home-eyebrow">Our catalog</p>
         <h2>Ready to rent today</h2>

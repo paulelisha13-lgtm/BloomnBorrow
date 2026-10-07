@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, clearAuth, getStoredUser } from "../../lib/api";
+import { AdminIcon } from "./AdminIcon";
 
 export function AdminProfileMenu() {
   const navigate = useNavigate();
@@ -34,24 +35,24 @@ export function AdminProfileMenu() {
     <button type="button" className="admin-profile-trigger" aria-haspopup="menu" aria-expanded={open} onClick={()=>setOpen(v=>!v)}>
       <div className="avatar">{initials}</div>
       <div className="admin-profile-copy"><strong>{user.full_name || "Admin User"}</strong><small>{user.role || "admin"}</small></div>
-      <span className={`profile-chevron ${open?"open":""}`}>⌄</span>
+      <AdminIcon name="chevronDown" size={16} className={`profile-chevron ${open?"open":""}`}/>
     </button>
     {open && <div className="admin-profile-dropdown" role="menu">
       <button type="button" role="menuitem" onClick={()=>{setOpen(false);navigate("/admin/account-settings")}}>
-        <span>⚙</span><div><strong>Account Settings</strong><small>Profile and password</small></div>
+        <span><AdminIcon name="user" size={17}/></span><div><strong>Account Settings</strong><small>Profile and password</small></div>
       </button>
       <div className="profile-menu-divider"/>
       <button type="button" role="menuitem" className="profile-signout" disabled={signingOut} onClick={()=>{setOpen(false);setLogoutConfirm(true)}}>
-        <span>↪</span><div><strong>Sign Out</strong><small>End this session</small></div>
+        <span><AdminIcon name="logout" size={17}/></span><div><strong>Sign Out</strong><small>End this session</small></div>
       </button>
     </div>}
 
-    {logoutConfirm && <div className="modal-backdrop" onClick={()=>!signingOut&&setLogoutConfirm(false)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
-      <h3>Sign Out</h3>
-      <p>Are you sure you want to sign out?</p>
+    {logoutConfirm && <div className="modal-backdrop" onClick={()=>!signingOut&&setLogoutConfirm(false)}><div className="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="signout-title" aria-describedby="signout-description" onClick={e=>e.stopPropagation()}>
+      <h3 id="signout-title">Sign Out</h3>
+      <p id="signout-description">Are you sure you want to sign out?</p>
       <div className="confirm-modal-actions">
-        <button className="secondary-button" disabled={signingOut} onClick={()=>setLogoutConfirm(false)}>Cancel</button>
-        <button className="primary-button" disabled={signingOut} onClick={logout}>{signingOut?"Signing out...":"Sign Out"}</button>
+        <button type="button" className="secondary-button" disabled={signingOut} onClick={()=>setLogoutConfirm(false)}>Cancel</button>
+        <button type="button" className="primary-button" disabled={signingOut} onClick={logout}>{signingOut?"Signing out...":"Sign Out"}</button>
       </div>
     </div></div>}
   </div>;
