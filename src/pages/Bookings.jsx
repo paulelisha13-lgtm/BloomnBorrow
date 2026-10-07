@@ -51,6 +51,10 @@ export function Bookings() {
   const [proofReviewForm,setProofReviewForm]=useState({verified_amount:"",gcash_reference:"",review_note:""});
   const [proofReviewError,setProofReviewError]=useState("");
   const [proofReviewSubmitting,setProofReviewSubmitting]=useState(false);
+  const [showDeliveryQuote,setShowDeliveryQuote]=useState(false);
+  const [deliveryQuote,setDeliveryQuote]=useState("");
+  const [deliveryQuoteError,setDeliveryQuoteError]=useState("");
+  const [deliveryQuoteSubmitting,setDeliveryQuoteSubmitting]=useState(false);
   // Each form modal remembers how it looked when opened, so closing it only
   // asks for confirmation when something was actually entered or changed.
   const [paymentBaseline,setPaymentBaseline]=useState("");
@@ -148,6 +152,24 @@ export function Bookings() {
     setPaymentForm(form);
     setPaymentBaseline(JSON.stringify(form));
     setShowPaymentModal(true);
+  };
+
+  const openDeliveryQuote=()=>{
+    setDeliveryQuote(detail?.delivery_fee_confirmed_at?String(Number(detail.delivery_fee||0)):String(business?.delivery_fee||""));
+    setDeliveryQuoteError("");
+    setShowDeliveryQuote(true);
+  };
+
+  const submitDeliveryQuote=async amountOverride=>{
+    const amount=amountOverride===undefined?Number(deliveryQuote):Number(amountOverride);
+    if(!Number.isFinite(amount)||amount<0)return setDeliveryQuoteError("Enter a valid delivery fee, or choose Confirm free delivery.");
+    setDeliveryQuoteSubmitting(true);setDeliveryQuoteError("");
+    try{
+      const data=await api(`/admin/bookings/${detail.id}/delivery-fee`,{method:"PATCH",body:JSON.stringify({amount})});
+      setShowDeliveryQuote(false);
+      await open(detail.id);await load();
+      setActionNotice(data.message);
+    }catch(e){setDeliveryQuoteError(e.message)}finally{setDeliveryQuoteSubmitting(false)}
   };
 
   const submitPayment=async()=>{
@@ -306,6 +328,8 @@ export function Bookings() {
       const balance=money.outstanding;
       const isPaid=balance<=0;
       const isPartial=totalPaid>0&&!isPaid;
+      const deliveryAddress=[detail.delivery_address,detail.city,detail.province,detail.postal_code].filter(Boolean).join(", ");
+      const mapsUrl=`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(deliveryAddress)}`;
 
       return <div className="modal-backdrop booking-drawer-backdrop" onClick={()=>setDetail(null)}><div className="modal booking-modal" role="dialog" aria-modal="true" aria-labelledby="booking-detail-title" onClick={e=>e.stopPropagation()}>
       <button className="booking-modal-close" onClick={()=>setDetail(null)} aria-label="Close booking details">×</button>
@@ -328,6 +352,19 @@ export function Bookings() {
         <div className="booking-stat-card"><div><small>Total</small><b>{peso(grandTotal)}</b></div></div>
       </div>
 
+      {detail.fulfillment==="delivery"&&<div className={`booking-delivery-review ${detail.delivery_fee_confirmed_at?"is-confirmed":"is-pending"}`}>
+        <div className="booking-delivery-head">
+          <div><small>Delivery review</small><strong>{detail.delivery_fee_confirmed_at?(Number(detail.delivery_fee)>0?`${peso(Number(detail.delivery_fee))} confirmed`:"Free delivery confirmed"):"Fee not reviewed"}</strong></div>
+          <span>{detail.delivery_fee_confirmed_at?"Ready for approval":"Required before approval"}</span>
+        </div>
+        <div className="booking-delivery-address"><small>Customer address</small><p>{deliveryAddress||"No complete address provided"}</p></div>
+        <p className="booking-delivery-zone"><strong>Free-delivery reference:</strong> {business?.free_delivery_area||"Biclatan, General Trias, Cavite and verified nearby areas"}</p>
+        <div className="booking-delivery-actions">
+          {deliveryAddress&&<a className="secondary-button" href={mapsUrl} target="_blank" rel="noreferrer">Open in Maps</a>}
+          {detail.status==="pending"&&<button type="button" className="primary-button" onClick={openDeliveryQuote}>{detail.delivery_fee_confirmed_at?"Update delivery fee":"Review delivery fee"}</button>}
+        </div>
+      </div>}
+
       <div className="booking-modal-section">
         <div className="booking-section-header"><strong>Payment Summary</strong></div>
         <div className="payment-ledger-grid">
@@ -348,7 +385,7 @@ export function Bookings() {
         <div className="booking-actions-group">
           <div className="booking-actions-label">Workflow</div>
           <div className="booking-actions">
-            {detail.status==="pending"&&<><button className="primary-button" disabled={busy} onClick={()=>setApproveConfirm(true)}>Approve Booking</button><button className="secondary-button danger" onClick={()=>{setRejectReason("");setRejectConfirm(true)}}>Reject Booking</button></>}
+            {detail.status==="pending"&&<><button className="primary-button" disabled={busy||(detail.fulfillment==="delivery"&&!detail.delivery_fee_confirmed_at)} title={detail.fulfillment==="delivery"&&!detail.delivery_fee_confirmed_at?"Review and confirm the delivery fee first":""} onClick={()=>setApproveConfirm(true)}>Approve Booking</button><button className="secondary-button danger" onClick={()=>{setRejectReason("");setRejectConfirm(true)}}>Reject Booking</button></>}
             {["pending","confirmed","ready"].includes(detail.status)&&<button className="secondary-button" onClick={reschedule}>Reschedule Date</button>}
             {detail.status==="confirmed"&&<button className="primary-button" onClick={()=>act(`/admin/bookings/${detail.id}/status`,{status:"ready"})}>Mark as Ready</button>}
             {detail.status==="ready"&&<button className="primary-button" onClick={()=>setRentConfirm(true)}>{detail.fulfillment==="pickup"?"Confirm Pickup · Rented":"Mark as Rented"}</button>}
@@ -377,6 +414,7 @@ export function Bookings() {
           <div className="booking-actions">
             <a className="secondary-button" href={`${API_BASE}/admin/bookings/${detail.id}/id-document`} target="_blank" rel="noreferrer">View Uploaded ID</a>
           </div>
+          {detail.rental_terms_accepted_at&&<p className="booking-action-note">Rental terms {detail.rental_terms_version||""} accepted {new Date(detail.rental_terms_accepted_at).toLocaleString("en-PH")}.</p>}
         </div>}
         <div className="booking-actions-group">
           <div className="booking-actions-label">Manage</div>
@@ -498,6 +536,24 @@ export function Bookings() {
       <div className="confirm-modal-actions">
         <button className="secondary-button" onClick={()=>setRentConfirm(false)}>Cancel</button>
         <button className="primary-button" disabled={busy} onClick={()=>{setRentConfirm(false);act(`/admin/bookings/${detail.id}/status`,{status:"rented",note:detail.fulfillment==="pickup"?"Items picked up by customer":"Items delivered to customer"})}}>Confirm</button>
+      </div>
+    </div></div>}
+
+    {showDeliveryQuote&&detail&&<div className="modal-backdrop" onClick={()=>!deliveryQuoteSubmitting&&setShowDeliveryQuote(false)}><div className="modal confirm-modal delivery-quote-modal" role="dialog" aria-modal="true" aria-labelledby="delivery-quote-title" onClick={e=>e.stopPropagation()}>
+      <span className="eyebrow">Delivery review</span>
+      <h3 id="delivery-quote-title">Confirm delivery fee</h3>
+      <p>Check the customer's complete address and compare it with your free-delivery coverage before approving the booking.</p>
+      <div className="delivery-quote-address"><small>Deliver to</small><strong>{[detail.delivery_address,detail.city,detail.province,detail.postal_code].filter(Boolean).join(", ")}</strong></div>
+      <div className="delivery-quote-zone"><small>Free-delivery reference</small><span>{business?.free_delivery_area||"Biclatan, General Trias, Cavite and verified nearby areas"}</span></div>
+      {deliveryQuoteError&&<div className="login-error" role="alert">{deliveryQuoteError}</div>}
+      <label className="delivery-quote-field">Fee for this booking
+        <div><span>₱</span><input type="number" min="0" step="0.01" value={deliveryQuote} onChange={e=>setDeliveryQuote(e.target.value)} placeholder="Enter amount"/></div>
+        <small>Use ₱0 only after confirming that the address qualifies for free delivery.</small>
+      </label>
+      <div className="delivery-quote-free"><button type="button" className="secondary-button" disabled={deliveryQuoteSubmitting} onClick={()=>submitDeliveryQuote(0)}>Confirm free delivery</button><span>For verified Biclatan or nearby coverage.</span></div>
+      <div className="confirm-modal-actions">
+        <button type="button" className="secondary-button" disabled={deliveryQuoteSubmitting} onClick={()=>setShowDeliveryQuote(false)}>Cancel</button>
+        <button type="button" className={`primary-button ${deliveryQuoteSubmitting?"is-loading":""}`} disabled={deliveryQuoteSubmitting||deliveryQuote===""} onClick={()=>submitDeliveryQuote()}>{deliveryQuoteSubmitting?"Saving…":"Save delivery fee"}</button>
       </div>
     </div></div>}
 

@@ -14,7 +14,7 @@ import { INVOICE_BRANDING_KEYS, renderInvoiceHtml, renderInvoiceText } from "../
 import { sendMail } from "../lib/mailer.js";
 import { escHtml, peso } from "../lib/format.js";
 import { allocateVerifiedGcashPayment } from "../lib/gcashPayment.js";
-import { lifecycleEmailResponse, sendBookingLifecycleEmail } from "../lib/bookingEmails.js";
+import { buildGcashInstructionsEmail, lifecycleEmailResponse, sendBookingLifecycleEmail } from "../lib/bookingEmails.js";
 import { bookingStatusUrl } from "../lib/bookingAccess.js";
 
 const router = Router();
@@ -63,7 +63,8 @@ router.post("/api/admin/bookings", authenticate, requireRole("admin","manager","
     await conn.beginTransaction();
     const { bookingId, bookingNo, customer, grandTotal } = await createBooking(conn, req.body, {
       historyNote: "Admin booking created",
-      changedByUserId: req.user.id
+      changedByUserId: req.user.id,
+      deliveryFeeConfirmed: true
     });
     await conn.commit();
     await audit(req,"CREATE_BOOKING",null,{booking_id:bookingId,booking_no:bookingNo,customer_id:customer.id,grand_total:grandTotal});
@@ -217,15 +218,10 @@ router.patch("/api/admin/bookings/:id/payment-proof/review", authenticate, requi
     const statusUrl=bookingStatusUrl(id);
     const statusText=statusUrl?`\n\nOpen your secure booking page: ${statusUrl}`:"";
     const statusButton=statusUrl?`<p style="margin:20px 0"><a href="${escHtml(statusUrl)}" style="display:inline-block;padding:11px 17px;border-radius:9px;background:#089b9d;color:#fff;text-decoration:none;font-weight:700">View Booking and Payment</a></p>`:"";
-    if(approved){
-      const remaining=allocation?.outstandingAfter||0;
-      await sendMail({
-        to:booking.customer_email,
-        subject:`GCash payment approved — ${booking.booking_no}`,
-        text:`Hello ${booking.customer_name},\n\nYour GCash payment proof for ${booking.booking_no} has been approved.\n\nVerified amount: ${peso(verified_amount)}\nGCash reference: ${gcash_reference}\nRemaining balance: ${peso(remaining)}\n\n${remaining>0?`You may upload another payment proof from your secure booking page after paying the remaining balance.${statusText}\n\nThis private link expires and should not be forwarded.`:"Your payment has been recorded successfully."}\n\n${brand}`,
-        html:`<p>Hello ${escHtml(booking.customer_name)},</p><p>Your GCash payment proof for <strong>${escHtml(booking.booking_no)}</strong> has been approved.</p><ul><li><strong>Verified amount:</strong> ${peso(verified_amount)}</li><li><strong>GCash reference:</strong> ${escHtml(gcash_reference)}</li><li><strong>Remaining balance:</strong> ${peso(remaining)}</li></ul><p>${remaining>0?"You may upload another payment proof from your secure booking page after paying the remaining balance.":"Your payment has been recorded successfully."}</p>${remaining>0?`${statusButton}<p style="font-size:12px;color:#718687">This private link expires and should not be forwarded.</p>`:""}<p>${escHtml(brand)}</p>`
-      });
-    }else{
+    // An approved proof sends no email (customers only get approval, GCash
+    // instructions and completion). A rejected proof still emails because the
+    // customer must upload a replacement.
+    if(!approved){
       await sendMail({
         to:booking.customer_email,
         subject:`Action needed for GCash payment — ${booking.booking_no}`,
@@ -233,7 +229,7 @@ router.patch("/api/admin/bookings/:id/payment-proof/review", authenticate, requi
         html:`<p>Hello ${escHtml(booking.customer_name)},</p><p>We could not approve the GCash payment proof for <strong>${escHtml(booking.booking_no)}</strong>.</p><p><strong>Reason:</strong> ${escHtml(review_note)}</p><p>Open your secure booking page and upload a clear replacement screenshot.</p>${statusButton}<p style="font-size:12px;color:#718687">This private link expires and should not be forwarded.</p><p>${escHtml(brand)}</p>`
       });
     }
-    emailSent=true;
+    emailSent=!approved;
   } catch(error) {
     console.error(`[GCASH REVIEW EMAIL] ${booking.booking_no}:`,error.message);
     emailWarning="The review was saved, but the customer email could not be sent. Check the SMTP configuration and contact the customer manually.";
@@ -279,17 +275,46 @@ router.delete("/api/admin/bookings/:id", authenticate, requireRole("admin","mana
   res.json({ok:true});
 });
 
+router.patch("/api/admin/bookings/:id/delivery-fee", authenticate, requireRole("admin","manager","staff"), requireStaffCsrf, parseBody(schemas.deliveryQuote), async (req,res,next) => {
+  const id=Number(req.params.id);
+  if(!Number.isInteger(id)||id<=0) return res.status(400).json({message:"Invalid booking ID."});
+  const amount=Number(req.body.amount);
+  const conn=await db.getConnection();
+  try{
+    await conn.beginTransaction();
+    const [[booking]]=await conn.query("SELECT id,booking_no,status,fulfillment,rental_subtotal,deposit_total,delivery_fee,grand_total FROM bookings WHERE id=? FOR UPDATE",[id]);
+    if(!booking){await conn.rollback();return res.status(404).json({message:"Booking not found."});}
+    if(booking.fulfillment!=="delivery"){await conn.rollback();return res.status(409).json({message:"This booking is set for pickup and does not need a delivery quote."});}
+    if(booking.status!=="pending"){await conn.rollback();return res.status(409).json({message:"Delivery fees can only be confirmed while the request is pending."});}
+    const [[payments]]=await conn.query("SELECT COUNT(*) count FROM payments WHERE booking_id=? AND status='completed'",[id]);
+    if(Number(payments.count)>0){await conn.rollback();return res.status(409).json({message:"The delivery fee cannot change after a payment has been recorded."});}
+    const grandTotal=Number(booking.rental_subtotal)+Number(booking.deposit_total)+amount;
+    await conn.query("UPDATE bookings SET delivery_fee=?,delivery_fee_confirmed_at=NOW(),grand_total=? WHERE id=?",[amount,grandTotal,id]);
+    const note=amount===0?"Free delivery confirmed":"Delivery fee confirmed: "+peso(amount);
+    await conn.query("INSERT INTO booking_status_history(booking_id,from_status,to_status,changed_by_user_id,note) VALUES(?,?,?,?,?)",[id,booking.status,booking.status,req.user.id,note]);
+    await conn.commit();
+    await audit(req,"UPDATE_DELIVERY_FEE",null,{booking_id:id,booking_no:booking.booking_no,from:Number(booking.delivery_fee||0),to:amount,grand_total:{from:Number(booking.grand_total),to:grandTotal}});
+    res.json({booking:await bookingDetailById(id),message:amount===0?"Free delivery confirmed.":`Delivery fee set to ${peso(amount)}.`});
+  }catch(error){
+    try{await conn.rollback()}catch{}
+    next(error);
+  }finally{conn.release()}
+});
+
 router.patch("/api/admin/bookings/:id/status", authenticate, requireRole("admin","manager","staff"), async (req,res) => {
   const id=Number(req.params.id);
   const to=String(req.body.status||"");
   const note=String(req.body.note||"").slice(0,255);
-  const [[booking]] = await db.query("SELECT id,booking_no,status,customer_name FROM bookings WHERE id=?",[id]);
+  const [[booking]] = await db.query("SELECT id,booking_no,status,customer_name,fulfillment,delivery_fee_confirmed_at FROM bookings WHERE id=?",[id]);
   if(!booking) return res.status(404).json({message:"Booking not found."});
   if(to==="rejected" && !note.trim()) {
     return res.status(400).json({message:"A customer-facing rejection reason is required."});
   }
   if(!(validTransitions[booking.status]||[]).includes(to)) {
     return res.status(409).json({message:`Cannot move booking from ${booking.status} to ${to}.`});
+  }
+  if(to==="confirmed"&&booking.fulfillment==="delivery"&&!booking.delivery_fee_confirmed_at){
+    return res.status(409).json({message:"Review the delivery address and confirm the delivery fee first. Enter ₱0 when delivery is free."});
   }
   await db.query("UPDATE bookings SET status=? WHERE id=?",[to,id]);
   await db.query("INSERT INTO booking_status_history(booking_id,from_status,to_status,changed_by_user_id,note) VALUES(?,?,?,?,?)",[id,booking.status,to,req.user.id,note||null]);
@@ -469,17 +494,14 @@ router.post("/api/admin/bookings/:id/send-gcash-instructions", authenticate, req
   if (instructions.length > 2000) return res.status(400).json({message:"Payment instructions must be 2,000 characters or fewer."});
 
   const business = await getSettings(INVOICE_BRANDING_KEYS);
-  const businessName = business.business_name || "Bloom & Borrow";
-  const safeInstructions = escHtml(instructions).replace(/\r?\n/g,"<br>");
   const statusUrl = bookingStatusUrl(id);
-  const statusText = statusUrl ? `\n\nView your booking and upload payment proof: ${statusUrl}` : "";
-  const statusButton = statusUrl ? `<p style="margin:20px 0"><a href="${escHtml(statusUrl)}" style="display:inline-block;padding:11px 17px;border-radius:9px;background:#089b9d;color:#fff;text-decoration:none;font-weight:700">View Booking and Upload Payment Proof</a></p>` : "";
+  const email = buildGcashInstructionsEmail({booking,instructions,statusUrl,business});
   try {
     await sendMail({
       to:booking.customer_email,
-      subject:`GCash payment instructions for ${booking.booking_no} — ${businessName}`,
-      text:`Your rental request ${booking.booking_no} has been reviewed.\n\nAmount due: ${peso(Number(booking.grand_total))}\n\n${instructions}\n\nThe GCash QR code is attached to this email. After paying, use the secure link below to view your booking and upload your payment screenshot.${statusText}\n\nThis private link expires and should not be forwarded.`,
-      html:`<p>Your rental request <strong>${escHtml(booking.booking_no)}</strong> has been reviewed.</p><p><strong>Amount due:</strong> ${peso(Number(booking.grand_total))}</p><p>${safeInstructions}</p><p>The GCash QR code is attached below. After paying, use the secure button to view your booking and upload your payment screenshot.</p><p><img src="cid:gcash-payment-qr" alt="GCash payment QR code" style="display:block;max-width:320px;width:100%;height:auto"></p>${statusButton}<p style="font-size:12px;color:#718687">This private link expires and should not be forwarded.</p>`,
+      subject:email.subject,
+      text:email.text,
+      html:email.html,
       attachments:[{
         filename:req.file.originalname || "gcash-qr.png",
         content:req.file.buffer,
@@ -530,6 +552,7 @@ router.post("/api/admin/bookings/:id/send-status-email", authenticate, requireRo
   const delivery=await sendBookingLifecycleEmail({
     bookingId:id,
     event,
+    manual:true,
     context:{
       note:latestStatus?.note||"",
       late_fee:booking.inspection?.late_fee||0,

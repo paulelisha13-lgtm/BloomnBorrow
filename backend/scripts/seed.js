@@ -193,6 +193,12 @@ try {
     ["late_fee_per_day","250"],
     ["currency","PHP"],
     ["cancellation_policy","Bookings may be cancelled before preparation. Refunds are subject to payment status and business policy."],
+    ["free_delivery_area","Biclatan, General Trias, Cavite and nearby areas confirmed by Bloom & Borrow"],
+    ["delivery_policy","Addresses outside the free-delivery area are reviewed individually. Any delivery fee is based on distance and trip requirements and will be confirmed before the rental request is approved."],
+    ["rental_care_policy","The renter is responsible for the proper use, handling, and safekeeping of every rented item from receipt until return."],
+    ["loss_damage_policy","Lost, stolen, missing, or irreparably damaged items may be charged at replacement cost. Repairable damage may be charged based on the documented repair cost."],
+    ["inspection_policy","Rental items are checked before release and again upon return. Any issue found during return inspection will be documented and reviewed before the security deposit is settled."],
+    ["rental_terms_version","1.0"],
     ["notification_email_enabled","1"],
     ["notification_sms_enabled","0"]
   ];

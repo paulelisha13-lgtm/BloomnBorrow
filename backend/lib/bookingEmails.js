@@ -7,6 +7,11 @@ import { toDateOnly } from "./dates.js";
 
 const SETTINGS = ["notification_email_enabled","business_name","business_email","business_phone","business_address"];
 
+// Only these status changes email the customer automatically. GCash payment
+// instructions are sent separately by Admin. Admin can still send any other
+// status manually (send-status-email passes manual:true).
+export const AUTO_EMAIL_EVENTS=["confirmed","completed"];
+
 const titleCase = value => String(value || "").replace(/_/g," ").replace(/\b\w/g,char=>char.toUpperCase());
 const longDate = value => {
   const raw=toDateOnly(value);
@@ -46,6 +51,20 @@ export function buildBookingLifecycleEmail({booking,event,context={},business={}
   return {subject,text,html,heading:copy.heading};
 }
 
+// GCash payment instructions email, styled to match the lifecycle emails.
+export function buildGcashInstructionsEmail({booking,instructions,statusUrl="",business={}}) {
+  const brand=business.business_name||"Bloom & Borrow";
+  const amount=peso(Number(booking.grand_total||0));
+  const dates=`${longDate(booking.start_date)} – ${longDate(booking.end_date)}`;
+  const contact=[business.business_phone,business.business_email].filter(Boolean).join(" · ");
+  const subject=`GCash payment instructions for ${booking.booking_no} — ${brand}`;
+  const text=`Hello ${booking.customer_name},\n\nYour rental request ${booking.booking_no} has been reviewed.\n\nAmount due: ${amount}\nRental dates: ${dates}\n\n${instructions}\n\nThe GCash QR code is attached to this email. After paying, use the secure link below to view your booking and upload your payment screenshot.${statusUrl?`\n\nView your booking and upload payment proof: ${statusUrl}`:""}\n\nThis private link expires and should not be forwarded.\n\n${brand}${contact?`\n${contact}`:""}`;
+  const safeInstructions=escHtml(instructions).replace(/\r?\n/g,"<br>");
+  const button=statusUrl?`<table role="presentation" cellpadding="0" cellspacing="0" style="margin:22px 0 4px"><tr><td style="border-radius:9px;background:#089b9d"><a href="${escHtml(statusUrl)}" style="display:inline-block;padding:12px 20px;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px">View Booking &amp; Upload Payment Proof</a></td></tr></table>`:"";
+  const html=`<!doctype html><html><body style="margin:0;background:#f4f8f7;font-family:Arial,sans-serif;color:#173d3e"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:28px 12px"><table role="presentation" width="560" cellpadding="0" cellspacing="0" style="width:100%;max-width:560px;background:#fff;border:1px solid #dcebea;border-radius:14px;overflow:hidden"><tr><td style="padding:22px 26px;background:#089b9d;color:#fff"><strong style="font-size:20px">${escHtml(brand)}</strong></td></tr><tr><td style="padding:26px"><div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#078487">${escHtml(booking.booking_no)}</div><h1 style="margin:7px 0 12px;font-size:24px;color:#173d3e">GCash payment instructions</h1><p style="margin:0 0 20px;font-size:14px;line-height:1.7;color:#536c6d">Hello ${escHtml(booking.customer_name)},<br><br>Your rental request has been reviewed. Please pay the amount below using the GCash QR code in this email.</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4faf9;border-radius:10px"><tr><td style="padding:14px;font-size:13px;line-height:1.8"><strong>Amount due:</strong> <span style="font-size:18px;font-weight:700;color:#078487">${escHtml(amount)}</span><br><strong>Rental dates:</strong> ${escHtml(dates)}</td></tr></table><p style="margin:20px 0 0;font-size:14px;line-height:1.7;color:#536c6d">${safeInstructions}</p><div style="margin:22px 0 0;text-align:center"><img src="cid:gcash-payment-qr" alt="GCash payment QR code" style="display:inline-block;max-width:280px;width:100%;height:auto;border:1px solid #dcebea;border-radius:12px;padding:8px;background:#fff"></div><p style="margin:16px 0 0;font-size:13px;line-height:1.7;color:#536c6d;text-align:center">After paying, use the button below to view your booking and upload your payment screenshot.</p><div style="text-align:center">${button}</div></td></tr><tr><td style="padding:16px 26px;border-top:1px solid #e4eeee;font-size:11px;line-height:1.6;color:#718687">This private link expires and should not be forwarded.<br>${escHtml([business.business_address,contact].filter(Boolean).join(" · ")||brand)}</td></tr></table></td></tr></table></body></html>`;
+  return {subject,text,html};
+}
+
 async function recordDelivery({booking,event,heading,status}) {
   try {
     await addNotification({
@@ -64,7 +83,8 @@ async function recordDelivery({booking,event,heading,status}) {
 // Best-effort delivery: callers have already committed the booking change.
 // The result is explicit so an Admin response can say sent, disabled, or failed
 // without ever rolling back the business action or encouraging a duplicate.
-export async function sendBookingLifecycleEmail({bookingId,event,context={}}) {
+export async function sendBookingLifecycleEmail({bookingId,event,context={},manual=false}) {
+  if(!manual&&!AUTO_EMAIL_EVENTS.includes(event))return {sent:false,skipped:true,silent:true,reason:""};
   try {
     const business=await getSettings(SETTINGS);
     const enabled=!["0","false","off","no"].includes(String(business.notification_email_enabled??"1").toLowerCase());
@@ -90,6 +110,7 @@ export async function sendBookingLifecycleEmail({bookingId,event,context={}}) {
 
 export function lifecycleEmailResponse(delivery,successMessage) {
   if(delivery.sent)return {email_sent:true,message:`${successMessage} Customer email sent.`};
+  if(delivery.silent)return {email_sent:false,message:successMessage};
   if(delivery.skipped)return {email_sent:false,email_skipped:true,email_warning:delivery.reason,message:`${successMessage} ${delivery.reason}`};
   return {email_sent:false,email_warning:delivery.error,message:`${successMessage} ${delivery.error}`};
 }

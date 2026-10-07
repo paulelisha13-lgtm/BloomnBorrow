@@ -74,6 +74,12 @@ function CustomerFooter() {
         <NavLink to="/shop/status">Check Status</NavLink>
       </div>
 
+      <div className="shop-footer-col">
+        <strong>Customer Policies</strong>
+        <NavLink to="/shop/terms">Rental Terms</NavLink>
+        <NavLink to="/shop/privacy">Privacy Policy</NavLink>
+      </div>
+
       {hasContact && <div className="shop-footer-col">
         <strong>Contact</strong>
         {business.business_address && <span>{business.business_address}</span>}
@@ -96,7 +102,7 @@ function CustomerFooter() {
 export function CustomerShell({ title, subtitle, eyebrow, pageHeaderExtras, mainClassName = "", hero, children, disableModuleTransition }) {
   const { count } = useCart();
   const { pathname } = useLocation();
-  const detailRoute = pathname.startsWith("/shop/") && !["/shop/browse", "/shop/cart", "/shop/checkout", "/shop/status"].includes(pathname);
+  const detailRoute = pathname.startsWith("/shop/") && !["/shop/browse", "/shop/cart", "/shop/checkout", "/shop/status", "/shop/terms", "/shop/privacy"].includes(pathname);
   const cartRoute = pathname === "/shop/cart" || pathname === "/shop/checkout";
 
   // Route changes should begin at the new module's heading. Item-detail

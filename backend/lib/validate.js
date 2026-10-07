@@ -129,16 +129,23 @@ export const schemas = {
     .object({
       full_name: z.string().trim().min(1, "is required").max(120, "is too long"),
       email: z.string().trim().toLowerCase().max(160).regex(EMAIL_RE, "must be a valid email address"),
-      phone: z.string().trim().min(5, "must be a valid contact number").max(32, "is too long"),
+      phone: z.string().trim().min(7, "must be a valid contact number").max(32, "is too long").refine(value => {
+        const digits=value.replace(/\D/g,"").length;
+        return digits>=7&&digits<=15;
+      }, "must contain 7 to 15 digits"),
       address: z.string().trim().min(1, "is required").max(500, "is too long"),
-      city: optText(120),
-      province: optText(120),
+      city: z.string().trim().min(1, "is required").max(120, "is too long"),
+      province: z.string().trim().min(1, "is required").max(120, "is too long"),
       postal_code: optText(20),
       start_date: dateOnly,
       end_date: dateOnly,
       fulfillment: z.enum(["pickup", "delivery"]),
       payment_method: z.enum(["cash", "gcash", "bank_transfer", "other"]).optional().default("cash"),
       notes: optText(1000),
+      terms_accepted: z.preprocess(
+        value => value === true || String(value).toLowerCase() === "true",
+        z.boolean().refine(value => value === true, { message: "must be accepted" })
+      ),
       items: z.array(z.object({
         item_id: positiveId,
         quantity: z.coerce.number().int().min(1).max(1000),
@@ -168,6 +175,10 @@ export const schemas = {
   reschedule: z
     .object({ start_date: dateOnly, end_date: dateOnly })
     .superRefine(rangeWithinAYear),
+
+  deliveryQuote: z.object({
+    amount: money,
+  }),
 
   inventoryItem: z.object({
     sku: z.string().trim().min(1, "is required").max(40, "is too long"),

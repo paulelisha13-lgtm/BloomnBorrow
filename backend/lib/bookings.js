@@ -36,7 +36,7 @@ export async function getAvailability(conn, itemId, startDate, endDate) {
 // a returning email links the booking to its customer record instead of
 // failing, but the saved record is never edited from guest input -- the
 // booking just snapshots the details typed in this time.
-export async function createBooking(conn, input, { historyNote, changedByUserId = null, idDocument = null, matchExistingByEmail = false } = {}) {
+export async function createBooking(conn, input, { historyNote, changedByUserId = null, idDocument = null, matchExistingByEmail = false, deliveryFeeConfirmed = false } = {}) {
   let customer;
   let snapshot = null;
   if (input.customer_id) {
@@ -107,6 +107,9 @@ export async function createBooking(conn, input, { historyNote, changedByUserId 
   const bookingId = result.insertId;
   const bookingNo = `RF-${String(bookingId).padStart(6, "0")}`;
   await conn.query("UPDATE bookings SET booking_no=? WHERE id=?", [bookingNo, bookingId]);
+  if (input.fulfillment !== "delivery" || deliveryFeeConfirmed) {
+    await conn.query("UPDATE bookings SET delivery_fee_confirmed_at=NOW() WHERE id=?", [bookingId]);
+  }
   for (const row of normalized) await conn.query(`
     INSERT INTO booking_items
       (booking_id,rental_item_id,item_name,quantity,daily_price,security_deposit,rental_days,line_rental_total,line_deposit_total,delivery_fee_per_piece,line_delivery_total)

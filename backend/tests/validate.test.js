@@ -26,6 +26,13 @@ test("an existing customer can be booked by id alone", () => {
   assert.equal(r.success, true);
 });
 
+test("a customer request needs a complete location and accepted rental terms", () => {
+  const request={...booking,address:"123 Sample Street, Biclatan",city:"General Trias",province:"Cavite",terms_accepted:"true"};
+  assert.equal(schemas.customerBooking.safeParse(request).success,true);
+  assert.equal(schemas.customerBooking.safeParse({...request,terms_accepted:"false"}).success,false);
+  assert.equal(schemas.customerBooking.safeParse({...request,city:""}).success,false);
+});
+
 test("staff accounts can be created with the admin, manager or staff role only", () => {
   const user = { full_name: "Ana", email: "ana@example.com", password: "Str0ng-Passw0rd!x" };
   assert.equal(schemas.createUser.safeParse({ ...user, role: "staff" }).success, true);

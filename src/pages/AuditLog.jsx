@@ -16,7 +16,7 @@ const AUDIT_LABELS = {
   CREATE_USER:"Created staff account", ENABLE_USER:"Enabled staff account", DISABLE_USER:"Disabled staff account",
   CHANGE_USER_STATUS:"Changed staff status", RESET_PASSWORD:"Reset staff password",
   GUEST_BOOKING_CREATED:"Guest booking submitted", BOOKING_STATUS:"Changed booking status",
-  RESCHEDULE_BOOKING:"Rescheduled booking", DELETE_BOOKING:"Deleted booking", RETURN_INSPECTION:"Recorded return inspection",
+  RESCHEDULE_BOOKING:"Rescheduled booking", UPDATE_DELIVERY_FEE:"Confirmed delivery fee", DELETE_BOOKING:"Deleted booking", RETURN_INSPECTION:"Recorded return inspection",
   COMPLETE_BOOKING:"Completed booking", RECORD_PAYMENT:"Recorded payment", VOID_PAYMENT:"Voided payment", DELETE_PAYMENT:"Deleted payment",
   APPROVE_GCASH_PROOF:"Approved GCash proof", REJECT_GCASH_PROOF:"Rejected GCash proof", SEND_GCASH_INSTRUCTIONS:"Sent GCash instructions",
   SEND_BOOKING_STATUS_EMAIL:"Sent booking status email",

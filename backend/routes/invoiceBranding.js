@@ -9,7 +9,7 @@ const router = Router();
 // exposes only the handful of presentation fields the print invoice needs
 // (name, contact, cancellation policy) rather than the whole settings object.
 router.get("/api/admin/invoice-branding", authenticate, requireRole("admin","manager","staff"), async (_req,res) => {
-  const branding = await getSettings(INVOICE_BRANDING_KEYS);
+  const branding = await getSettings([...INVOICE_BRANDING_KEYS,"free_delivery_area","delivery_fee"]);
   res.json({ branding });
 });
 

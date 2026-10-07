@@ -21,6 +21,7 @@ import { CustomerItemDetail } from "./pages/customer/ItemDetail";
 import { CustomerCart } from "./pages/customer/Cart";
 import { CustomerRentalForm } from "./pages/customer/RentalForm";
 import { CustomerBookingStatus } from "./pages/customer/BookingStatus";
+import { CustomerPrivacyPolicy, CustomerRentalTerms } from "./pages/customer/Policies";
 import { CartProvider } from "./context/CartContext";
 import { InteractionFeedback } from "./components/InteractionFeedback";
 
@@ -33,6 +34,8 @@ function AdminRoutes({ location }) {
     <Route path="/shop/cart" element={<CustomerCart/>}/>
     <Route path="/shop/checkout" element={<CustomerRentalForm/>}/>
     <Route path="/shop/status" element={<CustomerBookingStatus/>}/>
+    <Route path="/shop/terms" element={<CustomerRentalTerms/>}/>
+    <Route path="/shop/privacy" element={<CustomerPrivacyPolicy/>}/>
     <Route path="/shop/:id" element={<CustomerItemDetail/>}/>
     <Route path="/admin" element={<ProtectedRoute roles={["admin","manager","staff"]}><AdminDashboard/></ProtectedRoute>}/>
     <Route path="/admin/inventory" element={<ProtectedRoute roles={["admin","manager","staff"]}><Inventory/></ProtectedRoute>}/>

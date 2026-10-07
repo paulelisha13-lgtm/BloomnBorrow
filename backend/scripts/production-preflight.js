@@ -25,6 +25,8 @@ try{
   if(Number(tables.count)<6) fail.push("Required tables are missing. Run npm run migrate.");
   const [[reviewColumns]]=await db.query(`SELECT COUNT(*) count FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='booking_payment_workflows' AND column_name IN ('reviewed_at','reviewed_by_user_id','review_note','gcash_reference','verified_amount')`);
   if(Number(reviewColumns.count)<5) fail.push("GCash payment-review columns are missing. Run npm run migrate.");
+  const [[termsColumns]]=await db.query(`SELECT COUNT(*) count FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='bookings' AND column_name IN ('delivery_fee_confirmed_at','rental_terms_version','rental_terms_accepted_at','rental_terms_snapshot')`);
+  if(Number(termsColumns.count)<4) fail.push("Rental-terms or delivery-review columns are missing. Run npm run migrate.");
   const [[admins]]=await db.query("SELECT COUNT(*) count FROM users WHERE role='admin' AND status='active'");
   if(Number(admins.count)<1) fail.push("No active Admin exists.");
   const [[demo]]=await db.query("SELECT COUNT(*) count FROM users WHERE email IN ('admin@bloom-borrow.local')");

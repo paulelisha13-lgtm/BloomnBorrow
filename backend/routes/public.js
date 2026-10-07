@@ -12,6 +12,7 @@ import { peso, escHtml } from "../lib/format.js";
 import { INVOICE_BRANDING_KEYS } from "../lib/invoiceTemplate.js";
 import { sendBookingLifecycleEmail } from "../lib/bookingEmails.js";
 import { verifyBookingAccessToken } from "../lib/bookingAccess.js";
+import { buildRentalTerms, RENTAL_TERMS_SETTING_KEYS } from "../lib/rentalTerms.js";
 
 const router = Router();
 
@@ -99,8 +100,8 @@ router.get("/api/public/items/:id", async (req,res) => {
 // record, and safe to expose publicly (no credentials/internal data).
 const SOCIAL_KEYS = ["business_facebook", "business_instagram"];
 router.get("/api/public/business-info", async (_req,res) => {
-  const business = await getSettings([...INVOICE_BRANDING_KEYS, ...SOCIAL_KEYS]);
-  res.json({business});
+  const business = await getSettings([...new Set([...INVOICE_BRANDING_KEYS, ...SOCIAL_KEYS, ...RENTAL_TERMS_SETTING_KEYS])]);
+  res.json({business,rental_terms:buildRentalTerms(business)});
 });
 
 // Mirrors POST /api/admin/availability/check so the customer form's live
@@ -153,12 +154,17 @@ router.post("/api/public/bookings", bookingLimiter, (req,res,next) => {
 }, async (req,res,next) => {
   const conn = await db.getConnection();
   try {
+    const rentalTerms=buildRentalTerms(await getSettings(RENTAL_TERMS_SETTING_KEYS));
     await conn.beginTransaction();
     const { bookingId, bookingNo, customer, grandTotal } = await createBooking(conn, req.body, {
-      historyNote: "Customer self-service booking request",
+      historyNote: `Customer self-service booking request · Accepted rental terms ${rentalTerms.version}`,
       matchExistingByEmail: true,
       idDocument: { path: req.file.filename, originalName: req.file.originalname }
     });
+    await conn.query(
+      "UPDATE bookings SET rental_terms_version=?,rental_terms_accepted_at=NOW(),rental_terms_snapshot=? WHERE id=?",
+      [rentalTerms.version,JSON.stringify(rentalTerms),bookingId]
+    );
     await conn.commit();
 
     try {
@@ -180,7 +186,9 @@ router.post("/api/public/bookings", bookingLimiter, (req,res,next) => {
       booking_no: booking.booking_no, status: booking.status,
       start_date: booking.start_date, end_date: booking.end_date,
       items: booking.items, grand_total: booking.grand_total,
-      payment_method: booking.payment_method
+      payment_method: booking.payment_method,
+      rental_terms_version: booking.rental_terms_version,
+      rental_terms_accepted_at: booking.rental_terms_accepted_at
     },confirmation_email_sent:confirmationDelivery.sent});
   } catch (error) {
     try { await conn.rollback(); } catch {}
