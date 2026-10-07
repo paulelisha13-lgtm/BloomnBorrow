@@ -1,39 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { Logo } from "../Logo";
 import { useCart } from "../../context/CartContext";
 import { publicApi } from "../../lib/publicApi";
-import { CartDrawer } from "./CartDrawer";
-
-// Floating cart access (removed from the navbar to keep it minimal) -- always
-// reachable so Browse -> Add to Cart -> Cart -> Proceed to Rental still works.
-// Clicking it opens the floating cart panel instead of leaving the page.
-function CartFab() {
-  const { count } = useCart();
-  const [bump, setBump] = useState(false);
-  const [open, setOpen] = useState(false);
-  const closeCart=useCallback(()=>setOpen(false),[]);
-  const prev = useRef(count);
-  useEffect(() => {
-    if (count !== prev.current) {
-      prev.current = count;
-      setBump(true);
-      const t = setTimeout(() => setBump(false), 300);
-      return () => clearTimeout(t);
-    }
-  }, [count]);
-  return <>
-    <button type="button" className="shop-float-cart" onClick={() => setOpen(true)} aria-label={`Open cart, ${count} item${count === 1 ? "" : "s"}`}>
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" />
-        <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
-      </svg>
-      <span>Cart</span>
-      <span className={`shop-cart-count ${bump ? "bump" : ""}`}>{count}</span>
-    </button>
-    {open && <CartDrawer onClose={closeCart} />}
-  </>;
-}
 
 function FacebookIcon() {
   return <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M13.5 21v-7.5h2.5l.5-3h-3V8.5c0-.9.25-1.5 1.5-1.5H16.5V4.3C16.2 4.26 15.2 4.17 14 4.17c-2.4 0-4 1.47-4 4.16V10.5H7.5v3H10V21h3.5z"/></svg>;
@@ -124,7 +93,7 @@ function CustomerFooter() {
 //
 // CartProvider is mounted once around the customer app in App.jsx so every
 // customer page, drawer, and product modal shares the same cart state.
-export function CustomerShell({ title, subtitle, hero, children, hideFloatingCart, disableModuleTransition }) {
+export function CustomerShell({ title, subtitle, eyebrow, pageHeaderExtras, mainClassName = "", hero, children, disableModuleTransition }) {
   const { count } = useCart();
   const { pathname } = useLocation();
   const detailRoute = pathname.startsWith("/shop/") && !["/shop/browse", "/shop/cart", "/shop/checkout", "/shop/status"].includes(pathname);
@@ -157,17 +126,18 @@ export function CustomerShell({ title, subtitle, hero, children, hideFloatingCar
       </header>
       <div className={`shop-module-enter ${hero ? "has-hero" : ""} ${disableModuleTransition ? "no-enter" : ""}`}>
         {hero}
-        <main className="shop-main" id="shop-main-content" tabIndex="-1">
+        <main className={`shop-main ${mainClassName}`.trim()} id="shop-main-content" tabIndex="-1">
           {(title || subtitle) && <div className="shop-page-head">
+            {eyebrow && <span className="shop-page-eyebrow">{eyebrow}</span>}
             {title && <h1 id="shop-page-title">{title}</h1>}
             {subtitle && <p>{subtitle}</p>}
+            {pageHeaderExtras}
           </div>}
           {children}
         </main>
       </div>
       <CustomerFooter />
       <CustomerTabBar detailRoute={detailRoute} />
-      {!hideFloatingCart && !cartRoute && <CartFab />}
     </div>
   );
 }

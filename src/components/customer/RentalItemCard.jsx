@@ -29,14 +29,17 @@ export function packageLabel(item) {
   return count ? `Package · ${count} item${count === 1 ? "" : "s"}` : "Package";
 }
 
-// The single catalog card, shared by Browse, Home and the related-items row
-// in the details panel. Deliberately compact: image, name, price, stock and
-// one action. Everything else (description, specifications, package contents)
-// lives behind the details panel -- "show only what users need to decide".
+// The single catalog card, shared by Browse, Home and the related-items row.
+// It surfaces the decision-making details while keeping full specifications
+// and package contents in the details panel.
 export function RentalItemCard({ item, onOpen, onAdd, added, selected }) {
   const isPackage = isPackageItem(item);
+  const contents = packageContents(item);
   const out = Number(item.available_quantity) < 1;
   const open = () => onOpen?.(item);
+  const summary = isPackage
+    ? contents.length ? `Includes ${contents.length} curated item${contents.length === 1 ? "" : "s"}` : "Ready-made rental package"
+    : `${item.category || "Equipment"} rental`;
 
   const classes = [
     "shop-item-card",
@@ -46,41 +49,44 @@ export function RentalItemCard({ item, onOpen, onAdd, added, selected }) {
   ].filter(Boolean).join(" ");
 
   return (
-    <article className={classes} onClick={open}>
-      <div className={`shop-item-card-image ${out ? "has-out" : ""}`}>
+    <article className={classes}>
+      <button type="button" className={`shop-item-card-image ${out ? "has-out" : ""}`} onClick={open} aria-label={`View details for ${item.name}`}>
         {item.image_url
           ? <img src={item.image_url} alt={item.name} loading="lazy" />
           : <div className="inventory-card-noimage" aria-hidden="true">🌸</div>}
         <small className={`shop-item-card-cat ${isPackage ? "is-package" : ""}`}>
           {isPackage ? packageLabel(item) : item.category}
         </small>
-        {out
-          ? <span className="shop-item-out-badge">Unavailable</span>
-          : <span className="shop-item-view-hint" aria-hidden="true">View details ›</span>}
-      </div>
+        {out && <span className="shop-item-out-badge">Currently unavailable</span>}
+      </button>
 
       <div className="shop-item-card-body">
-        <h3 className="shop-item-card-title">
-          <button type="button" className="shop-item-card-link" onClick={e => { e.stopPropagation(); open(); }}>
-            {item.name}
-          </button>
-        </h3>
+        <div className="shop-item-card-copy">
+          <h3 className="shop-item-card-title">{item.name}</h3>
+          <p>{summary}</p>
+        </div>
 
         <PriceDisplay price={item.daily_price} originalPrice={item.original_price} />
 
         <div className="shop-item-card-foot">
           <span className={out ? "shop-item-stock is-out" : "shop-item-stock"}>
-            {out ? "Unavailable" : `Available: ${item.available_quantity}`}
+            {out ? "Currently unavailable" : `${item.available_quantity} available`}
           </span>
+        </div>
+
+        <div className="shop-item-card-actions">
+          <button type="button" className="secondary-button shop-details-btn" onClick={open} data-no-page-loading>
+            View details
+          </button>
           <button
             type="button"
             className={`primary-button shop-add-btn ${added ? "is-added" : ""}`}
             disabled={out}
             aria-label={out?`${item.name} is unavailable`:`Add ${item.name} to cart`}
-            onClick={e => { e.stopPropagation(); onAdd?.(item); }}
+            onClick={() => onAdd?.(item)}
             data-no-page-loading
           >
-            {added ? "Added ✓" : "Add to Cart"}
+            {added ? "Added ✓" : out ? "Unavailable" : "Add to cart"}
           </button>
         </div>
       </div>
