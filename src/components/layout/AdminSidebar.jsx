@@ -50,7 +50,7 @@ function childIsActive(child, location) {
   return (new URLSearchParams(location.search).get("stage") || "") === child.stage;
 }
 
-export function AdminSidebar({ collapsed = false, onToggle }) {
+export function AdminSidebar({ collapsed = false, mobileOpen = false, onMobileClose, onToggle }) {
   const user = getStoredUser() || {};
   const location = useLocation();
   const initials = (user.full_name || "Admin User").split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase();
@@ -82,12 +82,13 @@ export function AdminSidebar({ collapsed = false, onToggle }) {
     return null;
   };
 
-  return <aside className={`admin-sidebar ${collapsed ? "collapsed" : ""}`} aria-label="Admin sidebar">
-    <button type="button" className="admin-brand-toggle" onClick={onToggle} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
+  return <aside id="admin-primary-sidebar" className={`admin-sidebar ${collapsed ? "collapsed" : ""}`} aria-label="Admin sidebar">
+    <button type="button" className="admin-mobile-sidebar-close" onClick={onMobileClose} aria-label="Close navigation">×</button>
+    <button type="button" className="admin-brand-toggle" onClick={mobileOpen ? onMobileClose : onToggle} aria-label={mobileOpen ? "Close navigation" : collapsed ? "Expand sidebar" : "Collapse sidebar"} title={mobileOpen ? "Close navigation" : collapsed ? "Expand sidebar" : "Collapse sidebar"}>
       <img src={logoImg} alt="Bloom & Borrow" className="logo-img" />
       <span className="admin-brand-text">Bloom<span>&amp;Borrow</span></span>
     </button>
-    <nav aria-label="Primary navigation">{adminNav.map(group=>{
+    <nav aria-label="Primary navigation" onClick={event=>{if(event.target.closest("a"))onMobileClose?.()}}>{adminNav.map(group=>{
       const items=group.items.filter(item=>canView(item.level));
       if(!items.length)return null;
       return <div className="admin-nav-group" key={group.label}>

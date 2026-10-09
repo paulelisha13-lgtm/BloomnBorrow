@@ -208,7 +208,7 @@ export function Calendar() {
       <Kpi index={3} label="Rental bookings" value={stats.rentals} detail="Read-only, from Bookings"/>
     </section>
 
-    <div className="admin-page-toolbar">
+    <div className="admin-page-toolbar calendar-toolbar">
       <div className="admin-search">
         <span aria-hidden="true">⌕</span>
         <input aria-label="Search the calendar" placeholder="Search by title, customer, location or notes..." value={search} onChange={e=>setSearch(e.target.value)}/>

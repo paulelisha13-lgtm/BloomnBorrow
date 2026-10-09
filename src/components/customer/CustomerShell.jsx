@@ -104,6 +104,7 @@ export function CustomerShell({ title, subtitle, eyebrow, pageHeaderExtras, main
   const { pathname } = useLocation();
   const detailRoute = pathname.startsWith("/shop/") && !["/shop/browse", "/shop/cart", "/shop/checkout", "/shop/status", "/shop/terms", "/shop/privacy"].includes(pathname);
   const cartRoute = pathname === "/shop/cart" || pathname === "/shop/checkout";
+  const focusedCheckout = pathname === "/shop/checkout";
 
   // Route changes should begin at the new module's heading. Item-detail
   // overlays do not mount a new shell, so opening/closing one keeps the
@@ -117,7 +118,7 @@ export function CustomerShell({ title, subtitle, eyebrow, pageHeaderExtras, main
   },[title]);
 
   return (
-    <div className="shop-shell">
+    <div className={`shop-shell${focusedCheckout ? " shop-shell-focused" : ""}`}>
       <a className="skip-link" href="#shop-main-content">Skip to main content</a>
       <header className="shop-header">
         <div className="shop-header-inner">
@@ -143,7 +144,7 @@ export function CustomerShell({ title, subtitle, eyebrow, pageHeaderExtras, main
         </main>
       </div>
       <CustomerFooter />
-      <CustomerTabBar detailRoute={detailRoute} />
+      {!focusedCheckout && <CustomerTabBar detailRoute={detailRoute} />}
     </div>
   );
 }

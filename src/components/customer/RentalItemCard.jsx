@@ -62,7 +62,11 @@ export function RentalItemCard({ item, onOpen, onAdd, added, selected }) {
 
       <div className="shop-item-card-body">
         <div className="shop-item-card-copy">
-          <h3 className="shop-item-card-title">{item.name}</h3>
+          <h3 className="shop-item-card-title">
+            <button type="button" className="shop-item-card-link" onClick={open} data-no-page-loading>
+              {item.name}
+            </button>
+          </h3>
           <p>{summary}</p>
         </div>
 

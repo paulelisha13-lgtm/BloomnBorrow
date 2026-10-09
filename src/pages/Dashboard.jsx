@@ -100,7 +100,7 @@ export function AdminDashboard() {
       <div className="dashboard-skeleton-grid">{[0,1,2,3].map(x=><i key={x}/>)}</div>
       <div className="dashboard-skeleton-panels"><i/><i/></div>
     </div>:<>
-    <section className="kpi-grid">
+    <section className="kpi-grid dashboard-kpi-grid">
       <Kpi index={0} label="Today's bookings" value={s.today_bookings ?? 0} detail={`${s.upcoming_reservations ?? 0} upcoming`} to="/admin/bookings"/>
       <Kpi index={1} label="Active rentals" value={s.active_rentals ?? 0} detail="Currently rented" to="/admin/bookings"/>
       <Kpi index={2} label="Overdue rentals" value={s.overdue_rentals ?? 0} detail="Needs attention" to="/admin/bookings"/>
