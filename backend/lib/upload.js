@@ -12,6 +12,7 @@ import sharp from "sharp";
 // reachable through the authenticated admin routes that stream it back (see
 // GET /api/admin/bookings/:id/id-document).
 export const ID_DOCUMENTS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "uploads", "id-documents");
+export const EXPENSE_RECEIPTS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "uploads", "expense-receipts");
 export const PAYMENT_PROOFS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "uploads", "payment-proofs");
 
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
@@ -19,7 +20,7 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || "bloom-uploads";
 const useRemote = Boolean(SUPABASE_URL && SUPABASE_KEY);
 
-const LOCAL_DIRS = { "id-documents": ID_DOCUMENTS_DIR, "payment-proofs": PAYMENT_PROOFS_DIR };
+const LOCAL_DIRS = { "id-documents": ID_DOCUMENTS_DIR, "payment-proofs": PAYMENT_PROOFS_DIR, "expense-receipts": EXPENSE_RECEIPTS_DIR };
 if (!useRemote) for (const dir of Object.values(LOCAL_DIRS)) fs.mkdirSync(dir, { recursive: true });
 
 const MIME_BY_EXT = { ".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".pdf": "application/pdf" };
@@ -145,6 +146,19 @@ export const paymentProofUpload = multer({
     cb(null, true);
   }
 }).single("payment_proof");
+
+const EXPENSE_RECEIPT_EXTENSIONS = { "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "application/pdf": ".pdf" };
+const expenseReceiptStorage = uploadStorage("expense-receipts", EXPENSE_RECEIPT_EXTENSIONS);
+
+// Expense receipts are financial records: private, served back only to admin/manager.
+export const expenseReceiptUpload = multer({
+  storage: expenseReceiptStorage,
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (!EXPENSE_RECEIPT_EXTENSIONS[file.mimetype]) return cb(new Error("Receipt must be a JPG, PNG, WebP, or PDF file."));
+    cb(null, true);
+  }
+}).single("receipt");
 
 const GCASH_QR_TYPES = new Set(["image/jpeg", "image/png"]);
 export const gcashQrUpload = multer({

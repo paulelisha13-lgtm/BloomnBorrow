@@ -2,6 +2,7 @@ import { Router } from "express";
 import { authenticate, requireRole } from "../lib/auth.js";
 import { db } from "../lib/db.js";
 import { getSetting } from "../lib/settings.js";
+import { INCOME_AMOUNT_SQL } from "../lib/finance.js";
 
 const router = Router();
 
@@ -11,7 +12,7 @@ router.get("/api/admin/dashboard", authenticate, requireRole("admin","manager","
       (SELECT COUNT(*) FROM bookings WHERE DATE(created_at)=CURDATE()) AS today_bookings,
       (SELECT COUNT(*) FROM bookings WHERE status IN ('rented','overdue')) AS active_rentals,
       (SELECT COUNT(*) FROM bookings WHERE status='overdue' OR (status='rented' AND end_date<CURDATE())) AS overdue_rentals,
-      (SELECT COALESCE(SUM(CASE WHEN p.payment_type='refund' THEN -p.amount ELSE p.amount END),0)
+      (SELECT COALESCE(SUM(${INCOME_AMOUNT_SQL}),0)
        FROM payments p JOIN bookings rb ON rb.id=p.booking_id WHERE p.status='completed' AND rb.status NOT IN ('cancelled','rejected') AND DATE(p.created_at)=CURDATE()) AS revenue_today,
       (SELECT COUNT(*) FROM bookings WHERE payment_status IN ('unpaid','partial') AND status NOT IN ('cancelled','rejected')) AS pending_payments,
       (SELECT COUNT(*) FROM rental_items WHERE status<>'active') AS unavailable_items,
@@ -25,7 +26,7 @@ router.get("/api/admin/dashboard", authenticate, requireRole("admin","manager","
   `);
   const [months] = await db.query(`
     SELECT DATE_FORMAT(p.created_at,'%Y-%m') month,
-      COALESCE(SUM(CASE WHEN p.payment_type='refund' THEN -p.amount ELSE p.amount END),0) revenue
+      COALESCE(SUM(${INCOME_AMOUNT_SQL}),0) revenue
     FROM payments p
     JOIN bookings b ON b.id=p.booking_id
     WHERE p.status='completed'
@@ -43,7 +44,7 @@ router.get("/api/admin/dashboard", authenticate, requireRole("admin","manager","
       DATE_FORMAT(d.d,'%Y-%m-%d') AS date,
       DATE_FORMAT(d.d,'%a') AS label,
       COALESCE((
-        SELECT SUM(CASE WHEN p.payment_type='refund' THEN -p.amount ELSE p.amount END)
+        SELECT SUM(${INCOME_AMOUNT_SQL})
         FROM payments p
         JOIN bookings pb ON pb.id=p.booking_id
         WHERE p.status='completed'
@@ -59,6 +60,14 @@ router.get("/api/admin/dashboard", authenticate, requireRole("admin","manager","
     ORDER BY d.d
   `);
   res.json({stats,recent,months,daily});
+});
+
+router.get("/api/admin/booking-counts", authenticate, requireRole("admin","manager","staff"), async (_req,res,next) => {
+  try {
+    const [rows] = await db.query("SELECT status, COUNT(*) AS total FROM bookings GROUP BY status");
+    const [[late]] = await db.query("SELECT COUNT(*) AS total FROM bookings WHERE status='overdue' OR (status='rented' AND end_date<CURDATE())");
+    res.json({counts:Object.fromEntries(rows.map(r=>[r.status,Number(r.total)])),overdue:Number(late.total)});
+  } catch(err) { next(err); }
 });
 
 router.get("/api/admin/escalations", authenticate, requireRole("admin","manager","staff"), async (_req,res) => {
@@ -99,11 +108,11 @@ router.get("/api/admin/reports", authenticate, requireRole("admin","manager"), a
 
     const [[summary]] = await db.query(`
       SELECT
-        (SELECT COALESCE(SUM(CASE WHEN p.payment_type='refund' THEN -p.amount ELSE p.amount END),0)
+        (SELECT COALESCE(SUM(${INCOME_AMOUNT_SQL}),0)
            FROM payments p JOIN bookings b ON b.id=p.booking_id
           WHERE p.status='completed' AND b.status NOT IN ('cancelled','rejected')
             AND YEAR(p.created_at)=YEAR(CURDATE()) AND MONTH(p.created_at)=MONTH(CURDATE())) AS monthly_revenue,
-        (SELECT COALESCE(SUM(CASE WHEN p.payment_type='refund' THEN -p.amount ELSE p.amount END),0)
+        (SELECT COALESCE(SUM(${INCOME_AMOUNT_SQL}),0)
            FROM payments p JOIN bookings b ON b.id=p.booking_id
           WHERE p.status='completed' AND b.status NOT IN ('cancelled','rejected')
             AND YEAR(p.created_at)=YEAR(DATE_SUB(CURDATE(),INTERVAL 1 MONTH))
@@ -142,7 +151,7 @@ router.get("/api/admin/reports", authenticate, requireRole("admin","manager"), a
 
     const [monthlyRows] = await db.query(`
       SELECT DATE_FORMAT(p.created_at,'%Y-%m') AS month,
-             COALESCE(SUM(CASE WHEN p.payment_type='refund' THEN -p.amount ELSE p.amount END),0) AS revenue
+             COALESCE(SUM(${INCOME_AMOUNT_SQL}),0) AS revenue
       FROM payments p
       JOIN bookings b ON b.id=p.booking_id
       WHERE p.status='completed'

@@ -35,7 +35,10 @@ const staffPassword = `Staff-${stamp}-Test#Aa1`;
 const customerEmail = `e2e-customer-${stamp}@example.com`;
 const admin = client();
 const staff = client();
-const created = { bookings: [], staffId: null };
+const manager = client();
+const managerEmail = `e2e-manager-${stamp}@example.com`;
+const managerPassword = `Manager-${stamp}-Test#Aa1`;
+const created = { bookings: [], staffId: null, maintenanceIds: [] };
 
 async function newBooking(start, end, extra = {}) {
   const r = await admin("/admin/bookings", { method: "POST", body: {
@@ -57,7 +60,11 @@ after(async () => {
     await db.query("DELETE FROM bookings WHERE id=?", [id]);
   }
   await db.query("DELETE FROM customers WHERE email=?", [customerEmail]);
-  await db.query("DELETE FROM users WHERE email=?", [staffEmail]);
+  const maintenanceIds = created.maintenanceIds.length ? created.maintenanceIds : [0];
+  await db.query("DELETE FROM expenses WHERE description LIKE 'e2e-%' OR (source_type='maintenance' AND source_id IN (?))", [maintenanceIds]);
+  await db.query("DELETE FROM expense_suggestion_dismissals WHERE source_type='maintenance' AND source_id IN (?)", [maintenanceIds]);
+  if (created.maintenanceIds.length) await db.query("DELETE FROM maintenance_records WHERE id IN (?)", [created.maintenanceIds]);
+  await db.query("DELETE FROM users WHERE email IN (?,?)", [staffEmail, managerEmail]);
   await db.end();
 });
 
@@ -66,6 +73,8 @@ test("API workflow and permissions", { skip }, async (t) => {
     assert.equal((await admin("/auth/login", { method: "POST", body: { email: adminEmail, password: adminPassword } })).status, 200);
     const r = await admin("/users", { method: "POST", body: { full_name: "E2E Staff", email: staffEmail, role: "staff", password: staffPassword } });
     assert.equal(r.status, 201, r.data.message);
+    const m = await admin("/users", { method: "POST", body: { full_name: "E2E Manager", email: managerEmail, role: "manager", password: managerPassword } });
+    assert.equal(m.status, 201, m.data.message);
   });
 
   await t.test("late return: fee per late day, deposit refund keeps booking paid", async () => {
@@ -135,6 +144,97 @@ test("API workflow and permissions", { skip }, async (t) => {
     ];
     for (const [method, path, body] of blocked) {
       assert.equal((await staff(path, { method, body })).status, 403, `${method} ${path}`);
+    }
+  });
+
+  await t.test("finance is admin/manager only, enforced by the API", async () => {
+    assert.equal((await manager("/auth/login", { method: "POST", body: { email: managerEmail, password: managerPassword } })).status, 200);
+    const expense = { expense_date: "2026-10-05", category: "Supplies", amount: 10, description: "e2e-blocked" };
+    const blocked = [
+      ["GET", "/admin/expenses"], ["POST", "/admin/expenses", expense], ["PATCH", "/admin/expenses/1", expense], ["DELETE", "/admin/expenses/1"],
+      ["GET", "/admin/expenses/1/receipt"], ["GET", "/admin/expense-suggestions"],
+      ["POST", "/admin/expense-suggestions/confirm", { source_type: "maintenance", source_id: 1 }],
+      ["POST", "/admin/expense-suggestions/dismiss", { source_type: "maintenance", source_id: 1 }],
+      ["GET", "/admin/finance/profit-loss"], ["GET", "/admin/finance/summary"]
+    ];
+    for (const [method, path, body] of blocked) {
+      assert.equal((await staff(path, { method, body })).status, 403, `staff ${method} ${path}`);
+    }
+    assert.equal((await client()("/admin/expenses")).status, 401, "signed-out requests are rejected");
+    assert.equal((await manager("/admin/expenses")).status, 200, "manager can read");
+    assert.equal((await staff("/admin/booking-counts")).status, 200, "staff keep the booking badge counts");
+  });
+
+  await t.test("expenses: validation, monthly filter and profit and loss totals", async () => {
+    const before = (await admin("/admin/finance/profit-loss?months=12")).data;
+    const month = before.current_month;
+    const base = { expense_date: `${month}-02`, category: "Supplies", amount: 125.5, description: "e2e-ribbons" };
+    assert.equal((await admin("/admin/expenses", { method: "POST", body: { ...base, amount: 0 } })).status, 400);
+    assert.equal((await admin("/admin/expenses", { method: "POST", body: { ...base, category: "Gifts" } })).status, 400);
+    assert.equal((await admin("/admin/expenses", { method: "POST", body: { ...base, booking_id: 999999999 } })).status, 400);
+    const made = await admin("/admin/expenses", { method: "POST", body: base });
+    assert.equal(made.status, 201, made.data.message);
+    const mgr = await manager("/admin/expenses", { method: "POST", body: { ...base, description: "e2e-manager", amount: 4.5 } });
+    assert.equal(mgr.status, 201, mgr.data.message);
+
+    const listed = (await admin(`/admin/expenses?month=${month}&category=Supplies`)).data;
+    assert.ok(listed.expenses.some(e => e.id === made.data.id));
+    assert.equal((await admin("/admin/expenses?month=2026-13")).status, 400);
+
+    const after = (await admin("/admin/finance/profit-loss?months=12")).data;
+    const cur = after.months.at(-1), prev = before.months.at(-1);
+    assert.equal(after.months.length, 12);
+    assert.equal(Math.round((cur.expenses - prev.expenses) * 100) / 100, 130, "expenses total rises by exactly what was added");
+    assert.equal(cur.income, prev.income, "adding expenses never changes income");
+    assert.equal(Math.round((cur.income - cur.expenses) * 100) / 100, cur.net_profit);
+    const summary = (await admin("/admin/finance/summary")).data;
+    assert.equal(summary.month, month);
+    assert.equal(summary.net_profit, cur.net_profit);
+
+    assert.equal((await admin(`/admin/expenses/${made.data.id}`, { method: "PATCH", body: { ...base, amount: 200 } })).status, 200);
+    const edited = (await admin("/admin/finance/profit-loss")).data.months.at(-1).expenses;
+    assert.equal(Math.round((edited - prev.expenses) * 100) / 100, 204.5);
+    assert.equal((await admin(`/admin/expenses/${made.data.id}`, { method: "DELETE" })).status, 200);
+    assert.equal((await admin(`/admin/expenses/${made.data.id}`, { method: "DELETE" })).status, 404);
+    await admin(`/admin/expenses/${mgr.data.id}`, { method: "DELETE" });
+  });
+
+  await t.test("suggested expenses count only after confirmation and never twice", async () => {
+    const { db } = await import("../lib/db.js");
+    const [[item]] = await db.query("SELECT id FROM rental_items LIMIT 1");
+    const [r1] = await db.query("INSERT INTO maintenance_records(rental_item_id,reason,status,cost,completed_at) VALUES(?, 'e2e polish', 'completed', 321.50, NOW())", [item.id]);
+    const [r2] = await db.query("INSERT INTO maintenance_records(rental_item_id,reason,status,cost,completed_at) VALUES(?, 'e2e dismiss', 'completed', 77, NOW())", [item.id]);
+    created.maintenanceIds.push(r1.insertId, r2.insertId);
+    const expensesNow = async () => (await admin("/admin/finance/profit-loss")).data.months.at(-1).expenses;
+    const start = await expensesNow();
+
+    const listed = (await admin("/admin/expense-suggestions")).data.suggestions;
+    assert.ok(listed.some(s => s.source_type === "maintenance" && s.source_id === r1.insertId && s.amount === 321.5));
+    assert.equal(await expensesNow(), start, "a suggestion alone changes nothing");
+
+    const confirmed = await admin("/admin/expense-suggestions/confirm", { method: "POST", body: { source_type: "maintenance", source_id: r1.insertId } });
+    assert.equal(confirmed.status, 201, confirmed.data.message);
+    assert.equal(Math.round((await expensesNow() - start) * 100) / 100, 321.5);
+    assert.equal((await admin("/admin/expense-suggestions/confirm", { method: "POST", body: { source_type: "maintenance", source_id: r1.insertId } })).status, 409, "no double add");
+    assert.ok(!(await admin("/admin/expense-suggestions")).data.suggestions.some(s => s.source_id === r1.insertId && s.source_type === "maintenance"), "confirmed suggestion disappears");
+    assert.equal((await admin("/admin/expense-suggestions/dismiss", { method: "POST", body: { source_type: "maintenance", source_id: r1.insertId } })).status, 409, "cannot dismiss what was confirmed");
+
+    assert.equal((await admin("/admin/expense-suggestions/dismiss", { method: "POST", body: { source_type: "maintenance", source_id: r2.insertId } })).status, 200);
+    assert.ok(!(await admin("/admin/expense-suggestions")).data.suggestions.some(s => s.source_id === r2.insertId && s.source_type === "maintenance"));
+    assert.equal((await admin("/admin/expense-suggestions/confirm", { method: "POST", body: { source_type: "maintenance", source_id: r2.insertId } })).status, 409, "dismissed stays out");
+    assert.equal(Math.round((await expensesNow() - start) * 100) / 100, 321.5, "dismissed amounts never count");
+
+    // A new maintenance record does not touch the books by itself.
+    const [r3] = await db.query("INSERT INTO maintenance_records(rental_item_id,reason,status,cost,completed_at) VALUES(?, 'e2e later', 'completed', 50, NOW())", [item.id]);
+    created.maintenanceIds.push(r3.insertId);
+    assert.equal(Math.round((await expensesNow() - start) * 100) / 100, 321.5);
+  });
+
+  await t.test("booking counts match the bookings list for every status", async () => {
+    const counts = (await admin("/admin/booking-counts")).data.counts;
+    const rows = (await admin("/admin/bookings")).data.bookings;
+    for (const status of ["pending", "confirmed", "ready", "rented", "returned", "completed", "cancelled", "rejected", "overdue"]) {
+      assert.equal(counts[status] || 0, rows.filter(b => b.status === status).length, status);
     }
   });
 

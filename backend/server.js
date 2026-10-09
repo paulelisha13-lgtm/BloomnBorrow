@@ -24,6 +24,7 @@ import invoiceBrandingRoutes from "./routes/invoiceBranding.js";
 import paymentsRoutes from "./routes/payments.js";
 import customersRoutes from "./routes/customers.js";
 import maintenanceRoutes from "./routes/maintenance.js";
+import financeRoutes from "./routes/finance.js";
 import settingsRoutes from "./routes/settings.js";
 import notificationsRoutes from "./routes/notifications.js";
 import publicRoutes from "./routes/public.js";
@@ -117,6 +118,7 @@ app.use(invoiceBrandingRoutes);
 app.use(paymentsRoutes);
 app.use(customersRoutes);
 app.use(maintenanceRoutes);
+app.use(financeRoutes);
 app.use(settingsRoutes);
 app.use(notificationsRoutes);
 

@@ -24,7 +24,8 @@ const paths = {
   refresh: <><path d="M20 7v5h-5"/><path d="M4 17v-5h5"/><path d="M6.1 8A7 7 0 0 1 18 6l2 6M18 16a7 7 0 0 1-12 2l-2-6"/></>,
   receipt: <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h6M9 16h3"/></>,
   plus: <path d="M12 5v14M5 12h14"/>,
-  chevronDown: <path d="m6 9 6 6 6-6"/>
+  chevronDown: <path d="m6 9 6 6 6-6"/>,
+  finance: <><path d="M3 17l5-5 4 4 8-9"/><path d="M15 7h5v5"/><path d="M3 21h18"/></>
 };
 
 export function AdminIcon({ name, size = 20, className = "" }) {

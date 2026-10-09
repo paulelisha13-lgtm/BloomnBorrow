@@ -34,3 +34,47 @@ test("sortRows sorts ascending/descending by the chosen column and leaves the in
   assert.deepEqual(rows.map(r => r.n), ["Tent", "Camera", "Speaker"], "original array unchanged");
   assert.equal(sortRows(rows, sorts, "unknown", "asc"), rows);
 });
+
+import { BOOKING_STAGES, isOverdueBooking, stageByKey, stageCounts } from "../src/lib/bookingStages.js";
+import { buildProfitLossCsv } from "../src/lib/profitLossCsv.js";
+
+test("every booking status belongs to exactly one stage", () => {
+  const all = ["pending", "confirmed", "ready", "rented", "returned", "completed", "cancelled", "rejected", "overdue"];
+  for (const status of all) {
+    assert.equal(BOOKING_STAGES.filter(s => s.statuses.includes(status)).length, 1, status);
+  }
+  assert.equal(BOOKING_STAGES.flatMap(s => s.statuses).length, all.length);
+});
+
+test("stage lookup and counts follow booking statuses", () => {
+  assert.equal(stageByKey("ongoing").statuses.includes("overdue"), true);
+  assert.equal(stageByKey("nope"), null);
+  assert.deepEqual(stageCounts({ pending: 3, confirmed: 2, ready: 1, rented: 4, overdue: 1, cancelled: 2, rejected: 1 }),
+    { pending: 3, approved: 3, ongoing: 5, completed: 0, closed: 3 });
+});
+
+test("a rented booking past its end date counts as overdue", () => {
+  assert.equal(isOverdueBooking({ status: "overdue", end_date: "2099-01-01" }), true);
+  assert.equal(isOverdueBooking({ status: "rented", end_date: "2000-01-01" }), true);
+  assert.equal(isOverdueBooking({ status: "rented", end_date: "2099-01-01" }), false);
+  assert.equal(isOverdueBooking({ status: "completed", end_date: "2000-01-01" }), false);
+});
+
+test("a rental ending today is not overdue, whatever the timezone", () => {
+  const now = new Date();
+  const todayText = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  // The API sends DATE columns as UTC midnight.
+  assert.equal(isOverdueBooking({ status: "rented", end_date: `${todayText}T00:00:00.000Z` }), false);
+  assert.equal(isOverdueBooking({ status: "rented", end_date: "2000-01-01T00:00:00.000Z" }), true);
+});
+
+test("profit and loss CSV quotes cells and keeps totals", () => {
+  const csv = buildProfitLossCsv({
+    months: [{ month: "2026-09", income: 1000, expenses: 250.5, net_profit: 749.5, margin: 74.95 }, { month: "2026-10", income: 0, expenses: 0, net_profit: 0, margin: null }],
+    totals: { income: 1000, expenses: 250.5, net_profit: 749.5, margin: 74.95 }
+  }).split("\r\n");
+  assert.equal(csv[0], '"Month","Income","Expenses","Net profit","Profit margin %"');
+  assert.equal(csv[1], '"2026-09","1000.00","250.50","749.50","74.95"');
+  assert.equal(csv[2], '"2026-10","0.00","0.00","0.00",""');
+  assert.equal(csv[3], '"Total","1000.00","250.50","749.50","74.95"');
+});

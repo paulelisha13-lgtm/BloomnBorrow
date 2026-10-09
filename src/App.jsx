@@ -9,10 +9,12 @@ import { Bookings } from "./pages/Bookings";
 import { Calendar } from "./pages/Calendar";
 import { Customers } from "./pages/Customers";
 import { AdminDashboard } from "./pages/Dashboard";
+import { Expenses } from "./pages/Expenses";
 import { Inventory } from "./pages/Inventory";
 import { AccessLogin } from "./pages/Login";
 import { Maintenance } from "./pages/Maintenance";
 import { Payments } from "./pages/Payments";
+import { ProfitLoss } from "./pages/ProfitLoss";
 import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
 import { CustomerHome } from "./pages/customer/Home";
@@ -45,6 +47,9 @@ function AdminRoutes({ location }) {
     <Route path="/admin/payments" element={<ProtectedRoute roles={["admin","manager","staff"]}><Payments/></ProtectedRoute>}/>
     <Route path="/admin/calendar" element={<ProtectedRoute roles={["admin","manager","staff"]}><Calendar/></ProtectedRoute>}/>
     <Route path="/admin/reports" element={<ProtectedRoute roles={["admin","manager"]}><Reports/></ProtectedRoute>}/>
+    <Route path="/admin/finance" element={<Navigate to="/admin/finance/expenses" replace/>}/>
+    <Route path="/admin/finance/expenses" element={<ProtectedRoute roles={["admin","manager"]}><Expenses/></ProtectedRoute>}/>
+    <Route path="/admin/finance/profit-loss" element={<ProtectedRoute roles={["admin","manager"]}><ProfitLoss/></ProtectedRoute>}/>
     <Route path="/admin/maintenance" element={<ProtectedRoute roles={["admin","manager","staff"]}><Maintenance/></ProtectedRoute>}/>
     <Route path="/admin/access" element={<ProtectedRoute roles={["admin"]}><AccessManagement/></ProtectedRoute>}/>
     <Route path="/admin/audit" element={<ProtectedRoute roles={["admin"]}><AuditLog/></ProtectedRoute>}/>

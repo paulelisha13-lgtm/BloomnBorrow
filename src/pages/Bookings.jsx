@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, API_BASE } from "../lib/api";
 import { Kpi } from "../components/Kpi";
 import { AdminShell } from "../components/layout/AdminShell";
@@ -11,6 +11,7 @@ import { useBusinessProfile } from "../hooks/useBusinessProfile";
 import { peso } from "../lib/format";
 import { balanceStatus, openInvoice, paymentBreakdown } from "../lib/invoice";
 import { isAdminUser } from "../lib/roles";
+import { isOverdueBooking, stageByKey } from "../lib/bookingStages";
 import { useDiscardGuard } from "../components/DiscardGuard";
 
 const BLANK_INSPECT={condition:"Good",damage_charge:"0",maintenance_required:false};
@@ -19,6 +20,8 @@ const BOOKINGS_PER_PAGE = 10;
 
 export function Bookings() {
   const navigate=useNavigate();
+  const [searchParams]=useSearchParams();
+  const stage=stageByKey(searchParams.get("stage"));
   const [rows,setRows]=useState([]);
   const [detail,setDetail]=useState(null);
   const [error,setError]=useState("");
@@ -66,7 +69,7 @@ export function Bookings() {
   const [actionNotice,setActionNotice]=useState("");
   const business=useBusinessProfile();
 
-  const load=()=>api("/admin/bookings").then(d=>setRows(d.bookings||[])).catch(e=>setError(e.message));
+  const load=()=>api("/admin/bookings").then(d=>{setRows(d.bookings||[]);window.dispatchEvent(new Event("bb:bookings-changed"))}).catch(e=>setError(e.message));
   React.useEffect(()=>{load()},[]);
   const open=async(id)=>{setError("");setActionNotice("");setInvoiceSent(false);try{setDetail((await api(`/admin/bookings/${id}`)).booking)}catch(e){setError(e.message)}};
   const act=async(path,body={})=>{setBusy(true);setError("");try{const data=await api(path,{method:"PATCH",body:JSON.stringify(body)});if(detail)await open(detail.id);await load();setActionNotice(data.message||"Booking updated successfully.")}catch(e){setError(e.message)}finally{setBusy(false)}};
@@ -209,9 +212,13 @@ export function Bookings() {
     }catch(e){setError(e.message)}finally{setBusy(false)}
   };
 
-  const statuses=["All","pending","confirmed","ready","rented","overdue","returned","completed","cancelled","rejected"];
-  const statusCounts=Object.fromEntries(statuses.map(s=>[s,s==="All"?rows.length:rows.filter(b=>b.status===s).length]));
-  const filtered=rows.filter(b=>{
+  // A stage (sidebar submenu) narrows the same bookings list; the dropdown then
+  // only offers that stage's statuses.
+  const stageRows=stage?rows.filter(b=>stage.statuses.includes(b.status)):rows;
+  const statuses=["All",...(stage?stage.statuses:["pending","confirmed","ready","rented","overdue","returned","completed","cancelled","rejected"])];
+  const statusCounts=Object.fromEntries(statuses.map(s=>[s,s==="All"?stageRows.length:stageRows.filter(b=>b.status===s).length]));
+  React.useEffect(()=>{setStatusFilter("All");setPage(1)},[stage?.key]);
+  const filtered=stageRows.filter(b=>{
     const matchSearch=(b.booking_no||"").toLowerCase().includes(search.toLowerCase())||(b.customer_name||"").toLowerCase().includes(search.toLowerCase());
     const matchStatus=statusFilter==="All"||b.status===statusFilter;
     return matchSearch&&matchStatus;
@@ -250,7 +257,7 @@ export function Bookings() {
     revenue:rows.filter(b=>["completed","returned"].includes(b.status)).reduce((s,b)=>s+Number(b.grand_total||0),0)
   };
 
-  return <AdminShell title="Booking Management" subtitle="Approve, reject, reschedule, collect payment, return and complete rentals.">
+  return <AdminShell title={stage?.title||"Booking Management"} subtitle="Approve, reject, reschedule, collect payment, return and complete rentals.">
     {error&&<div className="login-error">{error}</div>}
 
     <section className="kpi-grid">
@@ -268,7 +275,7 @@ export function Bookings() {
       <div className="admin-toolbar-controls booking-filter-group">
         <button className="primary-button" onClick={()=>navigate("/admin/bookings/new")}>+ Add Booking</button>
         <select className="booking-status-select" value={statusFilter} onChange={e=>{setStatusFilter(e.target.value);setPage(1)}}>
-          {statuses.map(s=><option key={s} value={s}>{s==="All"?"All Status":s.charAt(0).toUpperCase()+s.slice(1)} ({statusCounts[s]})</option>)}
+          {statuses.map(s=><option key={s} value={s}>{s==="All"?(stage?"All in this stage":"All Status"):s.charAt(0).toUpperCase()+s.slice(1)} ({statusCounts[s]})</option>)}
         </select>
         <SortControls sorts={sorts} sortKey={sortKey} sortDir={sortDir} setSort={changeSort}/>
         <ViewToggle view={view} onChange={setView}/>
@@ -282,7 +289,7 @@ export function Bookings() {
         <p>{search||statusFilter!=="All"?"Try adjusting your search or filter.":"No bookings have been made yet."}</p>
       </div>:<>{view==="table"?<div className="table-wrap"><table>
         <thead><tr><th>Booking</th><th>Customer</th><th>Items</th><th>Dates</th><th>Payment</th><th>Status</th><th className="num">Total</th><th></th></tr></thead>
-        <tbody>{visibleRows.map(b=><tr key={b.id} className="row-clickable" onClick={()=>open(b.id)}>
+        <tbody>{visibleRows.map(b=><tr key={b.id} className={`row-clickable${isOverdueBooking(b)?" row-overdue":""}`} onClick={()=>open(b.id)}>
           <td><strong>{b.booking_no}</strong></td>
           <td>{b.customer_name}</td>
           <td className="cell-wrap"><small>{b.items||"—"}</small></td>
@@ -293,7 +300,7 @@ export function Bookings() {
           <td><button className="mini-button" onClick={e=>{e.stopPropagation();open(b.id)}}>Manage →</button></td>
         </tr>)}</tbody>
       </table></div>:<div className="booking-card-grid">
-        {visibleRows.map(b=><article className="booking-card" key={b.id} onClick={()=>open(b.id)}>
+        {visibleRows.map(b=><article className={`booking-card${isOverdueBooking(b)?" is-overdue":""}`} key={b.id} onClick={()=>open(b.id)}>
           <div className="booking-card-top">
             <div className="booking-card-id">
               <div><strong>{b.booking_no}</strong><small>{b.customer_name}</small></div>
