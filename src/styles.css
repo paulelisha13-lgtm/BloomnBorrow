@@ -2571,7 +2571,7 @@ button:disabled,input:disabled,select:disabled,textarea:disabled{cursor:not-allo
 [data-theme="dark"] .booking-delivery-review{border-color:#6f5c2e;background:#302a1d}
 
 @media(max-width:900px){
-  .shop-footer-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .shop-footer-grid{grid-template-columns:minmax(150px,1.25fr) minmax(90px,.7fr) minmax(115px,.8fr) minmax(145px,1fr);align-items:start;overflow-x:auto;overscroll-behavior-inline:contain;scrollbar-width:thin;-webkit-overflow-scrolling:touch}
   .settings-save-bar{right:18px;bottom:18px}
 }
 @media(max-width:700px){
@@ -2721,7 +2721,7 @@ tr.row-overdue td:first-child{box-shadow:inset 3px 0 0 #d64550}
 .item-money-input>b{position:absolute;z-index:1;top:50%;left:12px;transform:translateY(-50%);color:var(--muted);font-size:12px;font-weight:750;pointer-events:none}
 .item-money-input>input{padding-left:29px}
 
-.item-image-slots{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:stretch}
+.item-image-slots{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:stretch}
 .item-image-slot{display:grid;grid-template-columns:112px minmax(0,1fr);gap:12px;min-width:0;padding:11px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
 .item-image-preview{display:grid;place-items:center;min-height:112px;overflow:hidden;border:1px dashed #bed7d5;border-radius:9px;background:var(--surface);color:var(--muted);font-size:10px}
 .item-image-preview img{display:block;width:100%;height:100%;object-fit:contain}
@@ -2816,4 +2816,220 @@ tr.row-overdue td:first-child{box-shadow:inset 3px 0 0 #d64550}
 ) img{
   object-fit:contain!important;
   object-position:center!important;
+}
+
+/* --------------------------------------------------------------------------
+   Application-wide responsive hardening
+   These final rules resolve the remaining small-screen edge cases without
+   changing desktop sizing: content can shrink, toolbars wrap predictably,
+   and long dialogs always keep their content and actions reachable.
+   -------------------------------------------------------------------------- */
+html,body,#root{width:100%;max-width:100%;min-width:0}
+:where(.admin-app,.admin-main,.admin-card,.admin-page-toolbar,.admin-toolbar-controls,.shop-shell,.shop-main,.shop-item-card,.modal){min-width:0}
+:where(.admin-app,.shop-shell) :where(h1,h2,h3,p,dd,strong,small){overflow-wrap:anywhere}
+:where(.admin-app,.shop-shell) pre{max-width:100%;overflow-x:auto}
+.modal-backdrop{overflow-y:auto;overscroll-behavior:contain}
+.admin-page-toolbar>.admin-search{flex-wrap:nowrap!important}
+.admin-page-toolbar>.admin-search input{min-width:0}
+.shop-search input{height:100%;min-height:0}
+.shop-privacy-text:focus,.shop-privacy-text:focus-visible{outline:none!important;box-shadow:none!important}
+.shop-detail-actions .shop-qty-stepper button{min-height:40px}
+.shop-terms-consent>button,.shop-request-contact a{display:inline-flex;align-items:center;min-height:32px;padding-top:5px;padding-bottom:5px}
+.notification-backdrop{display:none}
+.notification-header-copy{display:grid!important;gap:2px!important;min-width:0}
+.notification-header-actions{display:flex!important;align-items:center;justify-content:flex-end;gap:5px;flex:0 0 auto}
+.notification-close{display:none}
+.notification-dropdown:focus{outline:none}
+
+/* Keep the three access roles in one compact row. On narrow screens the row
+   scrolls horizontally instead of turning into three long stacked cards. */
+.access-policy-card .permission-grid{grid-template-columns:repeat(3,minmax(220px,1fr));align-items:stretch;max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain;scroll-snap-type:x proximity;scrollbar-width:thin;-webkit-overflow-scrolling:touch}
+.access-policy-card .permission-grid>div{grid-template-columns:minmax(0,1fr);align-content:start;min-width:0;scroll-snap-align:start}
+.access-policy-card .permission-grid strong{grid-column:1/-1}
+.access-policy-card .permission-grid span{min-width:0;line-height:1.4;overflow-wrap:anywhere}
+
+/* Calendar dates remain genuine tap targets at every layout size. */
+.cal-daynum{min-width:30px;min-height:30px;justify-content:center}
+.cal-add{min-height:28px}
+
+@media(max-width:900px){
+  .admin-main,.shop-main{width:100%;min-width:0}
+  .admin-page-toolbar,.admin-toolbar-controls,.sort-controls{max-width:100%}
+  .admin-toolbar-controls>select{min-width:0;max-width:100%}
+  .admin-app .table-wrap,.shop-booking-progress{max-width:100%;overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch}
+  .home-section-link,.shop-footer-col a,.shop-policy-contact a{display:flex;align-items:center;min-height:32px;padding-top:5px;padding-bottom:5px}
+}
+
+@media(max-width:680px){
+  .admin-main{padding-right:12px;padding-left:12px}
+  .admin-topbar-left,.admin-actions,.admin-search-wrap{min-width:0}
+  .admin-topbar h1{font-size:clamp(24px,8vw,28px);line-height:1.12}
+  .admin-topbar p{max-width:100%;line-height:1.5}
+  .admin-card{padding:15px}
+  .card-heading,.form-section-title,.item-row-head{min-width:0}
+  .card-heading{align-items:flex-start;flex-wrap:wrap;gap:10px}
+  .form-section-title>div,.item-row-head>.grow{min-width:0}
+  .admin-page-toolbar{width:100%;gap:9px}
+  .admin-toolbar-controls{width:100%;gap:8px}
+  .admin-toolbar-controls>select{width:100%}
+  .inventory-filters>.primary-button,.inventory-filters>.sort-controls{flex:1 1 100%;width:100%}
+  .inventory-filters>select{flex:1 1 calc(50% - 4px);width:auto}
+  .sort-controls{display:grid;grid-template-columns:auto minmax(0,1fr) 40px;width:100%}
+  .sort-controls .booking-status-select{width:100%;min-width:0}
+  .sort-dir-btn,.view-toggle button{width:40px;height:40px;min-height:40px}
+  .view-toggle{min-height:40px}
+  .admin-app :where(.primary-button,.secondary-button,.mini-button){white-space:normal;text-align:center}
+  .admin-app :where(.primary-button,.secondary-button){min-height:42px}
+
+  .settings-page-form{padding-bottom:92px}
+  .settings-save-bar{right:12px;bottom:max(12px,env(safe-area-inset-bottom));left:12px;z-index:60;max-width:calc(100vw - 24px)}
+  .settings-save-bar .primary-button{min-height:46px}
+
+  .notification-bell.is-open{z-index:180}
+  .notification-backdrop{position:fixed;inset:0;z-index:168;display:block;width:100%;height:100%;padding:0;border:0;border-radius:0;background:rgba(7,31,32,.42);backdrop-filter:blur(2px);cursor:default}
+  .notification-dropdown{
+    position:fixed;z-index:170;inset:auto 12px max(12px,env(safe-area-inset-bottom)) 12px;
+    display:flex;flex-direction:column;width:auto;max-height:min(78dvh,620px);
+    border-radius:20px;box-shadow:0 24px 70px rgba(7,31,32,.3);
+    animation:notificationSheetIn .22s cubic-bezier(.22,1,.36,1);
+  }
+  .notification-header{flex:0 0 auto;gap:10px;padding:15px 14px}
+  .notification-header-actions>button:not(.notification-close){min-height:32px;padding:5px 7px;white-space:nowrap}
+  .notification-close{display:grid;width:32px;height:32px;min-height:32px;padding:0;place-items:center;border:1px solid var(--line)!important;border-radius:9px;background:var(--surface-2)!important;color:var(--ink)!important;font-size:20px!important;line-height:1}
+  .notification-list{flex:1 1 auto;min-height:0;max-height:none;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+  .notification-item{min-height:76px;gap:11px;padding:13px 14px}
+  .notification-content strong{font-size:13px;line-height:1.35}
+  .notification-content p{display:-webkit-box;margin:3px 0;overflow:hidden;white-space:normal;overflow-wrap:anywhere;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-size:11.5px;line-height:1.45}
+  .notification-content small{display:block;overflow-wrap:anywhere;font-size:10.5px;line-height:1.45}
+  .notification-dot{margin-top:6px}
+  .notification-footer{flex:0 0 auto;padding:8px 14px calc(8px + env(safe-area-inset-bottom))}
+  .notification-footer a{display:flex;align-items:center;justify-content:center;min-height:40px}
+
+  .admin-app .modal-backdrop,.shop-shell .modal-backdrop{padding:0;align-items:end}
+  .admin-app .modal:not(.booking-modal):not(.item-form-modal),
+  .shop-shell .modal:not(.shop-terms-modal){
+    width:100%;max-width:100%;max-height:94vh;max-height:94dvh;
+    overflow-y:auto;overscroll-behavior:contain;border-radius:20px 20px 0 0;
+  }
+  .modal-head{gap:12px}
+  .modal-head>div{min-width:0}
+  .modal-actions,.confirm-modal-actions,.payment-modal-footer,.inspect-modal-footer{flex-wrap:wrap}
+  .modal-actions>button,.payment-modal-footer>button,.inspect-modal-footer>button{flex:1 1 120px;min-height:42px}
+  .confirm-modal-actions button{flex:1 1 0;min-width:0;min-height:44px}
+  .payment-modal-header{padding:22px 18px 0}
+  .payment-modal-balance{margin:16px 18px}
+  .payment-modal-form{padding:0 18px}
+  .payment-modal-footer{padding:16px 18px calc(16px + env(safe-area-inset-bottom))}
+  .inspect-modal{width:100%;max-width:100%}
+  .condition-record,.renter-score-card,.payment-transaction-row{align-items:stretch;flex-direction:column}
+  .condition-badge{align-self:flex-start}
+  .payment-tx-actions,.payment-tx-meta{align-items:flex-start}
+  .shop-privacy-modal{display:flex;flex-direction:column;max-height:calc(100dvh - 16px);overflow:hidden!important}
+  .shop-privacy-text{flex:1 1 auto;min-height:150px;max-height:none;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .shop-privacy-modal>.confirm-modal-actions{flex:0 0 auto}
+
+  :where(.admin-app,.shop-shell,.admin-login-page) :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),select,textarea){font-size:16px}
+}
+
+@keyframes notificationSheetIn{from{opacity:.4;transform:translateY(24px)}to{opacity:1;transform:none}}
+
+@media(max-width:700px){
+  /* Use the overlay as the mobile sheet's positioning context. This avoids
+     transformed/animated ancestors changing fixed-position viewport math. */
+  .shop-detail-backdrop{overflow:hidden}
+  .shop-detail-modal,.shop-detail-modal-small{position:relative;inset:auto;width:100%;max-height:92%;margin:auto 0 0}
+}
+
+@media(max-width:560px){
+  .shop-main{padding-right:12px;padding-left:12px}
+  .shop-page-head h1{font-size:clamp(24px,8.5vw,29px);line-height:1.12}
+  .shop-catalog-page>.shop-page-head{padding:24px 20px}
+  .shop-catalog-page>.shop-page-head h1{font-size:clamp(28px,9vw,32px);line-height:1.08}
+  .shop-catalog-page .shop-item-grid,.shop-catalog-page .shop-catalog-skeleton{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .shop-catalog-page .shop-item-card-body{padding:10px}
+  .shop-catalog-page .shop-item-card-link{font-size:13px}
+  .shop-catalog-page .shop-item-card .price-tag-card strong{font-size:16px}
+  .shop-catalog-page .shop-item-stock{font-size:9px}
+  .shop-footer-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:22px 12px;padding:28px 16px 22px;overflow-x:visible}
+  .shop-footer-brand{grid-column:1/-1;min-width:0}
+  .shop-footer-brand .logo{gap:9px;min-height:34px;white-space:nowrap;font-size:20px;letter-spacing:-.7px}
+  .shop-footer-brand .logo-img{height:34px}
+  .shop-footer-brand p{margin:7px 0 0;font-size:12px;line-height:1.6}
+  .shop-footer-col{gap:4px}
+  .shop-footer-col strong{font-size:9px}
+  .shop-footer-col a,.shop-footer-col span{min-height:0;padding:3px 0;font-size:10px;line-height:1.4}
+  .shop-request-item{min-width:0;padding:10px}
+  .shop-request-item-name strong{white-space:normal;line-height:1.35}
+  .shop-status-heading{flex-wrap:wrap}
+  .shop-status-heading .status-pill{max-width:100%}
+  .shop-terms-modal-head h1{font-size:18px}
+  .shop-terms-modal-foot{padding-bottom:calc(82px + env(safe-area-inset-bottom))}
+  .settings-save-bar{max-width:calc(100vw - 24px)}
+}
+
+@media(max-width:480px){
+  .admin-login-panel{padding:16px}
+  .admin-login-card{padding:26px 22px;border-radius:20px}
+  .mobile-login-logo{margin-bottom:20px}
+  .admin-page-toolbar{border-radius:13px}
+  .admin-toolbar-controls>*{min-width:0}
+  .calendar-toolbar .admin-toolbar-controls{grid-template-columns:minmax(0,1.12fr) minmax(0,1fr) minmax(0,1fr)}
+  .calendar-toolbar .admin-toolbar-controls>*{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cal-bar{grid-template-columns:1fr}
+  .cal-bar-nav{grid-template-columns:40px minmax(0,1fr) 40px}
+  .cal-period{grid-template-columns:minmax(0,1fr) minmax(76px,.62fr)}
+  .cal-select{padding-right:28px!important;padding-left:10px!important;font-size:12px}
+  .cal-daynum{min-width:28px;min-height:28px;padding:2px;font-size:11px}
+  .cal-cell{padding:2px}
+  .form-section{padding:16px}
+  .sticky-form-actions{align-items:stretch;flex-direction:column-reverse}
+  .sticky-form-actions>*{width:100%}
+  .password-rules{grid-template-columns:1fr}
+  .payment-type-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .payment-card-top{align-items:flex-start;flex-wrap:wrap}
+  .payment-card-amount{width:100%;align-items:flex-start;padding-left:54px}
+  .shop-mobile-tabbar{right:8px;bottom:max(8px,env(safe-area-inset-bottom));left:8px}
+  .shop-mobile-tab{min-height:54px;font-size:10px}
+  .shop-cart-drawer-head{padding:17px 16px 13px}
+  .shop-cart-drawer-list{padding:12px}
+  .shop-cart-drawer-foot{padding:13px 14px calc(14px + env(safe-area-inset-bottom))}
+  .shop-detail-modal,.shop-detail-modal-small{padding-right:14px;padding-left:14px}
+  .shop-detail-actions{display:grid;grid-template-columns:1fr}
+  .shop-detail-actions .shop-qty-stepper{width:100%}
+  .shop-detail-actions .shop-qty-stepper button{flex:1;min-height:42px}
+  .shop-detail-actions .shop-qty-stepper input{flex:1;min-height:42px}
+  .shop-detail-addbtn{width:100%;min-height:44px}
+  .shop-policy-page{padding:20px 16px}
+  .shop-policy-intro,.shop-policy-contact{padding:15px}
+}
+
+@media(max-width:360px){
+  .admin-main{padding-right:10px;padding-left:10px}
+  .kpi-grid,.dashboard-skeleton-grid{gap:7px}
+  .kpi-grid .kpi-card{padding:10px}
+  .inventory-filters>select{flex-basis:100%;width:100%}
+  .calendar-toolbar .admin-toolbar-controls{grid-template-columns:1fr 1fr}
+  .calendar-toolbar .admin-toolbar-controls>.primary-button{grid-column:1/-1}
+  .shop-catalog-page>.shop-page-head{padding:22px 18px}
+  .shop-detail-specs{grid-template-columns:1fr}
+  .shop-detail-specs>div:last-child:nth-child(odd){grid-column:auto}
+  .shop-request-item{grid-template-columns:42px minmax(0,1fr);grid-template-areas:"image name" "quantity total" "duration duration" "availability availability"}
+  .shop-request-item>img,.shop-request-item-placeholder{width:42px;height:42px}
+  .shop-request-item-total{text-align:left}
+}
+
+@media(max-width:300px){
+  .notification-header{gap:6px;padding-right:12px;padding-left:12px}
+  .notification-header strong{font-size:13px}
+  .notification-header small{font-size:10px}
+  .notification-header-actions{gap:4px}
+  .notification-header-actions>button:not(.notification-close){max-width:52px;padding:4px;font-size:10px;line-height:1.12;white-space:normal}
+}
+
+@media(max-height:620px) and (max-width:700px){
+  .admin-login-panel{align-items:start;overflow-y:auto}
+  .admin-login-card{margin:auto}
+  .admin-app .modal:not(.booking-modal):not(.item-form-modal),
+  .shop-shell .modal:not(.shop-terms-modal){max-height:100dvh;border-radius:16px 16px 0 0}
+  .shop-terms-modal{height:100dvh}
 }

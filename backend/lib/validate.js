@@ -205,11 +205,12 @@ export const schemas = {
     security_deposit: money,
     total_quantity: z.coerce.number().int("must be a whole number").min(0, "cannot be negative").max(1_000_000, "is too large"),
     status: z.enum(["active", "inactive", "maintenance"]).optional().default("active"),
-    // Up to two photos. Both are optional web addresses; null/undefined (a row
-    // that never had a photo) reads as "". If only the second is filled in, the
-    // route promotes it to the first slot so slot 1 is never empty while slot 2 is set.
+    // Up to three photos. All are optional web addresses; null/undefined (a row
+    // that never had a photo) reads as "". The route packs the photos into the
+    // first free slots, so slot 1 is never empty while a later slot is set.
     image_url: imageUrl,
     image_url_2: imageUrl,
+    image_url_3: imageUrl,
     // Rental duration discount (separate from original_price / "Save"): on =
     // renting DURATION_DISCOUNT_MIN_DAYS or more takes `value` (a percent, or a
     // peso amount per day) off daily_price. The value is only judged when the

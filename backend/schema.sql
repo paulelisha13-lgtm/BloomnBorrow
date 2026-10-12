@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS rental_items (
   status ENUM('active','inactive','maintenance') NOT NULL DEFAULT 'active',
   image_url TEXT NULL,
   image_url_2 TEXT NULL,
+  image_url_3 TEXT NULL,
   bundle_items JSON NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

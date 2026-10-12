@@ -22,6 +22,8 @@ export function NotificationBell() {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(false);
   const menuRef = useRef(null);
+  const triggerRef = useRef(null);
+  const dropdownRef = useRef(null);
   const navigate = useNavigate();
 
   const loadNotifications = async () => {
@@ -102,6 +104,17 @@ export function NotificationBell() {
     return () => { document.removeEventListener("pointerdown", onPointerDown); document.removeEventListener("keydown", onKeyDown); };
   }, []);
 
+  useEffect(() => {
+    if (!open) return;
+    const mobile = window.matchMedia("(max-width: 680px)").matches;
+    const previousOverflow = document.body.style.overflow;
+    if (mobile) document.body.style.overflow = "hidden";
+    requestAnimationFrame(() => dropdownRef.current?.focus());
+    return () => {
+      if (mobile) document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
   const unreadCount = notifications.filter(n => !n.read).length;
 
   const markRead = items => {
@@ -138,15 +151,20 @@ export function NotificationBell() {
     return "notif-update";
   };
 
-  return <div className="notification-bell" ref={menuRef}>
-    <button type="button" className="notification-trigger" aria-label={unreadCount?`Notifications, ${unreadCount} unread`:"Notifications"} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(v => !v)}>
+  return <div className={`notification-bell${open ? " is-open" : ""}`} ref={menuRef}>
+    <button ref={triggerRef} type="button" className="notification-trigger" aria-label={unreadCount?`Notifications, ${unreadCount} unread`:"Notifications"} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(v => !v)}>
       <AdminIcon name="bell"/>
       {unreadCount > 0 && <span className="notification-badge" aria-hidden="true">{unreadCount>99?"99+":unreadCount}</span>}
     </button>
-    {open && <div className="notification-dropdown" role="dialog" aria-label="Notifications">
+    {open && <>
+      <button type="button" className="notification-backdrop" aria-label="Close notifications" onClick={() => { setOpen(false); triggerRef.current?.focus(); }}/>
+      <div ref={dropdownRef} className="notification-dropdown" role="dialog" aria-label="Notifications" tabIndex="-1">
       <div className="notification-header">
-        <div><strong>Notifications</strong><small>{unreadCount} unread</small></div>
-        {unreadCount > 0 && <button type="button" onClick={markAllRead}>Mark all read</button>}
+        <div className="notification-header-copy"><strong>Notifications</strong><small>{unreadCount} unread</small></div>
+        <div className="notification-header-actions">
+          {unreadCount > 0 && <button type="button" onClick={markAllRead}>Mark all read</button>}
+          <button type="button" className="notification-close" aria-label="Close notifications" onClick={() => { setOpen(false); triggerRef.current?.focus(); }}><span aria-hidden="true">&times;</span></button>
+        </div>
       </div>
       <div className="notification-list">
         {loading && notifications.length === 0 ? <div className="notification-empty">Loading notifications...</div> :
@@ -166,6 +184,6 @@ export function NotificationBell() {
           <Link to="/admin/inventory" onClick={() => setOpen(false)}>View inventory →</Link>:
           <Link to="/admin/bookings" onClick={() => setOpen(false)}>View all bookings</Link>}
       </div>
-    </div>}
+    </div></>}
   </div>;
 }

@@ -36,10 +36,10 @@ const lookupLimiter = rateLimit({
 
 const ITEM_FIELDS = "r.id,r.name,r.category,r.description,r.daily_price,r.original_price,r.security_deposit,r.total_quantity,r.image_url";
 // Some rental_items columns arrived in later migrations (010 bundle_items, 017
-// image_url_2 + duration_discount_*). A database that has not run them yet must
+// image_url_2 + duration_discount_*, 018 image_url_3). A database that has not run them yet must
 // still serve the full catalog, so the optional ones are probed once and then
 // remembered for the lifetime of the process.
-const OPTIONAL_ITEM_COLUMNS = ["bundle_items", "image_url_2", "duration_discount_enabled", "duration_discount_type", "duration_discount_value"];
+const OPTIONAL_ITEM_COLUMNS = ["bundle_items", "image_url_2", "image_url_3", "duration_discount_enabled", "duration_discount_type", "duration_discount_value"];
 let presentOptionalColumns = null;
 async function itemColumns() {
   if (!presentOptionalColumns) {
@@ -78,7 +78,7 @@ function withAvailable(item) {
   // Normalised duration rule ({ type, value, min_days }) or null when the item
   // has none / has an invalid one -- the browser prices with exactly this.
   const rule = durationRuleOf({ duration_discount_enabled, duration_discount_type, duration_discount_value });
-  const images = [rest.image_url, rest.image_url_2].map(url => String(url || "").trim()).filter(Boolean);
+  const images = [rest.image_url, rest.image_url_2, rest.image_url_3].map(url => String(url || "").trim()).filter(Boolean);
   return {
     ...rest,
     images,

@@ -42,7 +42,7 @@ export function Inventory() {
   const [conditionLoading,setConditionLoading]=useState(false);
   const [addConditionModal,setAddConditionModal]=useState(false);
   const [conditionForm,setConditionForm]=useState(BLANK_CONDITION);
-  const blank={sku:"",name:"",category:"Events",description:"",daily_price:"",original_price:"",security_deposit:"",total_quantity:1,status:"active",image_url:"",image_url_2:"",duration_discount_enabled:false,duration_discount_type:"percent",duration_discount_value:"",bundle_items:[]};
+  const blank={sku:"",name:"",category:"Events",description:"",daily_price:"",original_price:"",security_deposit:"",total_quantity:1,status:"active",image_url:"",image_url_2:"",image_url_3:"",duration_discount_enabled:false,duration_discount_type:"percent",duration_discount_value:"",bundle_items:[]};
   const [form,setForm]=useState(blank);
   // Snapshot of the form when it was opened, so closing can tell whether the
   // admin actually changed anything.
@@ -58,7 +58,7 @@ export function Inventory() {
   const load=()=>api("/admin/inventory").then(d=>setRows(d.items||[])).catch(e=>setError(e.message));
   React.useEffect(()=>{load();},[]);
   const openNew=()=>{setError("");setEditing(null);setForm(blank);setBaseline(JSON.stringify(blank));setModal(true)};
-  const openEdit=(x)=>{setError("");const next={...x,image_url:x.image_url||"",image_url_2:x.image_url_2||"",duration_discount_enabled:Number(x.duration_discount_enabled)===1,duration_discount_type:x.duration_discount_type||"percent",duration_discount_value:Number(x.duration_discount_value)>0?String(Number(x.duration_discount_value)):"",bundle_items:toBundleRows(x.bundle_items)};setEditing(x);setForm(next);setBaseline(JSON.stringify(next));setModal(true)};
+  const openEdit=(x)=>{setError("");const next={...x,image_url:x.image_url||"",image_url_2:x.image_url_2||"",image_url_3:x.image_url_3||"",duration_discount_enabled:Number(x.duration_discount_enabled)===1,duration_discount_type:x.duration_discount_type||"percent",duration_discount_value:Number(x.duration_discount_value)>0?String(Number(x.duration_discount_value)):"",bundle_items:toBundleRows(x.bundle_items)};setEditing(x);setForm(next);setBaseline(JSON.stringify(next));setModal(true)};
   const save=async(e)=>{e.preventDefault();setError("");try{await api(editing?`/admin/inventory/${editing.id}`:"/admin/inventory",{method:editing?"PATCH":"POST",body:JSON.stringify(form)});setModal(false);load()}catch(err){setError(err.message)}};
   const confirmDelete=(x)=>{setDeleteModal(x)};
   const remove=async()=>{if(!deleteModal)return;setDeleteLoading(true);try{await api(`/admin/inventory/${deleteModal.id}`,{method:"DELETE"});setDeleteModal(null);load()}catch(e){setError(e.message)}finally{setDeleteLoading(false)}};
@@ -237,11 +237,12 @@ export function Inventory() {
           <section className="item-form-section" aria-labelledby="item-photos-heading">
             <div className="item-form-section-head">
               <span aria-hidden="true">3</span>
-              <div><h3 id="item-photos-heading">Item photos</h3><p>Add up to two image links. Photos display in full without cropping.</p></div>
+              <div><h3 id="item-photos-heading">Item photos</h3><p>Add up to three image links. Photos display in full without cropping.</p></div>
             </div>
             <div className="item-image-slots">
               <ItemImageSlot label="Cover photo" value={form.image_url} onChange={value=>setForm(f=>({...f,image_url:value}))}/>
               <ItemImageSlot label="Second photo" hint="Optional" value={form.image_url_2} onChange={value=>setForm(f=>({...f,image_url_2:value}))}/>
+              <ItemImageSlot label="Third photo" hint="Optional" value={form.image_url_3} onChange={value=>setForm(f=>({...f,image_url_3:value}))}/>
             </div>
           </section>
 

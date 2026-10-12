@@ -209,3 +209,12 @@ test("an item with no description (NULL in the database) can be edited and saved
   assert.equal(schemas.inventoryItem.safeParse({ ...inventoryItem, description: undefined }).data.description, "");
   assert.equal(schemas.inventoryItem.safeParse({ ...inventoryItem, description: "x".repeat(2001) }).success, false, "length limit still applies");
 });
+
+test("an item can carry a third photo, validated like the others", () => {
+  const r = schemas.inventoryItem.safeParse({ ...inventoryItem, image_url: "https://a.test/1.jpg", image_url_2: "https://a.test/2.jpg", image_url_3: " https://a.test/3.jpg " });
+  assert.equal(r.success, true);
+  assert.equal(r.data.image_url_3, "https://a.test/3.jpg");
+  assert.equal(schemas.inventoryItem.safeParse(inventoryItem).data.image_url_3, "", "absent means no third photo");
+  assert.equal(schemas.inventoryItem.safeParse({ ...inventoryItem, image_url_3: null }).success, true, "NULL column from the database");
+  assert.equal(schemas.inventoryItem.safeParse({ ...inventoryItem, image_url_3: "javascript:alert(1)" }).success, false);
+});

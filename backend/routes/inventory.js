@@ -12,15 +12,13 @@ const router = Router();
 // never carries a misleading empty array.
 const bundleItemsValue = value => Array.isArray(value) && value.length ? JSON.stringify(value) : null;
 
-// Up to two photos per item. Slot 1 is the cover shown on cards, so if only the
-// second is set (the admin removed the first) it is promoted instead of leaving
-// a gap. A duplicate of slot 1 in slot 2 is dropped -- the gallery would just
-// show the same picture twice.
+// Up to three photos per item. Slot 1 is the cover shown on cards, so photos are
+// packed into the first free slots: removing one in the middle moves the later
+// ones up instead of leaving a gap. Repeated addresses are dropped -- the
+// gallery would just show the same picture twice.
 function itemImages(body) {
-  const first = String(body.image_url || "").trim();
-  const second = String(body.image_url_2 || "").trim();
-  const images = [first, second].filter(Boolean);
-  return { image_url: images[0] || null, image_url_2: images[1] && images[1] !== images[0] ? images[1] : null };
+  const images = [...new Set([body.image_url, body.image_url_2, body.image_url_3].map(url => String(url || "").trim()).filter(Boolean))];
+  return { image_url: images[0] || null, image_url_2: images[1] || null, image_url_3: images[2] || null };
 }
 const discountColumns = body => [body.duration_discount_enabled ? 1 : 0, body.duration_discount_type, Number(body.duration_discount_value) || 0];
 
@@ -48,9 +46,9 @@ router.post("/api/admin/inventory", authenticate, requireRole("admin","manager")
   const qty = req.body.total_quantity;
   try {
     const [result] = await db.query(`
-      INSERT INTO rental_items(sku,name,category,description,daily_price,original_price,duration_discount_enabled,duration_discount_type,duration_discount_value,security_deposit,total_quantity,status,image_url,image_url_2,bundle_items)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,'active',?,?,?)
-    `,[sku,name,category,description||null,daily,original,...discountColumns(req.body),deposit,qty,images.image_url,images.image_url_2,bundleItemsValue(req.body.bundle_items)]);
+      INSERT INTO rental_items(sku,name,category,description,daily_price,original_price,duration_discount_enabled,duration_discount_type,duration_discount_value,security_deposit,total_quantity,status,image_url,image_url_2,image_url_3,bundle_items)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,'active',?,?,?,?)
+    `,[sku,name,category,description||null,daily,original,...discountColumns(req.body),deposit,qty,images.image_url,images.image_url_2,images.image_url_3,bundleItemsValue(req.body.bundle_items)]);
     await audit(req,"CREATE_RENTAL_ITEM",null,{item_id:result.insertId,sku});
     res.status(201).json({id:result.insertId});
   } catch(e) {
@@ -67,9 +65,9 @@ router.patch("/api/admin/inventory/:id", authenticate, requireRole("admin","mana
   const images = itemImages(next);
   if(!["active","inactive","maintenance"].includes(next.status)) return res.status(400).json({message:"Invalid inventory status."});
   await db.query(`
-    UPDATE rental_items SET sku=?,name=?,category=?,description=?,daily_price=?,original_price=?,duration_discount_enabled=?,duration_discount_type=?,duration_discount_value=?,security_deposit=?,total_quantity=?,status=?,image_url=?,image_url_2=?,bundle_items=?
+    UPDATE rental_items SET sku=?,name=?,category=?,description=?,daily_price=?,original_price=?,duration_discount_enabled=?,duration_discount_type=?,duration_discount_value=?,security_deposit=?,total_quantity=?,status=?,image_url=?,image_url_2=?,image_url_3=?,bundle_items=?
     WHERE id=?
-  `,[next.sku,next.name,next.category,next.description||null,Number(next.daily_price),next.original_price==null?null:Number(next.original_price),...discountColumns(next),Number(next.security_deposit),Number(next.total_quantity),next.status,images.image_url,images.image_url_2,bundleItemsValue(next.bundle_items),id]);
+  `,[next.sku,next.name,next.category,next.description||null,Number(next.daily_price),next.original_price==null?null:Number(next.original_price),...discountColumns(next),Number(next.security_deposit),Number(next.total_quantity),next.status,images.image_url,images.image_url_2,images.image_url_3,bundleItemsValue(next.bundle_items),id]);
   if(next.status==="maintenance"&&old.status!=="maintenance"){
     await db.query("INSERT INTO maintenance_records(rental_item_id,booking_id,reason,status,notes) VALUES(?,NULL,'Manual maintenance assignment','open',?)",[id,req.body.notes||null]);
   }
