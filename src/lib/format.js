@@ -1,6 +1,14 @@
 export const peso = (value) =>
   new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(value);
 
+// Like peso(), but keeps centavos when there are any. Duration-discounted day
+// rates can be fractional (e.g. 10% off ₱333 = ₱299.70), and rounding those to
+// whole pesos next to a total that includes the centavos would look wrong.
+export const pesoExact = (value) => {
+  const n = Number(value);
+  return new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 }).format(n);
+};
+
 // Compare-at price for the "₱2,200 /day ₱2,400 Save ₱200" badge.
 // Returns null unless there is a real discount to show, so a missing,
 // zero, or stale original price (one at/below the current price) renders

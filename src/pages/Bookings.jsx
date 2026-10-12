@@ -8,7 +8,8 @@ import { ViewToggle } from "../components/ViewToggle";
 import { sortRows, useSort } from "../hooks/useSort";
 import { useViewMode } from "../hooks/useViewMode";
 import { useBusinessProfile } from "../hooks/useBusinessProfile";
-import { peso } from "../lib/format";
+import { peso, pesoExact } from "../lib/format";
+import { DURATION_DISCOUNT_MIN_DAYS } from "../lib/pricing";
 import { balanceStatus, openInvoice, paymentBreakdown } from "../lib/invoice";
 import { isAdminUser } from "../lib/roles";
 import { isOverdueBooking, stageByKey } from "../lib/bookingStages";
@@ -385,7 +386,7 @@ export function Bookings() {
 
       <div className="booking-modal-section">
         <div className="booking-section-header"><strong>Items</strong></div>
-        <div className="booking-items-list">{detail.items.map(x=><div className="booking-item-row" key={x.id}><div className="booking-item-info"><strong>{x.item_name}</strong><small>{x.quantity} pieces · {peso(Number(x.daily_price))}/day · {x.rental_days} days</small><small>Delivery: {peso(Number(x.delivery_fee_per_piece||0))} × {x.quantity} = {peso(Number(x.line_delivery_total||0))}</small></div><span className="booking-item-subtotal">{peso(Number(x.line_rental_total)+Number(x.line_deposit_total)+Number(x.line_delivery_total||0))}</span></div>)}</div>
+        <div className="booking-items-list">{detail.items.map(x=><div className="booking-item-row" key={x.id}><div className="booking-item-info"><strong>{x.item_name}</strong><small>{x.quantity} pieces · {pesoExact(Number(x.daily_price)-Number(x.duration_discount_per_day||0))}/day · {x.rental_days} days</small>{Number(x.duration_discount_per_day||0)>0&&<small className="calc-saving">Regular {peso(Number(x.daily_price))}/day · {DURATION_DISCOUNT_MIN_DAYS}+ day discount −{pesoExact(Number(x.duration_discount_per_day))}/day</small>}<small>Delivery: {peso(Number(x.delivery_fee_per_piece||0))} × {x.quantity} = {peso(Number(x.line_delivery_total||0))}</small></div><span className="booking-item-subtotal">{peso(Number(x.line_rental_total)+Number(x.line_deposit_total)+Number(x.line_delivery_total||0))}</span></div>)}</div>
       </div>
       <div className="booking-modal-section">
         <div className="booking-section-header"><strong>Actions</strong></div>

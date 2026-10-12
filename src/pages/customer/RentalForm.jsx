@@ -6,7 +6,8 @@ import { PrivacyConsentModal } from "../../components/customer/PrivacyConsentMod
 import { RentalTermsModal } from "../../components/customer/RentalTermsModal";
 import { useCart } from "../../context/CartContext";
 import { publicApi, publicApiForm } from "../../lib/publicApi";
-import { peso } from "../../lib/format";
+import { peso, pesoExact } from "../../lib/format";
+import { DURATION_DISCOUNT_MIN_DAYS, daysUntilDurationDiscount, durationRuleOf, priceRentalLine } from "../../lib/pricing";
 
 const ID_TYPES = ["image/jpeg", "image/png", "application/pdf"];
 const MAX_ID_BYTES = 5 * 1024 * 1024;
@@ -41,10 +42,16 @@ export function CustomerRentalForm() {
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [agreed, setAgreed] = useState(false);
+  const [catalog, setCatalog] = useState({});
   const now=new Date();
   const minRentalDate=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
 
   useEffect(() => { if (items.length === 0 && !result) navigate("/shop/cart", { replace: true }); }, [items, result, navigate]);
+  // The cart keeps the price/rule from when each item was added, which can be
+  // stale. Re-read the live catalog so the estimate matches what the server will charge.
+  useEffect(() => {
+    publicApi("/public/items").then(d => setCatalog(Object.fromEntries((d.items || []).map(item => [item.id, item])))).catch(() => {});
+  }, []);
   useEffect(() => {
     publicApi("/public/business-info").then(d => {
       setBusiness(d.business || {});
@@ -56,8 +63,18 @@ export function CustomerRentalForm() {
   const days = form.start_date && form.end_date
     ? Math.max(1, Math.floor((new Date(form.end_date + "T00:00:00") - new Date(form.start_date + "T00:00:00")) / 86400000) + 1)
     : 1;
-  const lines = items.map(x => ({ ...x, rental: x.daily_price * x.quantity * days, deposit: x.security_deposit * x.quantity }));
-  const rentalSubtotal = lines.reduce((s, x) => s + x.rental, 0);
+  // Same pricing function the server uses (lib/pricing.js): the duration discount
+  // applies from 3 days and comes off the current daily price; the "Save" promo
+  // (original_price) is display-only and not part of this.
+  const lines = items.map(x => {
+    const live = catalog[x.item_id] || x;
+    const priced = priceRentalLine({ dailyPrice: live.daily_price, rule: durationRuleOf(live), days, quantity: x.quantity });
+    return { ...x, ...priced, deposit: x.security_deposit * x.quantity };
+  });
+  const money2 = n => Math.round(n * 100) / 100;
+  const rentalSubtotal = money2(lines.reduce((s, x) => s + x.rental, 0));
+  const durationSavings = money2(lines.reduce((s, x) => s + x.discountTotal, 0));
+  const unlockNames = days < DURATION_DISCOUNT_MIN_DAYS ? lines.filter(x => durationRuleOf(catalog[x.item_id] || x)).map(x => x.name) : [];
   const depositSubtotal = lines.reduce((s, x) => s + x.deposit, 0);
   const total = rentalSubtotal + depositSubtotal;
 
@@ -131,6 +148,7 @@ export function CustomerRentalForm() {
 
   if (result) {
     const isGcash = (result.payment_method || form.payment_method) === "gcash";
+    const savedByDuration = (result.items || []).reduce((sum, row) => sum + Number(row.duration_discount_per_day || 0) * Number(row.quantity || 0) * Number(row.rental_days || 0), 0);
     return <CustomerShell hideFloatingCart>
       <section className="admin-card shop-success" aria-labelledby="request-success-title">
         <CustomerProgress current="confirmation"/>
@@ -146,7 +164,8 @@ export function CustomerRentalForm() {
           <strong><i aria-hidden="true" />Pending Admin Approval</strong>
         </div>
         <p className="shop-success-message">Your rental request has been submitted and is currently waiting for Admin approval.</p>
-        <div className="shop-success-total"><span>Rental total</span><strong>{peso(Number(result.grand_total))}</strong></div>
+        <div className="shop-success-total"><span>Rental total</span><strong>{pesoExact(Number(result.grand_total))}</strong></div>
+        {savedByDuration > 0 && <p className="shop-success-terms">Includes a rental duration discount of {pesoExact(savedByDuration)}.</p>}
         {result.rental_terms_accepted_at&&<p className="shop-success-terms">Rental terms {result.rental_terms_version||""} accepted with this request.</p>}
 
         {isGcash && <div className="shop-success-payment">
@@ -197,6 +216,10 @@ export function CustomerRentalForm() {
             <div className="form-group"><label>Fulfillment</label><select value={form.fulfillment} onChange={e => setForm({ ...form, fulfillment:e.target.value })}><option value="pickup">Pickup</option><option value="delivery">Delivery</option></select></div>
             <div className="form-group"><label>Payment method</label><select value={form.payment_method} onChange={e => setForm({ ...form, payment_method:e.target.value })}><option value="cash">Cash</option><option value="gcash">GCash</option><option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select></div>
           </div>
+          {unlockNames.length > 0 && <div className="duration-nudge" role="note">
+            <strong>Rent for {DURATION_DISCOUNT_MIN_DAYS}+ days and pay less per day</strong>
+            <p>{unlockNames.join(", ")} {unlockNames.length === 1 ? "has" : "have"} a rental duration discount. {form.start_date && form.end_date ? `Add ${daysUntilDurationDiscount(days)} more day${daysUntilDurationDiscount(days) === 1 ? "" : "s"} to unlock it.` : `Choose a rental period of ${DURATION_DISCOUNT_MIN_DAYS} days or more to unlock it.`}</p>
+          </div>}
           {form.fulfillment === "delivery" && <div className="shop-delivery-guidance">
             <strong>Delivery fee is reviewed before approval</strong>
             <p>Delivery may be free within <b>{terms?.delivery?.free_area || "Biclatan, General Trias, Cavite and verified nearby areas"}</b>. For farther locations, our team will confirm the fee based on distance before approving your request.</p>
@@ -209,11 +232,11 @@ export function CustomerRentalForm() {
           <div className="shop-request-items">
             {lines.map(x => <article className="shop-request-item" key={x.item_id}>
               {x.image_url ? <img src={x.image_url} alt="" /> : <span className="shop-request-item-placeholder">B</span>}
-              <div className="shop-request-item-name"><strong>{x.name}</strong><small>{x.category}</small></div>
+              <div className="shop-request-item-name"><strong>{x.name}</strong><small>{x.category}</small>{x.qualifies && <small className="duration-applied">{DURATION_DISCOUNT_MIN_DAYS}+ day rate {pesoExact(x.effectiveRate)}/day <s>{pesoExact(x.dailyPrice)}</s> · saves {pesoExact(x.discountTotal)}</small>}</div>
               <div><small>Quantity</small><strong>{x.quantity}</strong></div>
               <div><small>Duration</small><strong>{days} day{days === 1 ? "" : "s"}</strong></div>
               <div className={`shop-request-availability ${availability[x.item_id]?.available ? "ok" : availability[x.item_id] ? "bad" : ""}`} aria-live="polite">{!form.start_date || !form.end_date ? "Select dates" : availability[x.item_id] ? (availability[x.item_id].available ? `Available: ${availability[x.item_id].available_quantity}` : `Only ${availability[x.item_id].available_quantity} available`) : "Checking..."}</div>
-              <div className="shop-request-item-total"><strong>{peso(x.rental)}</strong><small>Rental total</small></div>
+              <div className="shop-request-item-total"><strong>{pesoExact(x.rental)}</strong><small>Rental total</small></div>
             </article>)}
           </div>
           <Link className="secondary-button shop-request-edit-cart" to="/shop/cart">Edit rental items</Link>
@@ -237,14 +260,15 @@ export function CustomerRentalForm() {
           {lines.map(x => <div className="shop-request-summary-item" key={x.item_id}>
             {x.image_url ? <img src={x.image_url} alt="" /> : <span className="shop-request-summary-placeholder">B</span>}
             <div><strong>{x.name}</strong><small>{x.quantity} piece{x.quantity === 1 ? "" : "s"} · {days} day{days === 1 ? "" : "s"}</small></div>
-            <b>{peso(x.rental)}</b>
+            <b>{pesoExact(x.rental)}</b>
           </div>)}
         </div>
         <div className="shop-request-totals">
-          <div><span>Rental subtotal</span><strong>{peso(rentalSubtotal)}</strong></div>
+          <div><span>Rental subtotal</span><strong>{pesoExact(rentalSubtotal)}</strong></div>
+          {durationSavings > 0 && <div className="is-saving"><span>{DURATION_DISCOUNT_MIN_DAYS}+ day discount (included above)</span><strong>−{pesoExact(durationSavings)}</strong></div>}
           <div><span>Delivery fee</span><strong>{form.fulfillment === "delivery" ? "Reviewed before approval" : peso(0)}</strong></div>
           <div><span>Security deposit</span><strong>{peso(depositSubtotal)}</strong></div>
-          <div className="grand"><span>Estimated total</span><strong>{peso(total)}</strong></div>
+          <div className="grand"><span>Estimated total</span><strong>{pesoExact(total)}</strong></div>
         </div>
         <div className={`shop-terms-consent ${termsAccepted?"is-accepted":""}`}>
           <label>
@@ -278,7 +302,8 @@ export function CustomerRentalForm() {
     {confirming && <div className="modal-backdrop" onClick={() => !submitting && setConfirming(false)}><div className="modal confirm-modal confirm-modal-review" role="dialog" aria-modal="true" aria-labelledby="confirm-request-title" onClick={e => e.stopPropagation()}>
       <h3 id="confirm-request-title">Confirm your rental request</h3>
       <div className="shop-review-list">
-        {lines.map(x => <div key={x.item_id}><span>{x.name} × {x.quantity}</span><strong>{peso(x.rental)}</strong></div>)}
+        {lines.map(x => <div key={x.item_id}><span>{x.name} × {x.quantity}</span><strong>{pesoExact(x.rental)}</strong></div>)}
+        {durationSavings > 0 && <div><span>{DURATION_DISCOUNT_MIN_DAYS}+ day discount</span><strong>−{pesoExact(durationSavings)}</strong></div>}
         <div><span>Dates</span><strong>{form.start_date} → {form.end_date} ({days} day{days === 1 ? "" : "s"})</strong></div>
         <div><span>Fulfillment</span><strong>{form.fulfillment === "delivery" ? "Delivery" : "Pickup"}</strong></div>
         <div><span>Name</span><strong>{form.full_name}</strong></div>
@@ -286,7 +311,7 @@ export function CustomerRentalForm() {
         <div><span>Address</span><strong>{[form.address,form.city,form.province,form.postal_code].filter(Boolean).join(", ")}</strong></div>
         <div><span>ID document</span><strong>{idFile?.name}</strong></div>
         <div><span>Rental terms</span><strong>Accepted · {terms?.version ? `Version ${terms.version}` : "Current version"}</strong></div>
-        <div><span>Estimated total</span><strong>{peso(total)}</strong></div>
+        <div><span>Estimated total</span><strong>{pesoExact(total)}</strong></div>
       </div>
       <p className="muted">Confirming sends this request to our team. It will be marked as waiting for approval — this is not a confirmed booking yet.</p>
       <div className="confirm-modal-actions">

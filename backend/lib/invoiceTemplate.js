@@ -1,4 +1,5 @@
 import { escHtml, peso } from "./format.js";
+import { DURATION_DISCOUNT_MIN_DAYS } from "./pricing.js";
 
 export const INVOICE_BRANDING_KEYS = ["business_name", "business_email", "business_phone", "business_address", "cancellation_policy"];
 
@@ -63,12 +64,16 @@ export function buildInvoice(booking = {}, business = {}) {
   const totalPieces = items.reduce((n, item) => n + Number(item.quantity || 0), 0);
   const lines = [];
   for (const item of items) {
+    // A duration-discounted line shows the rate actually charged per day (so
+    // qty x rate x days equals the line total) and a note with the regular rate.
+    const discountPerDay = Number(item.duration_discount_per_day || 0);
     lines.push({
       name: item.item_name,
       qty: Number(item.quantity || 0),
-      rate: Number(item.daily_price || 0),
+      rate: Math.max(0, Number(item.daily_price || 0) - discountPerDay),
       days: Number(item.rental_days || 0),
       total: Number(item.line_rental_total || 0),
+      note: discountPerDay > 0 ? `Regular ${peso(Number(item.daily_price || 0))}/day, ${DURATION_DISCOUNT_MIN_DAYS}+ day discount -${peso(discountPerDay)}/day` : "",
       sub: ""
     });
     if (Number(item.line_delivery_total || 0) > 0) {
@@ -147,7 +152,7 @@ export function renderInvoiceHtml(booking, business) {
 
   const lineRows = d.lines.map(row => {
     const main = `<tr>
-      ${cell(row.sub ? "" : `<strong>${e(row.name)}</strong>`, left)}
+      ${cell(row.sub ? "" : `<strong>${e(row.name)}</strong>${row.note ? `<div style="color:${MUTED};font-size:11px;font-weight:400;margin-top:2px">${e(row.note)}</div>` : ""}`, left)}
       ${cell(row.sub ? `<span style="padding-left:12px;color:${MUTED};font-size:12px">${e(row.name)}</span>` : "", left)}
       ${cell(e(row.qty), center)}
       ${cell(row.sub ? `${money(row.rate)}<span style="font-size:10px;color:${MUTED}">/pc</span>` : money(row.rate), right)}
@@ -303,7 +308,7 @@ export function renderInvoiceText(booking, business) {
     peso(l.total),
     l.sub
       ? `${l.qty} pcs x ${peso(l.rate)} per piece`
-      : `${l.qty} x ${peso(l.rate)} per day x ${l.days} day${l.days === 1 ? "" : "s"}`
+      : `${l.qty} x ${peso(l.rate)} per day x ${l.days} day${l.days === 1 ? "" : "s"}${l.note ? ` (${l.note})` : ""}`
   ]);
   const out = [
     d.brand.name.toUpperCase(),

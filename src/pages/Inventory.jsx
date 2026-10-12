@@ -8,7 +8,10 @@ import { ViewToggle } from "../components/ViewToggle";
 import { sortRows, useSort } from "../hooks/useSort";
 import { usePagination } from "../hooks/usePagination";
 import { useViewMode } from "../hooks/useViewMode";
-import { peso } from "../lib/format";
+import { peso, pesoExact } from "../lib/format";
+import { DURATION_DISCOUNT_MAX_PERCENT, DURATION_DISCOUNT_MIN_DAYS, durationDiscountPerDay, durationRuleOf } from "../lib/pricing";
+import { DurationChip } from "../components/DurationDiscount";
+import { ItemImageSlot } from "../components/ItemImageSlot";
 import { isAdminUser } from "../lib/roles";
 import { useDiscardGuard } from "../components/DiscardGuard";
 
@@ -39,7 +42,7 @@ export function Inventory() {
   const [conditionLoading,setConditionLoading]=useState(false);
   const [addConditionModal,setAddConditionModal]=useState(false);
   const [conditionForm,setConditionForm]=useState(BLANK_CONDITION);
-  const blank={sku:"",name:"",category:"Events",description:"",daily_price:"",original_price:"",security_deposit:"",total_quantity:1,status:"active",image_url:"",bundle_items:[]};
+  const blank={sku:"",name:"",category:"Events",description:"",daily_price:"",original_price:"",security_deposit:"",total_quantity:1,status:"active",image_url:"",image_url_2:"",duration_discount_enabled:false,duration_discount_type:"percent",duration_discount_value:"",bundle_items:[]};
   const [form,setForm]=useState(blank);
   // Snapshot of the form when it was opened, so closing can tell whether the
   // admin actually changed anything.
@@ -54,8 +57,8 @@ export function Inventory() {
 
   const load=()=>api("/admin/inventory").then(d=>setRows(d.items||[])).catch(e=>setError(e.message));
   React.useEffect(()=>{load();},[]);
-  const openNew=()=>{setEditing(null);setForm(blank);setBaseline(JSON.stringify(blank));setModal(true)};
-  const openEdit=(x)=>{const next={...x,bundle_items:toBundleRows(x.bundle_items)};setEditing(x);setForm(next);setBaseline(JSON.stringify(next));setModal(true)};
+  const openNew=()=>{setError("");setEditing(null);setForm(blank);setBaseline(JSON.stringify(blank));setModal(true)};
+  const openEdit=(x)=>{setError("");const next={...x,image_url:x.image_url||"",image_url_2:x.image_url_2||"",duration_discount_enabled:Number(x.duration_discount_enabled)===1,duration_discount_type:x.duration_discount_type||"percent",duration_discount_value:Number(x.duration_discount_value)>0?String(Number(x.duration_discount_value)):"",bundle_items:toBundleRows(x.bundle_items)};setEditing(x);setForm(next);setBaseline(JSON.stringify(next));setModal(true)};
   const save=async(e)=>{e.preventDefault();setError("");try{await api(editing?`/admin/inventory/${editing.id}`:"/admin/inventory",{method:editing?"PATCH":"POST",body:JSON.stringify(form)});setModal(false);load()}catch(err){setError(err.message)}};
   const confirmDelete=(x)=>{setDeleteModal(x)};
   const remove=async()=>{if(!deleteModal)return;setDeleteLoading(true);try{await api(`/admin/inventory/${deleteModal.id}`,{method:"DELETE"});setDeleteModal(null);load()}catch(e){setError(e.message)}finally{setDeleteLoading(false)}};
@@ -151,7 +154,7 @@ export function Inventory() {
         <tbody>{visibleRows.map(item=><tr key={item.id}>
           <td><strong>{item.name}</strong><br/><small>{item.sku}</small></td>
           <td>{item.category}</td>
-          <td className="num">{peso(Number(item.daily_price))}</td>
+          <td className="num">{peso(Number(item.daily_price))}<DurationChip item={item}/></td>
           <td className="num">{peso(Number(item.security_deposit))}</td>
           <td className={`num ${Number(item.total_quantity)-Number(item.reserved_all||0)<5?"cell-low":""}`}>{Math.max(0,Number(item.total_quantity)-Number(item.reserved_all||0))}</td>
           <td className="num">{item.reserved_all||0} / {item.total_quantity}</td>
@@ -177,7 +180,7 @@ export function Inventory() {
             </div>
             <p className="inventory-card-desc">{item.description||"No description available."}</p>
             <div className="inventory-card-stats">
-              <div><span>Price</span><strong>{peso(Number(item.daily_price))}/day</strong></div>
+              <div><span>Price</span><strong>{peso(Number(item.daily_price))}/day</strong><DurationChip item={item}/></div>
               <div><span>Deposit</span><strong>{peso(Number(item.security_deposit))}</strong></div>
               <div className={Number(item.total_quantity)-Number(item.reserved_all||0)<5?"low-stock":""}><span>Available</span><strong>{Math.max(0,Number(item.total_quantity)-Number(item.reserved_all||0))} units</strong></div>
               <div><span>Reserved</span><strong>{item.reserved_all||0} of {item.total_quantity}</strong></div>
@@ -193,26 +196,99 @@ export function Inventory() {
       <ListPagination {...pagination} total={sorted.length} label="items" onPageChange={pagination.setPage}/></>}
     </section>
 
-    {modal&&<div className="modal-backdrop" onClick={itemGuard.requestClose}><form className="modal" onSubmit={save} onClick={e=>e.stopPropagation()}>
-      <div className="modal-head"><div><span className="eyebrow">Inventory</span><h2>{editing?"Edit":"Rent"}</h2></div><button type="button" onClick={itemGuard.requestClose}>×</button></div>
-      <div className="form-grid">
-        <label>SKU<input required value={form.sku} onChange={e=>setForm({...form,sku:e.target.value})}/></label><label>Item name<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label>
-        <label>Category<input required value={form.category} onChange={e=>setForm({...form,category:e.target.value})}/></label><label>Status<select value={form.status} onChange={e=>setForm({...form,status:e.target.value})}><option>active</option><option>inactive</option><option>maintenance</option></select></label>
-        <label>Daily price<input required type="number" min="0" value={form.daily_price} onChange={e=>setForm({...form,daily_price:e.target.value})}/></label><label>Original price <small>(optional, shows “Save ₱X”)</small><input type="number" min="0" value={form.original_price??""} onChange={e=>setForm({...form,original_price:e.target.value})} placeholder="No discount"/></label><label>Security deposit<input required type="number" min="0" value={form.security_deposit} onChange={e=>setForm({...form,security_deposit:e.target.value})}/></label>
-        <label>Quantity<input required type="number" min="1" value={form.total_quantity} onChange={e=>setForm({...form,total_quantity:e.target.value})}/></label><label>Image URL<input value={form.image_url||""} onChange={e=>setForm({...form,image_url:e.target.value})}/></label>
-        <label className="span-2">Description<textarea value={form.description||""} onChange={e=>setForm({...form,description:e.target.value})}/></label>
-        <label className="span-2">Package contents <small>(optional — leave empty for a regular rental item)</small>
-          <div className="bundle-editor">
-            {bundleRows.map((row,i)=><div className="bundle-row" key={i}>
-              <input placeholder="Included item name" value={row.name} onChange={e=>setBundleRow(i,"name",e.target.value)}/>
-              <input className="bundle-qty" type="number" min="1" placeholder="Qty" value={row.quantity} onChange={e=>setBundleRow(i,"quantity",e.target.value)}/>
-              <button type="button" className="bundle-remove" onClick={()=>removeBundleRow(i)} aria-label={`Remove ${row.name||"included item"}`}>×</button>
-            </div>)}
-            <button type="button" className="secondary-button bundle-add" onClick={addBundleRow}>+ Add item</button>
-            {bundleRows.length===0&&<p className="bundle-hint">Leave empty when this is a single rental item. With contents listed, the customer catalog shows it as a package and the details panel lists everything inside.</p>}
-          </div>
-        </label>
-      </div><div className="modal-actions"><button type="button" className="secondary-button" onClick={itemGuard.requestClose}>Cancel</button><button type="submit" className="primary-button">Save item</button></div>
+    {modal&&<div className="modal-backdrop" onClick={itemGuard.requestClose}><form className="modal item-form-modal" onSubmit={save} onClick={e=>e.stopPropagation()}>
+      <div className="modal-head item-form-head">
+        <div>
+          <span className="eyebrow">Inventory</span>
+          <h2>{editing?"Edit rental item":"Add rental item"}</h2>
+          <p>{editing?"Update the listing, pricing, and availability details.":"Create a complete listing for your rental catalog."}</p>
+        </div>
+        <button type="button" onClick={itemGuard.requestClose} aria-label="Close item form">×</button>
+      </div>
+      <div className="item-form-body">
+        <div className="item-form-sections">
+          <section className="item-form-section" aria-labelledby="item-details-heading">
+            <div className="item-form-section-head">
+              <span aria-hidden="true">1</span>
+              <div><h3 id="item-details-heading">Item details</h3><p>Name and organize this item in your inventory.</p></div>
+            </div>
+            <div className="form-grid item-form-fields">
+              <label><span className="item-field-label">Item name <i>Required</i></span><input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="e.g. Garden wedding arch"/></label>
+              <label><span className="item-field-label">SKU <i>Required</i></span><input required value={form.sku} onChange={e=>setForm({...form,sku:e.target.value})} placeholder="e.g. EVT-001"/></label>
+              <label><span className="item-field-label">Category <i>Required</i></span><input required list="inventory-category-options" value={form.category} onChange={e=>setForm({...form,category:e.target.value})} placeholder="e.g. Events"/><datalist id="inventory-category-options">{categories.filter(c=>c&&c!=="All").map(c=><option key={c} value={c}/>)}</datalist></label>
+              <label><span className="item-field-label">Status</span><select value={form.status} onChange={e=>setForm({...form,status:e.target.value})}><option value="active">Active</option><option value="inactive">Inactive</option><option value="maintenance">Maintenance</option></select></label>
+              <label className="span-2"><span className="item-field-label">Description <i>Optional</i></span><textarea rows="3" value={form.description||""} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Describe the item, its condition, size, color, or best use."/></label>
+            </div>
+          </section>
+
+          <section className="item-form-section" aria-labelledby="item-pricing-heading">
+            <div className="item-form-section-head">
+              <span aria-hidden="true">2</span>
+              <div><h3 id="item-pricing-heading">Pricing &amp; availability</h3><p>Set the daily rate, deposit, and number of units.</p></div>
+            </div>
+            <div className="form-grid item-form-fields item-pricing-grid">
+              <label><span className="item-field-label">Daily price <i>Required</i></span><span className="item-money-input"><b aria-hidden="true">₱</b><input required type="number" min="0" step="0.01" value={form.daily_price} onChange={e=>setForm({...form,daily_price:e.target.value})} placeholder="0.00"/></span></label>
+              <label><span className="item-field-label">Original price <i>Optional</i></span><span className="item-money-input"><b aria-hidden="true">₱</b><input type="number" min="0" step="0.01" value={form.original_price??""} onChange={e=>setForm({...form,original_price:e.target.value})} placeholder="0.00"/></span><small className="item-field-help">Shown as a “Save ₱X” offer when higher than the daily price.</small></label>
+              <label><span className="item-field-label">Security deposit <i>Required</i></span><span className="item-money-input"><b aria-hidden="true">₱</b><input required type="number" min="0" step="0.01" value={form.security_deposit} onChange={e=>setForm({...form,security_deposit:e.target.value})} placeholder="0.00"/></span></label>
+              <label><span className="item-field-label">Total quantity <i>Required</i></span><input required type="number" min="1" step="1" value={form.total_quantity} onChange={e=>setForm({...form,total_quantity:e.target.value})} placeholder="1"/></label>
+            </div>
+          </section>
+
+          <section className="item-form-section" aria-labelledby="item-photos-heading">
+            <div className="item-form-section-head">
+              <span aria-hidden="true">3</span>
+              <div><h3 id="item-photos-heading">Item photos</h3><p>Add up to two image links. Photos display in full without cropping.</p></div>
+            </div>
+            <div className="item-image-slots">
+              <ItemImageSlot label="Cover photo" value={form.image_url} onChange={value=>setForm(f=>({...f,image_url:value}))}/>
+              <ItemImageSlot label="Second photo" hint="Optional" value={form.image_url_2} onChange={value=>setForm(f=>({...f,image_url_2:value}))}/>
+            </div>
+          </section>
+
+          <section className="item-form-section" aria-labelledby="item-offer-heading">
+            <div className="item-form-section-head">
+              <span aria-hidden="true">4</span>
+              <div><h3 id="item-offer-heading">Long-rental offer</h3><p>Optionally reward customers who rent for longer.</p></div>
+            </div>
+            <fieldset className="duration-discount-editor">
+              <legend className="sr-only">Rental duration discount settings</legend>
+              <label className="duration-toggle"><input type="checkbox" checked={Boolean(form.duration_discount_enabled)} onChange={e=>setForm({...form,duration_discount_enabled:e.target.checked})}/><span><strong>Lower the daily rate for rentals of {DURATION_DISCOUNT_MIN_DAYS}+ days</strong><small>Shorter rentals keep the standard daily price. This discount is separate from the original price offer.</small></span></label>
+              {form.duration_discount_enabled&&(()=>{
+                const percent=form.duration_discount_type!=="fixed";
+                const price=Number(form.daily_price)||0;
+                const amount=Number(form.duration_discount_value)||0;
+                const rule=durationRuleOf({duration_discount_enabled:true,duration_discount_type:form.duration_discount_type,duration_discount_value:amount});
+                const off=durationDiscountPerDay(price,rule,DURATION_DISCOUNT_MIN_DAYS);
+                const problem=amount<=0?"Enter a discount amount.":percent&&amount>DURATION_DISCOUNT_MAX_PERCENT?`Percent can’t be more than ${DURATION_DISCOUNT_MAX_PERCENT}%.`:!percent&&price>0&&amount>=price?"The fixed amount must be less than the daily price.":"";
+                return <div className="duration-fields">
+                  <label><span className="item-field-label">Discount type</span><select value={form.duration_discount_type} onChange={e=>setForm({...form,duration_discount_type:e.target.value})}><option value="percent">Percentage off</option><option value="fixed">Fixed amount per day</option></select></label>
+                  <label><span className="item-field-label">{percent?"Percent off":"Pesos off per day"}</span><input required type="number" step="0.01" min="0.01" max={percent?DURATION_DISCOUNT_MAX_PERCENT:undefined} value={form.duration_discount_value} onChange={e=>setForm({...form,duration_discount_value:e.target.value})} placeholder={percent?"e.g. 10":"e.g. 100"}/></label>
+                  <p className={`duration-preview ${problem?"is-error":""}`} role="status">{problem||(off>0?`Customers pay ${pesoExact(price)}/day for 1–${DURATION_DISCOUNT_MIN_DAYS-1} days and ${pesoExact(price-off)}/day for ${DURATION_DISCOUNT_MIN_DAYS}+ days (saves ${pesoExact(off)}/day).`:"Set the daily price to preview the discounted rate.")}</p>
+                </div>;
+              })()}
+            </fieldset>
+          </section>
+
+          <section className="item-form-section" aria-labelledby="item-package-heading">
+            <div className="item-form-section-head">
+              <span aria-hidden="true">5</span>
+              <div><h3 id="item-package-heading">Package contents</h3><p>List what is included, or leave empty for a single item.</p></div>
+            </div>
+            <div className="bundle-editor">
+              {bundleRows.length>0&&<div className="bundle-columns" aria-hidden="true"><span>Included item</span><span>Qty</span><span/></div>}
+              {bundleRows.map((row,i)=><div className="bundle-row" key={i}>
+                <input aria-label={`Included item ${i+1} name`} placeholder="e.g. Floral stand" value={row.name} onChange={e=>setBundleRow(i,"name",e.target.value)}/>
+                <input aria-label={`Quantity of ${row.name||`included item ${i+1}`}`} className="bundle-qty" type="number" min="1" placeholder="Qty" value={row.quantity} onChange={e=>setBundleRow(i,"quantity",e.target.value)}/>
+                <button type="button" className="bundle-remove" onClick={()=>removeBundleRow(i)} aria-label={`Remove ${row.name||"included item"}`}>×</button>
+              </div>)}
+              <button type="button" className="secondary-button bundle-add" onClick={addBundleRow}>+ Add included item</button>
+              {bundleRows.length===0&&<p className="bundle-hint">Add contents only when this listing is a set or package. Customers will see each included item on the listing.</p>}
+            </div>
+          </section>
+        </div>
+        {error&&<div className="login-error" role="alert">{error}</div>}
+      </div>
+      <div className="modal-actions item-form-actions"><span>Changes apply to this inventory listing.</span><button type="button" className="secondary-button" onClick={itemGuard.requestClose}>Cancel</button><button type="submit" className="primary-button">{editing?"Save changes":"Add item"}</button></div>
     </form></div>}
     {itemGuard.discardDialog}
 

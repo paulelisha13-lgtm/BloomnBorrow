@@ -4,6 +4,7 @@ import { CustomerShell } from "../../components/customer/CustomerShell";
 import { CustomerProgress } from "../../components/customer/CustomerProgress";
 import { useCart } from "../../context/CartContext";
 import { peso } from "../../lib/format";
+import { DurationChip } from "../../components/DurationDiscount";
 
 // Rental dates aren't chosen yet at this step (they're entered once, for the
 // whole cart, on the rental form -- matching Admin -> Add Booking, which
@@ -43,6 +44,7 @@ export function CustomerCart() {
             <strong>{x.name}</strong>
             <small>{x.category}</small>
             <small>{peso(x.daily_price)}/day · {peso(x.security_deposit)} deposit</small>
+            <DurationChip item={x} />
           </div>
           <div className="shop-cart-qty">
             <span>Quantity</span>
@@ -61,7 +63,7 @@ export function CustomerCart() {
       <div className="admin-card review-total shop-cart-summary">
         <div><span>Rental subtotal</span><strong>{peso(dailyTotal)}<small> /day</small></strong></div>
         <div><span>Security deposit</span><strong>{peso(depositTotal)}</strong></div>
-        <p className="muted">Final total depends on your rental dates — you'll see the full breakdown on the next step.</p>
+        <p className="muted">Final total depends on your rental dates — you'll see the full breakdown on the next step.{items.some(x => x.duration_discount) && " Items marked with a “3+ days” discount get a lower daily rate on rentals of 3 days or more."}</p>
       </div>
 
       <div className="shop-cart-actions">

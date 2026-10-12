@@ -7,6 +7,7 @@ import { audit } from "../lib/audit.js";
 import { getAvailability, bookingDetailById, createBooking, validTransitions, recalcPaymentStatus } from "../lib/bookings.js";
 import { gcashQrUpload, removeUpload, sendUpload } from "../lib/upload.js";
 import { lateDaysSince, parseDateOnly, rentalDays, toDateOnly } from "../lib/dates.js";
+import { durationRuleOf, priceRentalLine } from "../lib/pricing.js";
 import { generateIncidentNo } from "../lib/incidents.js";
 import { addNotification } from "../lib/notifications.js";
 import { getSetting, getSettings } from "../lib/settings.js";
@@ -340,9 +341,13 @@ router.patch("/api/admin/bookings/:id/reschedule", authenticate, requireRole("ad
   const days=rentalDays(start,end);
   let subtotal=0;
   for(const row of booking.items){
-    const line=Number(row.daily_price)*Number(row.quantity)*days;
-    subtotal+=line;
-    await db.query("UPDATE booking_items SET rental_days=?,line_rental_total=? WHERE id=?",[days,line,row.id]);
+    // Re-evaluate the duration discount for the new length using the rule saved
+    // on the line when it was booked (NULL = no rule), so 2 -> 4 days gains the
+    // discount and 4 -> 2 loses it, at the originally booked rate.
+    const rule=row.duration_discount_type?durationRuleOf({duration_discount_enabled:1,duration_discount_type:row.duration_discount_type,duration_discount_value:row.duration_discount_value}):null;
+    const priced=priceRentalLine({dailyPrice:row.daily_price,rule,days,quantity:row.quantity});
+    subtotal+=priced.rental;
+    await db.query("UPDATE booking_items SET rental_days=?,line_rental_total=?,duration_discount_per_day=? WHERE id=?",[days,priced.rental,priced.discountPerDay,row.id]);
   }
   const grand=subtotal+Number(booking.deposit_total)+Number(booking.delivery_fee);
   await db.query("UPDATE bookings SET start_date=?,end_date=?,rental_subtotal=?,grand_total=? WHERE id=?",[req.body.start_date,req.body.end_date,subtotal,grand,id]);

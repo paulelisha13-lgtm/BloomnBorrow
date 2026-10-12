@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DURATION_DISCOUNT_MAX_PERCENT } from "./pricing.js";
 
 // Centralised request-body validation. Each schema strips unknown keys, caps the
 // length of every free-text field, and coerces / range-checks numbers, so no
@@ -12,6 +13,11 @@ const name = z.string().trim().min(1, "is required").max(120, "is too long");
 const email = z.string().trim().toLowerCase().max(160).regex(EMAIL_RE, "must be a valid email address");
 const phone = z.string().trim().min(5, "is too short").max(32, "is too long");
 const optText = (max) => z.string().trim().max(max, "is too long").optional().default("");
+// An item photo is a web address (or a site-relative path); "" / null -> no photo.
+const imageUrl = z.preprocess(
+  (v) => (v == null ? "" : v),
+  z.string().trim().max(500, "is too long").refine((v) => v === "" || /^(https?:\/\/[^\s]+|\/(?!\/)[^\s]*)$/i.test(v), "must be a web address starting with http:// or https://")
+);
 const money = z.coerce.number().finite("must be a number").min(0, "cannot be negative").max(100_000_000, "is too large");
 // One rule for every password a person sets (create, change, admin reset). It
 // matches bootstrap-admin.js so no path accepts a weaker staff password.
@@ -184,7 +190,9 @@ export const schemas = {
     sku: z.string().trim().min(1, "is required").max(40, "is too long"),
     name,
     category: z.string().trim().min(1, "is required").max(60, "is too long"),
-    description: optText(2000),
+    // A row with no description is NULL in the database, and the edit form sends
+    // that null straight back, so null must read as "" rather than fail validation.
+    description: z.preprocess((v) => (v == null ? "" : v), optText(2000)),
     daily_price: money,
     // Optional compare-at price for the "Save ₱X" display. Display-only: a
     // value at or below daily_price is simply not shown as a discount, so it
@@ -197,7 +205,18 @@ export const schemas = {
     security_deposit: money,
     total_quantity: z.coerce.number().int("must be a whole number").min(0, "cannot be negative").max(1_000_000, "is too large"),
     status: z.enum(["active", "inactive", "maintenance"]).optional().default("active"),
-    image_url: optText(500),
+    // Up to two photos. Both are optional web addresses; null/undefined (a row
+    // that never had a photo) reads as "". If only the second is filled in, the
+    // route promotes it to the first slot so slot 1 is never empty while slot 2 is set.
+    image_url: imageUrl,
+    image_url_2: imageUrl,
+    // Rental duration discount (separate from original_price / "Save"): on =
+    // renting DURATION_DISCOUNT_MIN_DAYS or more takes `value` (a percent, or a
+    // peso amount per day) off daily_price. The value is only judged when the
+    // rule is on, so an admin can switch it off without clearing the number.
+    duration_discount_enabled: z.preprocess((v) => v === true || v === 1 || v === "1" || String(v).toLowerCase() === "true", z.boolean()),
+    duration_discount_type: z.preprocess((v) => (v === "" || v == null ? "percent" : v), z.enum(["percent", "fixed"])),
+    duration_discount_value: z.preprocess((v) => (v === "" || v == null ? 0 : v), money),
     // Optional package/bundle manifest: [{ name, quantity }, ...]. An empty
     // list or a missing value means the row is a plain rental item (stored as
     // NULL); a non-empty list makes it a package on the customer catalog.
@@ -220,6 +239,16 @@ export const schemas = {
         })
       ).max(50, "has too many items")
     ),
+  }).superRefine((obj, ctx) => {
+    if (!obj.duration_discount_enabled) return;
+    const path = ["duration_discount_value"];
+    if (!(obj.duration_discount_value > 0)) {
+      ctx.addIssue({ code: "custom", path, message: "must be greater than zero when the duration discount is on" });
+    } else if (obj.duration_discount_type === "percent" && obj.duration_discount_value > DURATION_DISCOUNT_MAX_PERCENT) {
+      ctx.addIssue({ code: "custom", path, message: `cannot be more than ${DURATION_DISCOUNT_MAX_PERCENT}%` });
+    } else if (obj.duration_discount_type === "fixed" && obj.duration_discount_value >= obj.daily_price) {
+      ctx.addIssue({ code: "custom", path, message: "must be less than the daily price" });
+    }
   }),
 
   // Calendar Reservation & Booking module. One shape covers bookings,

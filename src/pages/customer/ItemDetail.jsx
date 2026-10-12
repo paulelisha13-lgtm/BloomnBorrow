@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { CustomerShell } from "../../components/customer/CustomerShell";
 import { PriceDisplay } from "../../components/PriceDisplay";
+import { ImageGallery } from "../../components/ImageGallery";
+import { DurationTiers } from "../../components/DurationDiscount";
 import { RentalItemCard, isPackageItem, packageContents, packageLabel } from "../../components/customer/RentalItemCard";
 import { useCart } from "../../context/CartContext";
 import { publicApi } from "../../lib/publicApi";
@@ -35,7 +37,6 @@ export function CustomerItemDetail() {
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [toast, setToast] = useState(false);
-  const [relatedAdded, setRelatedAdded] = useState(null);
   const closeRef=useRef(null);
 
   useEffect(() => {
@@ -86,13 +87,6 @@ export function CustomerItemDetail() {
     setTimeout(close, 800);
   };
 
-  const quickAddRelated = r => {
-    if (r.available_quantity < 1) return;
-    addItem(r, 1);
-    setRelatedAdded(r.id);
-    setTimeout(() => setRelatedAdded(prev => prev === r.id ? null : prev), 900);
-  };
-
   const openRelated = r => navigate(`/shop/${r.id}`, { state: { backgroundLocation: background || location } });
 
   const contents = packageContents(item);
@@ -117,10 +111,14 @@ export function CustomerItemDetail() {
 
         <div className="shop-detail-content">
         <div className="shop-detail-grid">
-          <div className="shop-detail-media">
-            {item.image_url ? <img src={item.image_url} alt={item.name} /> : <div className="inventory-card-noimage">🌸</div>}
+          <ImageGallery
+            key={(item.images || []).join("|")}
+            images={item.images?.length ? item.images : [item.image_url]}
+            alt={item.name}
+            empty={<div className="inventory-card-noimage">🌸</div>}
+          >
             {out && <span className="shop-item-out-badge">Unavailable</span>}
-          </div>
+          </ImageGallery>
 
           <div className="shop-detail-info">
             <span className={`eyebrow ${pkg ? "is-package" : ""}`}>{pkg ? packageLabel(item) : item.category}</span>
@@ -130,6 +128,8 @@ export function CustomerItemDetail() {
               <PriceDisplay size="detail" price={item.daily_price} originalPrice={item.original_price} />
               <span className="shop-detail-deposit">+ {peso(Number(item.security_deposit))} security deposit</span>
             </div>
+
+            <DurationTiers item={item} />
 
             <div className={`shop-detail-availability ${out ? "is-out" : "is-ok"}`}>
               <span className="shop-detail-dot" />{out ? "Unavailable" : `${item.available_quantity} available`}
@@ -183,8 +183,7 @@ export function CustomerItemDetail() {
               key={r.id}
               item={r}
               onOpen={openRelated}
-              onAdd={quickAddRelated}
-              added={relatedAdded === r.id}
+              compact
             />)}
           </div>
         </section>}

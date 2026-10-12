@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCart } from "../../context/CartContext";
 import { peso } from "../../lib/format";
+import { DurationChip } from "../DurationDiscount";
 
 // Floating right-side cart panel opened by the bottom-right cart button.
 // Shows the same CartContext state as the /shop/cart page (qty edits and
@@ -45,6 +46,7 @@ export function CartDrawer({ onClose }) {
             <div className="shop-cart-drawer-item-info">
               <strong>{x.name}</strong>
               <small>{x.category} · {peso(x.daily_price)}/day</small>
+              <DurationChip item={x} />
               <div className="shop-cart-drawer-item-foot">
                 <div className="shop-qty-stepper">
                   <button type="button" onClick={() => setQuantity(x.item_id, x.quantity - 1)} disabled={x.quantity <= 1} aria-label={`Decrease ${x.name} quantity`}>−</button>

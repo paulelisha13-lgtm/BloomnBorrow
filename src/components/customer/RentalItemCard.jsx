@@ -1,5 +1,6 @@
 import React from "react";
 import { PriceDisplay } from "../PriceDisplay";
+import { DurationChip } from "../DurationDiscount";
 
 // A rental package/bundle is an item that publishes what it contains. The
 // API returns `bundle_items` as [{ name, quantity }]; older rows (or ones the
@@ -31,8 +32,10 @@ export function packageLabel(item) {
 
 // The single catalog card, shared by Browse, Home and the related-items row.
 // It surfaces the decision-making details while keeping full specifications
-// and package contents in the details panel.
-export function RentalItemCard({ item, onOpen, onAdd, added, selected }) {
+// and package contents in the details panel. `compact` trims it down to image,
+// name, description and price, with the whole card opening the details (used
+// for the related-items row, where the buttons only add height).
+export function RentalItemCard({ item, onOpen, onAdd, added, selected, compact }) {
   const isPackage = isPackageItem(item);
   const contents = packageContents(item);
   const out = Number(item.available_quantity) < 1;
@@ -45,12 +48,17 @@ export function RentalItemCard({ item, onOpen, onAdd, added, selected }) {
     "shop-item-card",
     out && "is-unavailable",
     isPackage && "is-package",
-    selected && "is-selected"
+    selected && "is-selected",
+    compact && "is-compact"
   ].filter(Boolean).join(" ");
 
+  // In compact mode the article itself is the click target, so the inner
+  // buttons must not also open (the click would bubble and fire twice).
+  const inner = compact ? undefined : open;
+
   return (
-    <article className={classes}>
-      <button type="button" className={`shop-item-card-image ${out ? "has-out" : ""}`} onClick={open} aria-label={`View details for ${item.name}`}>
+    <article className={classes} onClick={compact ? open : undefined}>
+      <button type="button" className={`shop-item-card-image ${out ? "has-out" : ""}`} onClick={inner} tabIndex={compact ? -1 : undefined} aria-label={`View details for ${item.name}`}>
         {item.image_url
           ? <img src={item.image_url} alt={item.name} loading="lazy" />
           : <div className="inventory-card-noimage" aria-hidden="true">🌸</div>}
@@ -63,7 +71,7 @@ export function RentalItemCard({ item, onOpen, onAdd, added, selected }) {
       <div className="shop-item-card-body">
         <div className="shop-item-card-copy">
           <h3 className="shop-item-card-title">
-            <button type="button" className="shop-item-card-link" onClick={open} data-no-page-loading>
+            <button type="button" className="shop-item-card-link" onClick={inner} data-no-page-loading>
               {item.name}
             </button>
           </h3>
@@ -71,28 +79,31 @@ export function RentalItemCard({ item, onOpen, onAdd, added, selected }) {
         </div>
 
         <PriceDisplay price={item.daily_price} originalPrice={item.original_price} />
+        <DurationChip item={item} />
 
-        <div className="shop-item-card-foot">
-          <span className={out ? "shop-item-stock is-out" : "shop-item-stock"}>
-            {out ? "Currently unavailable" : `${item.available_quantity} available`}
-          </span>
-        </div>
+        {!compact && <>
+          <div className="shop-item-card-foot">
+            <span className={out ? "shop-item-stock is-out" : "shop-item-stock"}>
+              {out ? "Currently unavailable" : `${item.available_quantity} available`}
+            </span>
+          </div>
 
-        <div className="shop-item-card-actions">
-          <button type="button" className="secondary-button shop-details-btn" onClick={open} data-no-page-loading>
-            View details
-          </button>
-          <button
-            type="button"
-            className={`primary-button shop-add-btn ${added ? "is-added" : ""}`}
-            disabled={out}
-            aria-label={out?`${item.name} is unavailable`:`Add ${item.name} to cart`}
-            onClick={() => onAdd?.(item)}
-            data-no-page-loading
-          >
-            {added ? "Added ✓" : out ? "Unavailable" : "Add to cart"}
-          </button>
-        </div>
+          <div className="shop-item-card-actions">
+            <button type="button" className="secondary-button shop-details-btn" onClick={open} data-no-page-loading>
+              View details
+            </button>
+            <button
+              type="button"
+              className={`primary-button shop-add-btn ${added ? "is-added" : ""}`}
+              disabled={out}
+              aria-label={out?`${item.name} is unavailable`:`Add ${item.name} to cart`}
+              onClick={() => onAdd?.(item)}
+              data-no-page-loading
+            >
+              {added ? "Added ✓" : out ? "Unavailable" : "Add to cart"}
+            </button>
+          </div>
+        </>}
       </div>
     </article>
   );

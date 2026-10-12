@@ -147,3 +147,65 @@ test("package contents need a name and a whole quantity of at least one", () => 
     false
   );
 });
+
+// --- second photo + rental duration discount (migration 017) ---------------
+
+test("an item can carry up to two photos, each an optional web address", () => {
+  const none = schemas.inventoryItem.safeParse(inventoryItem);
+  assert.equal(none.success, true);
+  assert.equal(none.data.image_url, "");
+  assert.equal(none.data.image_url_2, "");
+  const both = schemas.inventoryItem.safeParse({ ...inventoryItem, image_url: " https://a.test/1.jpg ", image_url_2: "https://b.test/2.png" });
+  assert.equal(both.success, true);
+  assert.equal(both.data.image_url, "https://a.test/1.jpg", "trimmed");
+  assert.equal(both.data.image_url_2, "https://b.test/2.png");
+  const fromDb = schemas.inventoryItem.safeParse({ ...inventoryItem, image_url: null, image_url_2: null });
+  assert.equal(fromDb.success, true, "a row that never had photos (NULL columns) can be saved");
+});
+
+test("photo addresses must be http(s) or site-relative, and not absurdly long", () => {
+  for (const bad of ["javascript:alert(1)", "data:image/png;base64,AAAA", "not a url", "//evil.test/x.png", "ftp://x.test/a.png"]) {
+    assert.equal(schemas.inventoryItem.safeParse({ ...inventoryItem, image_url_2: bad }).success, false, bad);
+  }
+  assert.equal(schemas.inventoryItem.safeParse({ ...inventoryItem, image_url: "/uploads/a.png" }).success, true);
+  assert.equal(schemas.inventoryItem.safeParse({ ...inventoryItem, image_url: "https://x.test/" + "a".repeat(600) }).success, false);
+});
+
+test("the duration discount is off by default and does not change existing items", () => {
+  const r = schemas.inventoryItem.safeParse(inventoryItem);
+  assert.equal(r.success, true);
+  assert.equal(r.data.duration_discount_enabled, false);
+  assert.equal(r.data.duration_discount_type, "percent");
+  assert.equal(r.data.duration_discount_value, 0);
+});
+
+test("an enabled duration discount needs a sensible amount", () => {
+  const on = (type, value, extra = {}) => schemas.inventoryItem.safeParse({ ...inventoryItem, duration_discount_enabled: true, duration_discount_type: type, duration_discount_value: value, ...extra });
+  assert.equal(on("percent", 10).success, true);
+  assert.equal(on("percent", "12.5").success, true, "form strings are coerced");
+  assert.equal(on("fixed", 300).success, true);
+  assert.equal(on("percent", 0).success, false, "zero is not a discount");
+  assert.equal(on("percent", "").success, false);
+  assert.equal(on("percent", -5).success, false);
+  assert.equal(on("percent", 95).success, false, "capped below 100%");
+  assert.equal(on("fixed", 2200).success, false, "a fixed amount must be below the daily price");
+  assert.equal(on("fixed", 5000).success, false);
+  assert.equal(on("percent", "lots").success, false);
+  assert.equal(on("weekly", 10).success, false, "unknown type");
+});
+
+test("a disabled duration discount keeps its settings without validating them", () => {
+  const r = schemas.inventoryItem.safeParse({ ...inventoryItem, duration_discount_enabled: false, duration_discount_type: "fixed", duration_discount_value: 99999 });
+  assert.equal(r.success, true);
+  assert.equal(r.data.duration_discount_enabled, false);
+  assert.equal(schemas.inventoryItem.safeParse({ ...inventoryItem, duration_discount_enabled: "true", duration_discount_type: "percent", duration_discount_value: 10 }).data.duration_discount_enabled, true);
+  assert.equal(schemas.inventoryItem.safeParse({ ...inventoryItem, duration_discount_enabled: 1, duration_discount_type: "percent", duration_discount_value: 10 }).data.duration_discount_enabled, true, "DB tinyint 1");
+});
+
+test("an item with no description (NULL in the database) can be edited and saved", () => {
+  const r = schemas.inventoryItem.safeParse({ ...inventoryItem, description: null });
+  assert.equal(r.success, true, "the edit form sends the NULL straight back");
+  assert.equal(r.data.description, "");
+  assert.equal(schemas.inventoryItem.safeParse({ ...inventoryItem, description: undefined }).data.description, "");
+  assert.equal(schemas.inventoryItem.safeParse({ ...inventoryItem, description: "x".repeat(2001) }).success, false, "length limit still applies");
+});

@@ -1,6 +1,7 @@
 import { db } from "./db.js";
 import { paymentStatusFor } from "./paymentStatus.js";
 import { parseDateOnly, rentalDays } from "./dates.js";
+import { durationRuleOf, priceRentalLine } from "./pricing.js";
 
 export async function getAvailability(conn, itemId, startDate, endDate) {
   const [[item]] = await conn.query(
@@ -88,11 +89,15 @@ export async function createBooking(conn, input, { historyNote, changedByUserId 
     const dailyPrice = Number(item.daily_price);
     const deposit = Number(item.security_deposit);
     const feePerPiece = input.fulfillment === "delivery" ? Number(row.delivery_fee_per_piece) : 0;
-    const lineRental = dailyPrice * row.quantity * days;
+    // Duration discount (3+ days) comes off dailyPrice; original_price ("Save") is
+    // display-only and never read here. See lib/pricing.js for the rules.
+    const rule = durationRuleOf(item);
+    const priced = priceRentalLine({ dailyPrice, rule, days, quantity: row.quantity });
+    const lineRental = priced.rental;
     const lineDeposit = deposit * row.quantity;
     const lineDelivery = feePerPiece * row.quantity;
     rentalSubtotal += lineRental; depositTotal += lineDeposit; deliveryFee += lineDelivery;
-    normalized.push({ item, quantity: row.quantity, dailyPrice, deposit, feePerPiece, lineRental, lineDeposit, lineDelivery });
+    normalized.push({ item, quantity: row.quantity, dailyPrice, deposit, feePerPiece, lineRental, lineDeposit, lineDelivery, rule, discountPerDay: priced.discountPerDay });
   }
 
   const grandTotal = rentalSubtotal + depositTotal + deliveryFee;
@@ -112,9 +117,9 @@ export async function createBooking(conn, input, { historyNote, changedByUserId 
   }
   for (const row of normalized) await conn.query(`
     INSERT INTO booking_items
-      (booking_id,rental_item_id,item_name,quantity,daily_price,security_deposit,rental_days,line_rental_total,line_deposit_total,delivery_fee_per_piece,line_delivery_total)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)
-  `, [bookingId, row.item.id, row.item.name, row.quantity, row.dailyPrice, row.deposit, days, row.lineRental, row.lineDeposit, row.feePerPiece, row.lineDelivery]);
+      (booking_id,rental_item_id,item_name,quantity,daily_price,security_deposit,rental_days,line_rental_total,duration_discount_type,duration_discount_value,duration_discount_per_day,line_deposit_total,delivery_fee_per_piece,line_delivery_total)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `, [bookingId, row.item.id, row.item.name, row.quantity, row.dailyPrice, row.deposit, days, row.lineRental, row.rule?.type ?? null, row.rule?.value ?? null, row.discountPerDay, row.lineDeposit, row.feePerPiece, row.lineDelivery]);
   await conn.query("INSERT INTO booking_status_history(booking_id,from_status,to_status,changed_by_user_id,note) VALUES(?,NULL,'pending',?,?)", [bookingId, changedByUserId, historyNote || "Booking created"]);
 
   return { bookingId, bookingNo, customer: contact, grandTotal };

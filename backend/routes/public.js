@@ -4,6 +4,7 @@ import { db } from "../lib/db.js";
 import { parseBody, schemas } from "../lib/validate.js";
 import { createBooking, getAvailability, bookingDetailById } from "../lib/bookings.js";
 import { parseDateOnly } from "../lib/dates.js";
+import { DURATION_DISCOUNT_MIN_DAYS, durationRuleOf } from "../lib/pricing.js";
 import { getSettings } from "../lib/settings.js";
 import { sendMail } from "../lib/mailer.js";
 import { idDocumentUpload, paymentProofUpload, removeUpload } from "../lib/upload.js";
@@ -34,22 +35,23 @@ const lookupLimiter = rateLimit({
 });
 
 const ITEM_FIELDS = "r.id,r.name,r.category,r.description,r.daily_price,r.original_price,r.security_deposit,r.total_quantity,r.image_url";
-// rental_items.bundle_items (migration 010) is optional: a database that has
-// not run it yet must still serve the full catalog, so the column is probed
-// once and then remembered for the lifetime of the process.
-let bundleColumnKnown = false;
-let hasBundleColumn = false;
+// Some rental_items columns arrived in later migrations (010 bundle_items, 017
+// image_url_2 + duration_discount_*). A database that has not run them yet must
+// still serve the full catalog, so the optional ones are probed once and then
+// remembered for the lifetime of the process.
+const OPTIONAL_ITEM_COLUMNS = ["bundle_items", "image_url_2", "duration_discount_enabled", "duration_discount_type", "duration_discount_value"];
+let presentOptionalColumns = null;
 async function itemColumns() {
-  if (!bundleColumnKnown) {
+  if (!presentOptionalColumns) {
     try {
-      const [[row]] = await db.query(
-        "SELECT COUNT(*) AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='rental_items' AND COLUMN_NAME='bundle_items'"
+      const [rows] = await db.query(
+        "SELECT COLUMN_NAME AS name FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='rental_items' AND COLUMN_NAME IN (?)",
+        [OPTIONAL_ITEM_COLUMNS]
       );
-      hasBundleColumn = Number(row.c) > 0;
-    } catch { hasBundleColumn = false; }
-    bundleColumnKnown = true;
+      presentOptionalColumns = new Set(rows.map(row => row.name));
+    } catch { presentOptionalColumns = new Set(); }
   }
-  return hasBundleColumn ? `${ITEM_FIELDS},r.bundle_items` : ITEM_FIELDS;
+  return [ITEM_FIELDS, ...OPTIONAL_ITEM_COLUMNS.filter(column => presentOptionalColumns.has(column)).map(column => `r.${column}`)].join(",");
 }
 // Normalise the JSON column into exactly the shape the customer-facing card
 // and details panel expect: a clean list of { name, quantity }, never null.
@@ -72,12 +74,18 @@ const RESERVED_ALL_SQL = `COALESCE((SELECT SUM(bi.quantity) FROM booking_items b
     AND b.end_date >= CURDATE()),0)`;
 
 function withAvailable(item) {
-  const { total_quantity, reserved_all, bundle_items, ...rest } = item;
+  const { total_quantity, reserved_all, bundle_items, duration_discount_enabled, duration_discount_type, duration_discount_value, ...rest } = item;
+  // Normalised duration rule ({ type, value, min_days }) or null when the item
+  // has none / has an invalid one -- the browser prices with exactly this.
+  const rule = durationRuleOf({ duration_discount_enabled, duration_discount_type, duration_discount_value });
+  const images = [rest.image_url, rest.image_url_2].map(url => String(url || "").trim()).filter(Boolean);
   return {
     ...rest,
+    images,
     total_quantity,
     available_quantity: Math.max(0, Number(total_quantity) - Number(reserved_all)),
-    bundle_items: parseBundleItems(bundle_items)
+    bundle_items: parseBundleItems(bundle_items),
+    duration_discount: rule ? { ...rule, min_days: DURATION_DISCOUNT_MIN_DAYS } : null
   };
 }
 
