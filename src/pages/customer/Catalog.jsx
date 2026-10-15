@@ -2,8 +2,15 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { CustomerShell } from "../../components/customer/CustomerShell";
 import { RentalItemCard } from "../../components/customer/RentalItemCard";
+import { SortSelect } from "../../components/customer/SortSelect";
 import { useCart } from "../../context/CartContext";
 import { publicApi } from "../../lib/publicApi";
+
+const SORT_OPTIONS = [
+  { value: "recommended", label: "Recommended" },
+  { value: "price-low", label: "Price: low to high" },
+  { value: "price-high", label: "Price: high to low" }
+];
 
 const STATE_KEY = "bb_customer_browse_state";
 const readBrowseState = () => {
@@ -97,14 +104,7 @@ export function CustomerCatalog() {
           {search && <button type="button" className="shop-search-clear" aria-label="Clear search" onClick={() => setSearch("")}>×</button>}
         </div>
 
-        <label className="shop-sort-field">
-          <span>Sort by</span>
-          <select value={sort} onChange={e => setSort(e.target.value)}>
-            <option value="recommended">Recommended</option>
-            <option value="price-low">Price: low to high</option>
-            <option value="price-high">Price: high to low</option>
-          </select>
-        </label>
+        <SortSelect label="Sort by" options={SORT_OPTIONS} value={sort} onChange={setSort} />
       </div>
 
       <div className="shop-filter-row">
