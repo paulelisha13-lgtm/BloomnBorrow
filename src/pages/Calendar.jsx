@@ -1,64 +1,60 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { AdminShell } from "../components/layout/AdminShell";
-import { Kpi } from "../components/Kpi";
+import { CalendarHeader } from "../components/calendar/CalendarHeader";
+import { DayView, MonthView, WeekView } from "../components/calendar/CalendarViews";
+import { CalendarSidebar } from "../components/calendar/CalendarSidebar";
+import { EntryEditor } from "../components/calendar/EntryEditor";
 import { isAdminUser } from "../lib/roles";
 import { useDiscardGuard } from "../components/DiscardGuard";
+import {
+  BOOKING_STATUS_LABELS, DAY_MS, ENTRY_STATUS_LABELS, MONTH_NAMES, TYPE_LABELS,
+  addDays, blankForm, buildDayMap, clock, dayKey, entryToForm, isoUtc, longDate,
+  parseKey, shortDate, timeLabel, todayKey, weekStart
+} from "../lib/calendarDates";
 
-const TYPE_LABELS={booking:"Booking",reservation:"Reservation",note:"Note",event:"Event"};
-const ENTRY_STATUS_LABELS={pending:"Pending",confirmed:"Confirmed",cancelled:"Cancelled",completed:"Completed"};
-const BOOKING_STATUS_LABELS={pending:"Pending",confirmed:"Confirmed",ready:"Ready",rented:"Rented",returned:"Returned",completed:"Completed",cancelled:"Cancelled",rejected:"Rejected",overdue:"Overdue"};
-const WEEKDAYS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-const MONTH_NAMES=["January","February","March","April","May","June","July","August","September","October","November","December"];
-const DAY_MS=86400000;
-const MAX_PILLS=3;
+const VIEW_KEY="bb_admin_calendar_view";
+const readView=()=>{
+  try{const v=localStorage.getItem(VIEW_KEY);return ["day","week","month"].includes(v)?v:"month"}
+  catch{return "month"}
+};
+const NO_RENTAL=new Set(["cancelled","rejected"]);
+const pad=n=>String(n).padStart(2,"0");
 
-// DATE columns come back from mysql2 as Date objects at UTC midnight (the pool
-// runs timezone "Z"), and TIME columns as plain "HH:MM:SS" strings. A Date must
-// be read with toISOString(), never String() -- String(date) gives
-// "Tue Sep 29 2026 ...", whose first 10 characters are not a date at all. The
-// text branch keeps this correct if a driver ever returns raw SQL dates.
-const dayKey=value=>value instanceof Date?value.toISOString().slice(0,10):String(value??"").slice(0,10);
-const clock=value=>typeof value==="string"?value.slice(0,5):"";
-const isoUtc=date=>date.toISOString().slice(0,10);
-// mysql2 hands back a UTC Date for DATETIME, but stay correct if a driver
-// change ever returns the raw "YYYY-MM-DD HH:MM:SS" text instead.
-const reminderToForm=value=>{
-  if(!value) return "";
-  return typeof value==="string"?value.slice(0,16).replace(" ","T"):new Date(value).toISOString().slice(0,16);
+// Month stepping keeps the day of the month where it exists (Jan 31 -> Feb 28).
+const shiftMonth=(key,delta)=>{
+  const {year,month,day}=parseKey(key);
+  const target=new Date(Date.UTC(year,month+delta,1));
+  const last=new Date(Date.UTC(target.getUTCFullYear(),target.getUTCMonth()+1,0)).getUTCDate();
+  return `${target.getUTCFullYear()}-${pad(target.getUTCMonth()+1)}-${pad(Math.min(day,last))}`;
 };
-const todayKey=()=>isoUtc(new Date());
-const longDate=key=>{
-  const [y,m,d]=dayKey(key).split("-").map(Number);
-  return `${MONTH_NAMES[m-1]} ${d}, ${y}`;
+
+const mergeById=(a,b)=>{
+  const seen=new Map();
+  for(const row of [...a,...b]) seen.set(row.id,row);
+  return [...seen.values()];
 };
-const blankForm=date=>({
-  entry_type:"reservation",title:"",customer_name:"",customer_email:"",customer_phone:"",
-  entry_date:date,start_time:"",end_time:"",guests:"",location:"",
-  status:"pending",reminder_at:"",details:"",notes:""
-});
-const entryToForm=entry=>({
-  entry_type:entry.entry_type||"reservation",
-  title:entry.title||"",
-  customer_name:entry.customer_name||"",
-  customer_email:entry.customer_email||"",
-  customer_phone:entry.customer_phone||"",
-  entry_date:dayKey(entry.entry_date),
-  start_time:clock(entry.start_time),
-  end_time:clock(entry.end_time),
-  guests:entry.guests==null?"":String(entry.guests),
-  location:entry.location||"",
-  status:entry.status||"pending",
-  reminder_at:reminderToForm(entry.reminder_at),
-  details:entry.details||"",
-  notes:entry.notes||""
-});
+
+const periodTitle=(view,cursor)=>{
+  const {year,month}=parseKey(cursor);
+  if(view==="month") return `${MONTH_NAMES[month]} ${year}`;
+  if(view==="day") return `${shortDate(cursor)}, ${year}`;
+  const start=weekStart(cursor),end=addDays(start,6);
+  const a=parseKey(start),b=parseKey(end);
+  const m=n=>MONTH_NAMES[n].slice(0,3);
+  if(a.year!==b.year) return `${m(a.month)} ${a.day}, ${a.year} – ${m(b.month)} ${b.day}, ${b.year}`;
+  if(a.month!==b.month) return `${m(a.month)} ${a.day} – ${m(b.month)} ${b.day}, ${b.year}`;
+  return `${m(a.month)} ${a.day} – ${b.day}, ${b.year}`;
+};
 
 export function Calendar() {
-  const now=new Date();
-  const [anchor,setAnchor]=useState({year:now.getFullYear(),month:now.getMonth()});
+  const [view,setViewState]=useState(readView);
+  const [cursor,setCursor]=useState(todayKey);
   const [entries,setEntries]=useState([]);
   const [bookings,setBookings]=useState([]);
+  // Today through the next 7 days, loaded on its own so the sidebar stays right
+  // whichever month is on screen.
+  const [side,setSide]=useState({entries:[],bookings:[],from:"",to:""});
   const [error,setError]=useState("");
   const [search,setSearch]=useState("");
   const [typeFilter,setTypeFilter]=useState("all");
@@ -72,14 +68,23 @@ export function Calendar() {
   const [deleteEntryTarget,setDeleteEntryTarget]=useState(null);
   const [deletingEntry,setDeletingEntry]=useState(false);
 
+  const {year,month}=parseKey(cursor);
+  const today=todayKey();
+
+  const setView=next=>{
+    setViewState(next);
+    try{localStorage.setItem(VIEW_KEY,next)}catch{/* storage unavailable */}
+  };
+
   // Always six weeks so the month never changes height as you navigate, and
-  // so leading/trailing days of the month are visible and clickable.
+  // so leading/trailing days of the month are visible and clickable. A week
+  // or a day of the cursor's month always falls inside this window too.
   const grid=useMemo(()=>{
-    const first=Date.UTC(anchor.year,anchor.month,1);
+    const first=Date.UTC(year,month,1);
     const start=first-new Date(first).getUTCDay()*DAY_MS;
     const cells=Array.from({length:42},(_,i)=>new Date(start+i*DAY_MS));
     return {cells,from:isoUtc(cells[0]),to:isoUtc(cells[41])};
-  },[anchor]);
+  },[year,month]);
 
   const load=useCallback((from,to)=>{
     setError("");
@@ -88,9 +93,19 @@ export function Calendar() {
       .catch(e=>setError(e.message));
   },[]);
 
-  useEffect(()=>{load(grid.from,grid.to)},[grid.from,grid.to,load]);
+  const loadSide=useCallback(()=>{
+    const from=todayKey(),to=addDays(from,7);
+    api(`/admin/calendar?from=${from}&to=${to}`)
+      .then(d=>setSide({entries:d.entries||[],bookings:d.bookings||[],from,to}))
+      .catch(()=>{/* the main grid reports load errors; the sidebar just stays as it was */});
+  },[]);
 
-  const monthPrefix=`${anchor.year}-${String(anchor.month+1).padStart(2,"0")}`;
+  useEffect(()=>{load(grid.from,grid.to)},[grid.from,grid.to,load]);
+  useEffect(()=>{loadSide()},[loadSide]);
+
+  const refresh=()=>{load(grid.from,grid.to);loadSide()};
+
+  const monthPrefix=`${year}-${pad(month+1)}`;
 
   const matches=useCallback(item=>{
     if(typeFilter!=="all"&&item.type!==typeFilter) return false;
@@ -104,67 +119,84 @@ export function Calendar() {
   },[search,typeFilter,statusFilter]);
 
   // One activity list per day. Calendar entries land on their single date;
-  // rental bookings repeat across their whole start-to-end span.
+  // rental bookings repeat across their whole start-to-end span. The sidebar's
+  // own data is merged in so a day opened from there is complete too.
   const byDay=useMemo(()=>{
-    const map=new Map();
-    const target=key=>{
-      if(!map.has(key)) map.set(key,[]);
-      return map.get(key);
+    const range={
+      from:side.from&&side.from<grid.from?side.from:grid.from,
+      to:side.to&&side.to>grid.to?side.to:grid.to
     };
-    for(const entry of entries){
-      if(!matches({kind:"entry",type:entry.entry_type,status:entry.status,title:entry.title,customer_name:entry.customer_name,location:entry.location,category:entry.category,notes:entry.notes,details:entry.details})) continue;
-      target(dayKey(entry.entry_date)).push({kind:"entry",entry,status:entry.status,type:entry.entry_type,time:clock(entry.start_time)});
-    }
-    for(const booking of bookings){
-      if(!matches({kind:"booking",type:"booking",status:booking.status,booking_no:booking.booking_no,customer_name:booking.customer_name,items:booking.items})) continue;
-      const cursor=new Date(`${dayKey(booking.start_date)}T00:00:00Z`);
-      const last=new Date(`${dayKey(booking.end_date)}T00:00:00Z`);
-      while(cursor<=last){
-        const key=isoUtc(cursor);
-        if(key>=grid.from&&key<=grid.to) target(key).push({kind:"booking",booking,status:booking.status,type:"booking",time:""});
-        cursor.setUTCDate(cursor.getUTCDate()+1);
-      }
-    }
-    for(const list of map.values()){
-      list.sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99")||(a.kind===b.kind?0:a.kind==="booking"?-1:1));
-    }
-    return map;
-  },[entries,bookings,grid,matches]);
+    return buildDayMap(mergeById(entries,side.entries),mergeById(bookings,side.bookings),range,matches);
+  },[entries,bookings,side,grid,matches]);
 
-  const monthActivities=useMemo(()=>{
+  const summary=useMemo(()=>{
     const list=[];
     for(const [key,items] of byDay){
       if(key.startsWith(monthPrefix)) list.push(...items);
     }
-    return list;
-  },[byDay,monthPrefix]);
-
-  const stats={
-    scheduled:monthActivities.filter(a=>a.kind==="entry").length,
-    pending:monthActivities.filter(a=>a.kind==="entry"&&a.status==="pending").length,
-    confirmed:monthActivities.filter(a=>a.kind==="entry"&&a.status==="confirmed").length,
+    const own=list.filter(a=>a.kind==="entry");
     // A multi-day rental repeats on every day it covers, so count the
     // bookings themselves rather than the day tiles they appear in.
-    rentals:new Set(monthActivities.filter(a=>a.kind==="booking").map(a=>a.booking.id)).size
-  };
+    const rentals=new Set(list.filter(a=>a.kind==="booking").map(a=>a.booking.id));
+    const overdue=new Set(list.filter(a=>a.kind==="booking"&&a.status==="overdue").map(a=>a.booking.id));
+    return {
+      scheduled:own.length,
+      completed:own.filter(a=>a.status==="completed").length,
+      pending:own.filter(a=>a.status==="pending").length,
+      overdue:overdue.size,
+      rentals:rentals.size
+    };
+  },[byDay,monthPrefix]);
 
-  const step=delta=>setAnchor(prev=>{
-    const next=new Date(Date.UTC(prev.year,prev.month+delta,1));
-    return {year:next.getUTCFullYear(),month:next.getUTCMonth()};
-  });
-  const goToday=()=>{const t=new Date();setAnchor({year:t.getFullYear(),month:t.getMonth()})};
+  // Sidebar: what's on today.
+  const todayTasks=useMemo(()=>{
+    const rows=[];
+    for(const e of side.entries){
+      if(dayKey(e.entry_date)!==today||e.status==="cancelled") continue;
+      rows.push({id:`e${e.id}`,day:today,tone:e.entry_type,title:e.title,when:timeLabel(e.start_time)||"All day",sort:clock(e.start_time)||"99:99"});
+    }
+    for(const b of side.bookings){
+      if(NO_RENTAL.has(b.status)) continue;
+      const name=b.customer_name||b.booking_no;
+      if(dayKey(b.start_date)===today) rows.push({id:`o${b.id}`,day:today,tone:"booking",title:`Out: ${name}`,when:"Rental out",sort:"99:98"});
+      if(dayKey(b.end_date)===today&&!["returned","completed"].includes(b.status)) rows.push({id:`d${b.id}`,day:today,tone:"booking",title:`Due back: ${name}`,when:"Due back",sort:"99:99"});
+    }
+    return rows.sort((a,b)=>a.sort.localeCompare(b.sort));
+  },[side,today]);
+
+  // Sidebar: rentals going out or coming back, grouped by day.
+  const upcoming=useMemo(()=>{
+    const groups=[];
+    for(let i=0;i<=7;i++){
+      const day=addDays(today,i);
+      const rows=[];
+      for(const b of side.bookings){
+        if(NO_RENTAL.has(b.status)) continue;
+        const base={customer:b.customer_name||b.booking_no,items:b.items,code:b.booking_no};
+        if(dayKey(b.start_date)===day) rows.push({...base,id:`o${b.id}`,kind:"out"});
+        if(dayKey(b.end_date)===day&&!["returned","completed"].includes(b.status)) rows.push({...base,id:`d${b.id}`,kind:"due"});
+      }
+      if(rows.length) groups.push({day,rows,isToday:i===0});
+    }
+    return groups;
+  },[side,today]);
+
+  const step=delta=>setCursor(prev=>view==="month"?shiftMonth(prev,delta):addDays(prev,delta*(view==="week"?7:1)));
+  const jump=(y,m)=>setCursor(`${y}-${pad(m+1)}-01`);
 
   // Enough years to plan ahead and review the past, always including whatever
   // month is currently in view so the select can never end up blank.
   const yearOptions=useMemo(()=>{
     const thisYear=new Date().getFullYear();
-    const first=Math.min(thisYear,anchor.year)-3;
-    const last=Math.max(thisYear,anchor.year)+7;
+    const first=Math.min(thisYear,year)-3;
+    const last=Math.max(thisYear,year)+7;
     return Array.from({length:last-first+1},(_,i)=>first+i);
-  },[anchor.year]);
+  },[year]);
 
-  const openNew=(date=todayKey())=>{const form=blankForm(date);setEditorBaseline(JSON.stringify(form));setEditor({id:null,form})};
-  const openEdit=entry=>{const form=entryToForm(entry);setEditorBaseline(JSON.stringify(form));setEditor({id:entry.id,form})};
+  const openNew=(date=todayKey())=>{setError("");const form=blankForm(date);setEditorBaseline(JSON.stringify(form));setEditor({id:null,form})};
+  const openEdit=entry=>{setError("");const form=entryToForm(entry);setEditorBaseline(JSON.stringify(form));setEditor({id:entry.id,form})};
+  // Opening a day from the sidebar also moves the calendar there.
+  const showDay=key=>{setCursor(key);setOpenDay(key)};
 
   const save=async()=>{
     if(!editor) return;
@@ -173,7 +205,7 @@ export function Calendar() {
     try{
       await api(editor.id?`/admin/calendar/${editor.id}`:"/admin/calendar",{method:editor.id?"PATCH":"POST",body:JSON.stringify(editor.form)});
       setEditor(null);
-      load(grid.from,grid.to);
+      refresh();
     }catch(e){setError(e.message)}
     finally{setSaving(false)}
   };
@@ -181,7 +213,7 @@ export function Calendar() {
   // Cancel is a soft status change, so it sends the whole entry: the PATCH
   // route validates the full shape and replaces every field.
   const setStatus=(entry,status)=>api(`/admin/calendar/${entry.id}`,{method:"PATCH",body:JSON.stringify({...entryToForm(entry),status})})
-    .then(()=>load(grid.from,grid.to))
+    .then(refresh)
     .catch(e=>setError(e.message));
 
   const remove=async entry=>{
@@ -190,23 +222,24 @@ export function Calendar() {
     try{
       await api(`/admin/calendar/${entry.id}`,{method:"DELETE"});
       setDeleteEntryTarget(null);
-      load(grid.from,grid.to);
+      refresh();
     }catch(e){setError(e.message)}
     finally{setDeletingEntry(false)}
   };
 
+  // Escape closes the day panel, unless a dialog opened from it is on top.
+  useEffect(()=>{
+    if(!openDay||editor||deleteEntryTarget) return undefined;
+    const onKey=e=>{if(e.key==="Escape") setOpenDay(null)};
+    document.addEventListener("keydown",onKey);
+    return()=>document.removeEventListener("keydown",onKey);
+  },[openDay,editor,deleteEntryTarget]);
+
   const dayItems=openDay?(byDay.get(openDay)||[]):[];
   const filtering=search.trim()!==""||typeFilter!=="all"||statusFilter!=="all";
 
-  return <AdminShell title="Calendar" subtitle="Monthly schedule of reservations, bookings, events and notes.">
-    {error&&<div className="login-error">{error}</div>}
-
-    <section className="kpi-grid">
-      <Kpi index={0} label="Scheduled this month" value={stats.scheduled} detail="Reservations, events and notes"/>
-      <Kpi index={1} label="Pending" value={stats.pending} detail="Awaiting confirmation"/>
-      <Kpi index={2} label="Confirmed" value={stats.confirmed} detail="Locked in"/>
-      <Kpi index={3} label="Rental bookings" value={stats.rentals} detail="Read-only, from Bookings"/>
-    </section>
+  return <AdminShell title="Calendar" subtitle="Schedule of reservations, bookings, events and notes.">
+    {error&&!editor&&<div className="login-error">{error}</div>}
 
     <div className="admin-page-toolbar calendar-toolbar">
       <div className="admin-search">
@@ -226,57 +259,36 @@ export function Calendar() {
       </div>
     </div>
 
-    <section className="admin-card cal-shell">
-      <header className="cal-bar">
-        <div className="cal-bar-nav">
-          <button className="mini-button cal-arrow" onClick={()=>step(-1)} aria-label="Previous month" title="Previous month">&larr;</button>
-          <button className="mini-button" onClick={goToday}>Today</button>
-          <button className="mini-button cal-arrow" onClick={()=>step(1)} aria-label="Next month" title="Next month">&rarr;</button>
-        </div>
-        <div className="cal-period">
-          <select className="cal-select" aria-label="Month" value={anchor.month} onChange={e=>setAnchor(prev=>({...prev,month:Number(e.target.value)}))}>
-            {MONTH_NAMES.map((name,i)=><option key={name} value={i}>{name}</option>)}
-          </select>
-          <select className="cal-select cal-year" aria-label="Year" value={anchor.year} onChange={e=>setAnchor(prev=>({...prev,year:Number(e.target.value)}))}>
-            {yearOptions.map(y=><option key={y} value={y}>{y}</option>)}
-          </select>
-        </div>
-        <span className="cal-range-note">{grid.from} to {grid.to}</span>
-      </header>
+    <div className="cal-layout">
+      <section className="cal-card" aria-label="Calendar">
+        <CalendarHeader
+          view={view} onView={setView} title={periodTitle(view,cursor)}
+          year={year} month={month} yearOptions={yearOptions}
+          onPrev={()=>step(-1)} onNext={()=>step(1)} onToday={()=>setCursor(todayKey())} onJump={jump}
+        />
 
-      <div className="cal-weekdays">{WEEKDAYS.map(d=><span key={d}>{d}</span>)}</div>
+        {view==="month"&&<MonthView cells={grid.cells} month={month} year={year} byDay={byDay} today={today} onOpenDay={setOpenDay} onAdd={openNew}/>}
+        {view==="week"&&<WeekView start={weekStart(cursor)} byDay={byDay} today={today} onOpenDay={setOpenDay} onAdd={openNew}/>}
+        {view==="day"&&<DayView day={cursor} items={byDay.get(cursor)||[]} today={today} onOpenDay={setOpenDay} onAdd={openNew}/>}
 
-      <div className="cal-grid">
-        {grid.cells.map(cell=>{
-          const key=isoUtc(cell);
-          const items=byDay.get(key)||[];
-          const inMonth=cell.getUTCMonth()===anchor.month&&cell.getUTCFullYear()===anchor.year;
-          const isToday=key===todayKey();
-          return <div key={key} className={`cal-cell ${inMonth?"":"cal-cell-outside"} ${isToday?"cal-cell-today":""}`}>
-            <button type="button" className="cal-daynum" onClick={()=>setOpenDay(key)} aria-label={`View ${longDate(key)}`}>
-              {cell.getUTCDate()}
-              {isToday&&<span className="cal-today-tag">Today</span>}
-            </button>
-            <div className="cal-items">
-              {items.slice(0,MAX_PILLS).map(item=>item.kind==="booking"
-                ? <span key={`b${item.booking.id}`} className="cal-pill cal-pill-booking">
-                    <em>{item.booking.booking_no}</em> {item.booking.customer_name}
-                  </span>
-                : <span key={`e${item.entry.id}`} className={`cal-pill cal-pill-${item.entry.entry_type} cal-pill-${item.entry.status}`}>
-                    {item.time&&<em>{item.time}</em>} {item.entry.title}
-                  </span>)}
-              {items.length>MAX_PILLS&&<button type="button" className="cal-more" onClick={()=>setOpenDay(key)}>View more ({items.length-MAX_PILLS} more)</button>}
-            </div>
-            <button type="button" className="cal-add" onClick={()=>openNew(key)} aria-label={`Add entry on ${longDate(key)}`}>+ Add</button>
-          </div>;
-        })}
-      </div>
+        <footer className="cal-legend">
+          <ul aria-label="Colour key">
+            {["booking","reservation","event","note"].map(type=><li key={type}><i className={`cal-dot cal-tone-${type}`} aria-hidden="true"/>{TYPE_LABELS[type]}</li>)}
+          </ul>
+          {filtering
+            ? <p>Filters apply to this view only. Rental bookings are read-only; edit them from Bookings.</p>
+            : <p>Rental bookings are read-only; edit them from Bookings.</p>}
+        </footer>
+      </section>
 
-      {filtering&&<p className="cal-filter-note">Filters are applied to this view only. Real rental bookings are shown read-only; edit them from Bookings.</p>}
-    </section>
+      <CalendarSidebar
+        today={todayTasks} summary={summary} monthLabel={MONTH_NAMES[month]} upcoming={upcoming}
+        onOpenDay={showDay} onAdd={openNew}
+      />
+    </div>
 
     {openDay&&<div className="modal-backdrop" onClick={()=>setOpenDay(null)}><div className="modal cal-modal" onClick={e=>e.stopPropagation()}>
-      <div className="modal-head"><div><span className="eyebrow">{dayItems.length} scheduled</span><h2>{longDate(openDay)}</h2></div><button type="button" onClick={()=>setOpenDay(null)}>×</button></div>
+      <div className="modal-head"><div><span className="eyebrow">{dayItems.length} scheduled</span><h2>{longDate(openDay)}</h2></div><button type="button" onClick={()=>setOpenDay(null)} aria-label="Close">×</button></div>
       {dayItems.length===0?<div className="inventory-empty"><h3>Nothing scheduled</h3><p>No entries on this day.</p></div>:<div className="cal-day-list">
         {dayItems.map(item=>item.kind==="booking"
           ? <article key={`b${item.booking.id}`} className="cal-day-item cal-day-item-booking">
@@ -322,26 +334,7 @@ export function Calendar() {
       <div className="modal-actions"><button className="secondary-button" onClick={()=>openNew(openDay)}>+ Add on this day</button><button className="primary-button" onClick={()=>setOpenDay(null)}>Close</button></div>
     </div></div>}
 
-    {editor&&<div className="modal-backdrop" onClick={editorGuard.requestClose}><div className="modal cal-entry-modal" onClick={e=>e.stopPropagation()}>
-      <div className="modal-head"><div><span className="eyebrow">{editor.id?"Edit Entry":"New Entry"}</span><h2>{editor.id?"Update Calendar Entry":TYPE_LABELS[editor.form.entry_type]}</h2></div><button type="button" onClick={editorGuard.requestClose}>×</button></div>
-      <div className="form-grid">
-        <label>Type<select value={editor.form.entry_type} onChange={e=>setEditor({...editor,form:{...editor.form,entry_type:e.target.value}})}>{Object.entries(TYPE_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>
-        <label>Status<select value={editor.form.status} onChange={e=>setEditor({...editor,form:{...editor.form,status:e.target.value}})}>{Object.entries(ENTRY_STATUS_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>
-        <label className="span-2">Title<input required value={editor.form.title} onChange={e=>setEditor({...editor,form:{...editor.form,title:e.target.value}})} placeholder="What is scheduled?"/></label>
-        <label className="span-2">Date<input type="date" required value={editor.form.entry_date} onChange={e=>setEditor({...editor,form:{...editor.form,entry_date:e.target.value}})}/></label>
-        <label>Start time<input type="time" value={editor.form.start_time} onChange={e=>setEditor({...editor,form:{...editor.form,start_time:e.target.value}})}/></label>
-        <label>End time<input type="time" value={editor.form.end_time} onChange={e=>setEditor({...editor,form:{...editor.form,end_time:e.target.value}})}/></label>
-        <label>Customer name<input value={editor.form.customer_name} onChange={e=>setEditor({...editor,form:{...editor.form,customer_name:e.target.value}})} placeholder="Optional"/></label>
-        <label>Contact number<input value={editor.form.customer_phone} onChange={e=>setEditor({...editor,form:{...editor.form,customer_phone:e.target.value}})} placeholder="Optional"/></label>
-        <label className="span-2">Customer email<input type="email" value={editor.form.customer_email} onChange={e=>setEditor({...editor,form:{...editor.form,customer_email:e.target.value}})} placeholder="Optional"/></label>
-        <label>Location<input value={editor.form.location} onChange={e=>setEditor({...editor,form:{...editor.form,location:e.target.value}})} placeholder="Optional"/></label>
-        <label>Guests<input type="number" min="0" value={editor.form.guests} onChange={e=>setEditor({...editor,form:{...editor.form,guests:e.target.value}})} placeholder="Optional"/></label>
-        <label className="span-2">Reminder<input type="datetime-local" value={editor.form.reminder_at} onChange={e=>setEditor({...editor,form:{...editor.form,reminder_at:e.target.value}})}/></label>
-        <label className="span-2">Details<textarea value={editor.form.details} onChange={e=>setEditor({...editor,form:{...editor.form,details:e.target.value}})} placeholder="Optional"/></label>
-        <label className="span-2">Notes<textarea value={editor.form.notes} onChange={e=>setEditor({...editor,form:{...editor.form,notes:e.target.value}})} placeholder="Optional"/></label>
-      </div>
-      <div className="modal-actions"><button className="secondary-button" onClick={editorGuard.requestClose}>Cancel</button><button className="primary-button" onClick={save} disabled={saving}>{saving?"Saving...":editor.id?"Save Changes":"Add to Calendar"}</button></div>
-    </div></div>}
+    {editor&&<EntryEditor editor={editor} setEditor={setEditor} saving={saving} error={error} onSave={save} onClose={editorGuard.requestClose}/>}
     {editorGuard.discardDialog}
 
     {deleteEntryTarget&&<div className="modal-backdrop" onClick={()=>setDeleteEntryTarget(null)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
