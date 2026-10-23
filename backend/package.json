@@ -9,6 +9,7 @@
     "start:production": "node production-start.js",
     "migrate": "node scripts/migrate.js",
     "seed": "node scripts/seed.js",
+    "seed:demo": "node scripts/seed-demo.js",
     "bootstrap-admin": "node scripts/bootstrap-admin.js",
     "reset-password": "node scripts/reset-admin-password.js",
     "security:check": "node scripts/security-check.js",
