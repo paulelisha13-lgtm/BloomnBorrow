@@ -295,6 +295,7 @@ export function Inventory() {
     {itemGuard.discardDialog}
 
     {deleteModal&&<div className="modal-backdrop" onClick={()=>setDeleteModal(null)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+      <button type="button" className="confirm-modal-close" aria-label="Close delete item confirmation" disabled={deleteLoading} onClick={()=>setDeleteModal(null)}>×</button>
       <h3>Delete Item</h3>
       <p>Are you sure you want to delete <strong>{deleteModal.name}</strong> ({deleteModal.sku})?</p>
       <small>This action cannot be undone.</small>

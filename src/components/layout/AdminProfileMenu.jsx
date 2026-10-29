@@ -48,6 +48,7 @@ export function AdminProfileMenu() {
     </div>}
 
     {logoutConfirm && <div className="modal-backdrop" onClick={()=>!signingOut&&setLogoutConfirm(false)}><div className="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="signout-title" aria-describedby="signout-description" onClick={e=>e.stopPropagation()}>
+      <button type="button" className="confirm-modal-close" aria-label="Close sign out confirmation" disabled={signingOut} onClick={()=>setLogoutConfirm(false)}>×</button>
       <h3 id="signout-title">Sign Out</h3>
       <p id="signout-description">Are you sure you want to sign out?</p>
       <div className="confirm-modal-actions">

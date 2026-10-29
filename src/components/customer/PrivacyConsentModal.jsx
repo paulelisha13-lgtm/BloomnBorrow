@@ -22,6 +22,7 @@ export function PrivacyConsentModal({ business, onAgree, onDecline }) {
   };
 
   return <div className="modal-backdrop"><div className="modal confirm-modal shop-privacy-modal" role="dialog" aria-modal="true" aria-labelledby="privacy-title" aria-describedby="privacy-summary">
+    <button type="button" className="confirm-modal-close" aria-label="Decline and close privacy policy" onClick={onDecline}>×</button>
     <h3 id="privacy-title">Privacy Policy</h3>
     <p id="privacy-summary" className="shop-privacy-summary">Please review how your information is used before continuing.</p>
     <div ref={textRef} className="shop-privacy-text" onScroll={onScroll} tabIndex="0" aria-label="Privacy policy text">

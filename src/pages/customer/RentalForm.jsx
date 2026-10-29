@@ -291,6 +291,7 @@ export function CustomerRentalForm() {
     </form>
 
     {leaveConfirm && <div className="modal-backdrop" onClick={() => setLeaveConfirm(false)}><div className="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="leave-request-title" aria-describedby="leave-request-description" onClick={e => e.stopPropagation()}>
+      <button type="button" className="confirm-modal-close" aria-label="Close leave confirmation" onClick={() => setLeaveConfirm(false)}>×</button>
       <h3 id="leave-request-title">Leave Rental Request?</h3>
       <p id="leave-request-description">Going back to the cart will clear everything you've entered in this rental request.</p>
       <div className="confirm-modal-actions">
@@ -300,6 +301,7 @@ export function CustomerRentalForm() {
     </div></div>}
 
     {confirming && <div className="modal-backdrop" onClick={() => !submitting && setConfirming(false)}><div className="modal confirm-modal confirm-modal-review" role="dialog" aria-modal="true" aria-labelledby="confirm-request-title" onClick={e => e.stopPropagation()}>
+      <button type="button" className="confirm-modal-close" aria-label="Close rental request review" disabled={submitting} onClick={() => setConfirming(false)}>×</button>
       <h3 id="confirm-request-title">Confirm your rental request</h3>
       <div className="shop-review-list">
         {lines.map(x => <div key={x.item_id}><span>{x.name} × {x.quantity}</span><strong>{pesoExact(x.rental)}</strong></div>)}

@@ -207,6 +207,7 @@ export function Expenses() {
     {guard.discardDialog}
 
     {deleteTarget && <div className="modal-backdrop" onClick={() => setDeleteTarget(null)}><div className="modal confirm-modal" onClick={e => e.stopPropagation()}>
+      <button type="button" className="confirm-modal-close" aria-label="Close delete expense confirmation" onClick={() => setDeleteTarget(null)}>×</button>
       <h3>Delete Expense</h3>
       <p>Delete <strong>{deleteTarget.description}</strong> ({peso(deleteTarget.amount)})?</p>
       <small>It will no longer count toward your profit. {deleteTarget.source_type !== "manual" ? "Because it came from a suggestion, it will be suggested again." : ""}</small>

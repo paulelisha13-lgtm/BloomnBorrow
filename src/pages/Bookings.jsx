@@ -480,6 +480,7 @@ export function Bookings() {
     </div></div>}
 
     {deleteBookingTarget&&<div className="modal-backdrop" onClick={()=>setDeleteBookingTarget(null)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+      <button type="button" className="confirm-modal-close" aria-label="Close delete booking confirmation" disabled={deletingBooking} onClick={()=>setDeleteBookingTarget(null)}>×</button>
       <h3>Delete Booking</h3>
       <p>Are you sure you want to delete <strong>{deleteBookingTarget.booking_no}</strong>?</p>
       <small>This will permanently remove the booking, all its payments, and status history. This action cannot be undone.</small>
@@ -490,6 +491,7 @@ export function Bookings() {
     </div></div>}
 
     {invoiceConfirm&&detail&&<div className="modal-backdrop" onClick={()=>setInvoiceConfirm(false)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+      <button type="button" className="confirm-modal-close" aria-label="Close invoice confirmation" onClick={()=>setInvoiceConfirm(false)}>×</button>
       <h3>Send Invoice Email</h3>
       <p>Send the invoice for <strong>{detail.booking_no}</strong> to <strong>{detail.customer_email}</strong>?</p>
       <div className="confirm-modal-actions">
@@ -499,6 +501,7 @@ export function Bookings() {
     </div></div>}
 
     {showGcashModal&&detail&&<div className="modal-backdrop" onClick={()=>!sendingGcash&&gcashGuard.requestClose()}><div className="modal confirm-modal gcash-email-modal" onClick={e=>e.stopPropagation()}>
+      <button type="button" className="confirm-modal-close" aria-label="Close GCash email form" disabled={sendingGcash} onClick={gcashGuard.requestClose}>×</button>
       <h3>Send GCash Payment Email</h3>
       <p>Send the QR code and payment instructions for <strong>{detail.booking_no}</strong> to <strong>{detail.customer_email}</strong>.</p>
       <div className="gcash-email-total"><span>Rental total</span><strong>{peso(Number(detail.grand_total))}</strong></div>
@@ -540,6 +543,7 @@ export function Bookings() {
     </div></div>}
 
     {rentConfirm&&detail&&<div className="modal-backdrop" onClick={()=>setRentConfirm(false)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+      <button type="button" className="confirm-modal-close" aria-label="Close rented status confirmation" disabled={busy} onClick={()=>setRentConfirm(false)}>×</button>
       <h3>Mark as Rented</h3>
       <p>Mark <strong>{detail.booking_no}</strong> as Rented? The items will remain reserved until they are returned.</p>
       <div className="confirm-modal-actions">
@@ -549,6 +553,7 @@ export function Bookings() {
     </div></div>}
 
     {showDeliveryQuote&&detail&&<div className="modal-backdrop" onClick={()=>!deliveryQuoteSubmitting&&setShowDeliveryQuote(false)}><div className="modal confirm-modal delivery-quote-modal" role="dialog" aria-modal="true" aria-labelledby="delivery-quote-title" onClick={e=>e.stopPropagation()}>
+      <button type="button" className="confirm-modal-close" aria-label="Close delivery fee form" disabled={deliveryQuoteSubmitting} onClick={()=>setShowDeliveryQuote(false)}>×</button>
       <span className="eyebrow">Delivery review</span>
       <h3 id="delivery-quote-title">Confirm delivery fee</h3>
       <p>Check the customer's complete address and compare it with your free-delivery coverage before approving the booking.</p>
@@ -567,6 +572,7 @@ export function Bookings() {
     </div></div>}
 
     {approveConfirm&&detail&&<div className="modal-backdrop" onClick={()=>setApproveConfirm(false)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+      <button type="button" className="confirm-modal-close" aria-label="Close approval confirmation" disabled={busy} onClick={()=>setApproveConfirm(false)}>×</button>
       <h3>Approve Rental</h3>
       <p>Approve this rental request?</p>
       <div className="confirm-modal-actions">
@@ -576,6 +582,7 @@ export function Bookings() {
     </div></div>}
 
     {rejectConfirm&&detail&&<div className="modal-backdrop" onClick={()=>setRejectConfirm(false)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+      <button type="button" className="confirm-modal-close" aria-label="Close rejection confirmation" disabled={busy} onClick={()=>setRejectConfirm(false)}>×</button>
       <h3>Reject Rental</h3>
       <p>Reject this rental request? The customer will receive the reason below by email.</p>
       <label className="reject-reason-field">Reason shown to customer<textarea rows="3" maxLength="255" value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder="Example: Required ID details could not be verified."/></label>

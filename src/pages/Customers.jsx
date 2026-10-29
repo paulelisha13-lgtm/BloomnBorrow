@@ -213,6 +213,7 @@ export function Customers() {
     {cancelGuard.discardDialog}
 
     {deleteConfirm&&<div className="modal-backdrop" onClick={()=>setDeleteConfirm(null)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+      <button type="button" className="confirm-modal-close" aria-label="Close delete customer confirmation" disabled={deleting} onClick={()=>setDeleteConfirm(null)}>×</button>
       <h3>Delete Customer</h3>
       <p>Are you sure you want to delete <strong>{deleteConfirm.full_name}</strong>?</p>
       <small>Contact details and uploaded ID/payment files will be erased. Booking and payment history will remain without customer identifiers.</small>

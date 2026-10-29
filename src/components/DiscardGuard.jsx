@@ -7,6 +7,7 @@ import React, { useState } from "react";
 export function DiscardChangesModal({ onKeep, onDiscard }) {
   return <div className="modal-backdrop discard-backdrop" role="presentation">
     <div className="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="discard-title" aria-describedby="discard-desc">
+      <button type="button" className="confirm-modal-close" aria-label="Keep editing" onClick={onKeep}>×</button>
       <h3 id="discard-title">Discard changes?</h3>
       <p id="discard-desc">You have unsaved changes. Are you sure you want to exit? Your entered information will be lost.</p>
       <div className="confirm-modal-actions">

@@ -11,6 +11,14 @@
   --accent:#73d4cf;
   --shadow:0 18px 55px rgba(27,77,78,.09);
   --radius:18px;
+  /* Shared overlay stack. Keep page chrome and popovers below blocking
+     dialogs so a form backdrop always dims and intercepts the whole app. */
+  --layer-popover:140;
+  --layer-sheet:190;
+  --layer-modal:200;
+  --layer-modal-nested:220;
+  --layer-feedback:240;
+  --layer-skip-link:260;
 }
 [data-theme="dark"]{
   --bg:#0f1a1b;
@@ -196,7 +204,7 @@ img{max-width:100%;display:block}
 .danger-button.app-button-loading::after{color:#b54b57!important}
 .app-button-success{box-shadow:0 0 0 3px rgba(35,128,93,.16)!important}
 .app-button-error{box-shadow:0 0 0 3px rgba(181,75,87,.16)!important}
-.app-action-notice{position:fixed;z-index:140;top:18px;left:50%;width:min(440px,calc(100% - 32px));transform:translateX(-50%);padding:12px 16px;border:1px solid #b9e1da;border-radius:11px;background:#f3fbf9;color:#226e60;box-shadow:0 14px 35px rgba(18,60,61,.16);font-size:12.5px;font-weight:700;line-height:1.45;text-align:center;animation:shopToastIn .18s ease}
+.app-action-notice{position:fixed;z-index:var(--layer-feedback);top:18px;left:50%;width:min(440px,calc(100% - 32px));transform:translateX(-50%);padding:12px 16px;border:1px solid #b9e1da;border-radius:11px;background:#f3fbf9;color:#226e60;box-shadow:0 14px 35px rgba(18,60,61,.16);font-size:12.5px;font-weight:700;line-height:1.45;text-align:center;animation:shopToastIn .18s ease}
 .app-action-notice.error{border-color:#efc7cc;background:#fff5f6;color:#a74450}
 .customer-page-loading{position:fixed;inset:0;z-index:180;display:grid;place-items:center;background:transparent;cursor:wait;animation:customerLoadingFade .16s ease-out both}
 .customer-page-loading-dots{display:flex;align-items:center;justify-content:center;gap:7px}
@@ -267,7 +275,7 @@ textarea{min-height:90px;resize:vertical}
 .admin-toolbar-controls>.primary-button{flex-shrink:0;white-space:nowrap}
 .admin-search{width:280px;background:#fff;border:1px solid #d7e8e7;border-radius:11px;padding-left:11px;align-items:center}.admin-search input{border:0;background:transparent;box-shadow:none;padding:10px}.admin-page-toolbar select{width:auto;background:#fff}
 .settings-check{display:flex!important;grid-template-columns:none!important;align-items:flex-start;gap:10px;padding:13px 14px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2);cursor:pointer}.settings-check input{width:17px;height:17px;margin:2px 0 0;accent-color:var(--brand);flex:0 0 auto}.settings-check span{display:grid;gap:3px}.settings-check strong{font-size:12px;color:var(--ink)}.settings-check small{font-size:10.5px;font-weight:500;line-height:1.5;color:var(--muted)}
-.modal-backdrop{position:fixed;inset:0;background:rgba(11,42,44,.45);z-index:80;display:grid;place-items:center;padding:20px}.modal{width:min(610px,100%);background:#fff;border-radius:20px;padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.2)}.modal-head{display:flex;justify-content:space-between;align-items:start;margin-bottom:20px}.modal-head h2{margin:4px 0}.modal-head button{border:0;background:#eef5f4;width:32px;height:32px;border-radius:9px;font-size:21px}.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+.modal-backdrop{position:fixed;inset:0;background:rgba(11,42,44,.45);z-index:var(--layer-modal);display:grid;place-items:center;padding:20px}.modal{width:min(610px,100%);background:#fff;border-radius:20px;padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.2)}.modal-head{display:flex;justify-content:space-between;align-items:start;margin-bottom:20px}.modal-head h2{margin:4px 0}.modal-head button{border:0;background:#eef5f4;width:32px;height:32px;border-radius:9px;font-size:21px}.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
 .reports-grid{grid-template-columns:1.1fr .9fr}.rank-row{display:grid;grid-template-columns:28px 45px 1fr auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid #eef4f3}.rank-row>span{color:#8da09f;font-weight:750}.rank-row img{width:45px;height:37px;border-radius:8px;object-fit:contain;background:#e8f4f3}.rank-row>div{display:grid}.rank-row small{color:var(--muted);font-size:9px}.rank-row b{font-size:10px}
 
 @media(max-width:1050px){
@@ -1000,20 +1008,25 @@ textarea{min-height:90px;resize:vertical}
 .tx-delete-btn:hover{opacity:1;background:#fde8e8}
 .status-tiny{font-size:8px;padding:3px 6px}
 .refund-amount{color:#b54b57}
-.confirm-modal{width:min(400px,92vw);text-align:center;padding:26px 24px;border-radius:16px}
+.confirm-modal{position:relative;width:min(500px,calc(100vw - 32px));text-align:left;padding:30px;border-radius:20px}
 .confirm-modal-review{width:min(480px,94vw)}
 .shop-privacy-modal{width:min(560px,100%);text-align:left}
-.shop-privacy-modal h3{text-align:center;margin-top:0}
+.shop-privacy-modal h3{margin-top:0}
 .shop-privacy-text{max-height:320px;overflow-y:auto;border:1px solid var(--line);border-radius:12px;padding:16px 18px;font-size:12px;line-height:1.7;color:var(--muted);background:#f9fdfc}
 .shop-privacy-text strong{display:block;color:var(--ink);font-size:13px;margin:14px 0 2px}
 .shop-privacy-text strong:first-child{margin-top:0}
 .shop-privacy-text ul{margin:4px 0;padding-left:18px}
 .shop-privacy-hint{text-align:center;margin:10px 0 0;font-size:11px}
-.confirm-modal h3{margin:0 0 10px;font-size:17px;font-weight:700;letter-spacing:-.2px}
-.confirm-modal p{margin:0 0 4px;font-size:13.5px;color:var(--ink);line-height:1.55}
-.confirm-modal small{display:block;margin:6px 0 0;font-size:12px;color:var(--muted);line-height:1.5}
-.confirm-modal-actions{display:flex;gap:10px;justify-content:center;margin-top:22px}
-.confirm-modal-actions button{min-width:92px;padding:10px 20px;font-size:13px;font-weight:700;border-radius:11px}
+.confirm-modal h3{max-width:calc(100% - 42px);margin:0 0 12px;font-size:22px;line-height:1.25;font-weight:750;letter-spacing:-.45px}
+.confirm-modal p{margin:0 0 4px;font-size:14px;color:var(--muted);line-height:1.55}
+.confirm-modal p strong{color:var(--ink)}
+.confirm-modal small{display:block;margin:5px 0 0;font-size:13px;color:var(--muted);line-height:1.5}
+.confirm-modal-close{position:absolute;top:20px;right:20px;width:34px;height:34px;min-width:0!important;min-height:0!important;display:grid;place-items:center;padding:0!important;border:0;border-radius:9px;background:var(--surface-2);color:var(--muted);font-size:22px;font-weight:500;line-height:1;cursor:pointer}
+.confirm-modal-close:hover:not(:disabled),.confirm-modal-close:focus-visible{background:var(--brand-soft);color:var(--ink)}
+.confirm-modal-actions{display:flex;gap:12px;justify-content:flex-end;margin-top:28px}
+.confirm-modal-actions button{min-width:132px;min-height:46px;padding:11px 20px;font-size:13px;font-weight:750;border-radius:12px}
+.confirm-modal-actions .danger-button{border:1px solid #cf203c;background:#e8153d;color:#fff;box-shadow:0 7px 18px rgba(232,21,61,.18)}
+.confirm-modal-actions .danger-button:hover:not(:disabled){border-color:#b8132e;background:#ca1234;color:#fff}
 @media(max-width:1050px){
   .payment-card-grid{grid-template-columns:repeat(2,1fr)}
 }
@@ -1472,7 +1485,7 @@ tr.table-subrow .payment-transaction-row{border:0}
 
 /* Floating cart panel (bottom-right cart button) -- inset from the screen
    edges so it floats instead of sitting flush against the corner */
-.shop-cart-drawer-backdrop{position:fixed;inset:0;background:rgba(11,42,44,.45);z-index:90;padding:16px;display:flex;justify-content:flex-end;animation:shopFadeIn .2s ease}
+.shop-cart-drawer-backdrop{position:fixed;inset:0;background:rgba(11,42,44,.45);z-index:var(--layer-modal);padding:16px;display:flex;justify-content:flex-end;animation:shopFadeIn .2s ease}
 @keyframes shopFadeIn{from{opacity:0}to{opacity:1}}
 .shop-cart-drawer{display:flex;flex-direction:column;width:min(400px,100%);max-height:100%;background:#fff;border-radius:22px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.3);animation:shopDrawerIn .28s cubic-bezier(.22,1,.36,1)}
 [data-theme="dark"] .shop-cart-drawer{background:var(--surface)}
@@ -1948,7 +1961,7 @@ tr.table-subrow .payment-transaction-row{border:0}
 }
 
 /* Unsaved-changes confirmation: always above the form it guards. */
-.discard-backdrop{z-index:95}
+.discard-backdrop{z-index:var(--layer-modal-nested)}
 
 /* --------------------------------------------------------------------------
    Admin experience foundation
@@ -1979,7 +1992,7 @@ tr.table-subrow .payment-transaction-row{border:0}
 }
 button:disabled,input:disabled,select:disabled,textarea:disabled{cursor:not-allowed;opacity:.62}
 .admin-icon{display:block;flex:0 0 auto}
-.skip-link{position:fixed;top:10px;left:12px;z-index:250;transform:translateY(-160%);padding:10px 14px;border-radius:10px;background:var(--ink);color:var(--surface);font-weight:800;box-shadow:var(--shadow-lg)}
+.skip-link{position:fixed;top:10px;left:12px;z-index:var(--layer-skip-link);transform:translateY(-160%);padding:10px 14px;border-radius:10px;background:var(--ink);color:var(--surface);font-weight:800;box-shadow:var(--shadow-lg)}
 .skip-link:focus{transform:translateY(0)}
 
 /* Shell and navigation */
@@ -2051,7 +2064,7 @@ button:disabled,input:disabled,select:disabled,textarea:disabled{cursor:not-allo
 .admin-profile-menu{z-index:120}
 .notification-bell{z-index:110}
 .admin-search-wrap{z-index:80}
-.admin-profile-dropdown{z-index:140}
+.admin-profile-dropdown{z-index:var(--layer-popover)}
 .admin-page-content{width:100%;max-width:1600px;margin:0 auto}
 .admin-card{
   padding:22px;
@@ -2513,7 +2526,7 @@ button:disabled,input:disabled,select:disabled,textarea:disabled{cursor:not-allo
 .sort-select-option.is-active{background:#f1f6f3}
 .sort-select-option.is-selected{color:#126d69;font-weight:800}
 .sort-select-option svg{flex:0 0 auto;color:var(--brand)}
-.sort-sheet-backdrop{position:fixed;inset:0;z-index:90;display:flex;align-items:flex-end;background:rgba(14,32,30,.45);animation:sortFadeIn .18s ease-out}
+.sort-sheet-backdrop{position:fixed;inset:0;z-index:var(--layer-sheet);display:flex;align-items:flex-end;background:rgba(14,32,30,.45);animation:sortFadeIn .18s ease-out}
 .sort-sheet{width:100%;max-height:80dvh;overflow-y:auto;padding:8px 14px calc(16px + env(safe-area-inset-bottom));border-radius:20px 20px 0 0;background:var(--surface,#fff);color:var(--ink);box-shadow:0 -14px 40px rgba(14,32,30,.25);animation:sortSheetIn .24s cubic-bezier(.22,1,.36,1)}
 .sort-sheet-grip{display:block;width:38px;height:4px;margin:0 auto 6px;border-radius:999px;background:var(--line,#d7e2dd)}
 .sort-sheet-head{display:flex;align-items:center;justify-content:space-between;padding:4px 4px 8px}

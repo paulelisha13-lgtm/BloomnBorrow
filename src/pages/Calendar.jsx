@@ -338,6 +338,7 @@ export function Calendar() {
     {editorGuard.discardDialog}
 
     {deleteEntryTarget&&<div className="modal-backdrop" onClick={()=>setDeleteEntryTarget(null)}><div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+      <button type="button" className="confirm-modal-close" aria-label="Close delete entry confirmation" disabled={deletingEntry} onClick={()=>setDeleteEntryTarget(null)}>×</button>
       <h3>Delete Entry</h3>
       <p>Are you sure you want to delete <strong>{deleteEntryTarget.title}</strong>?</p>
       <small>This action cannot be undone.</small>
