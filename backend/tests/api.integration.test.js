@@ -122,6 +122,15 @@ test("API workflow and permissions", { skip }, async (t) => {
     }
     assert.equal((await staff("/admin/calendar")).status, 400, "calendar needs a from/to range");
     const b = await newBooking("2026-12-20", "2026-12-21");
+
+    // Header bell + search read trimmed server-side results.
+    const alerts = await staff("/admin/alerts");
+    assert.equal(alerts.status, 200, alerts.data.message);
+    assert.ok(alerts.data.bookings.length <= 10 && Array.isArray(alerts.data.low_stock) && alerts.data.escalated.length <= 5);
+    const found = await staff(`/admin/search?q=${encodeURIComponent(b.booking_no)}`);
+    assert.equal(found.status, 200, found.data.message);
+    assert.ok(found.data.bookings.some(x => x.id === b.id), "search finds the new booking by number");
+    assert.equal((await staff("/admin/search?q=%25")).data.bookings.length, 0, "% is matched literally, not as a wildcard");
     assert.equal((await staff(`/admin/bookings/${b.id}/status`, { method: "PATCH", body: { status: "confirmed" } })).status, 200);
     assert.equal((await staff(`/admin/bookings/${b.id}/payments`, { method: "POST", body: { amount: 50, method: "gcash" } })).status, 201);
 

@@ -84,7 +84,15 @@ export function AdminDashboard() {
       .finally(()=>setLoading(false));
   },[]);
   const loadEscalations=React.useCallback(()=>api("/admin/escalations").then(d=>setEscalations(d)).catch(()=>{}),[]);
-  React.useEffect(()=>{load();loadEscalations();const id=setInterval(()=>{load();loadEscalations()},60000);return()=>clearInterval(id)},[load,loadEscalations]);
+  React.useEffect(()=>{
+    const refresh=()=>{load();loadEscalations()};
+    refresh();
+    // Skip polling while the tab is hidden; catch up as soon as it is shown again.
+    const id=setInterval(()=>{if(!document.hidden)refresh()},60000);
+    const onVisible=()=>{if(!document.hidden)refresh()};
+    document.addEventListener("visibilitychange",onVisible);
+    return()=>{clearInterval(id);document.removeEventListener("visibilitychange",onVisible)};
+  },[load,loadEscalations]);
   const s=data?.stats || {};
   const daily=data?.daily||[];
   const sevenDayRevenue=daily.reduce((sum,x)=>sum+Number(x.revenue||0),0);

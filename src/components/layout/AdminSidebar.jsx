@@ -64,7 +64,7 @@ export function AdminSidebar({ collapsed = false, mobileOpen = false, onMobileCl
     let alive = true;
     const load = () => api("/admin/booking-counts").then(d=>{ if(alive) setCounts({ stages:stageCounts(d.counts), overdue:Number(d.overdue||0) }); }).catch(()=>{});
     load();
-    const timer = setInterval(load,60000);
+    const timer = setInterval(()=>{ if(!document.hidden) load(); },60000);
     window.addEventListener("bb:bookings-changed",load);
     return ()=>{ alive = false; clearInterval(timer); window.removeEventListener("bb:bookings-changed",load); };
   },[location.pathname]);

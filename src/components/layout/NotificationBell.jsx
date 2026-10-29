@@ -29,19 +29,9 @@ export function NotificationBell() {
   const loadNotifications = async () => {
     setLoading(true);
     try {
-      const [bookingsData, inventoryData, escalationsData] = await Promise.all([
-        api("/admin/bookings").catch(()=>({bookings:[]})),
-        api("/admin/inventory").catch(()=>({items:[]})),
-        api("/admin/escalations").catch(()=>({escalated:[]}))
-      ]);
-      const bookings = [...(bookingsData.bookings || [])]
-        .sort((a,b) => {
-          const proofPriority = Number(b.gcash_proof_status === "submitted") - Number(a.gcash_proof_status === "submitted");
-          if (proofPriority) return proofPriority;
-          return new Date(b.gcash_proof_uploaded_at || b.created_at || 0) - new Date(a.gcash_proof_uploaded_at || a.created_at || 0);
-        })
-        .slice(0, 10);
-      const notifs = bookings.map(b => ({
+      // Already sorted and trimmed by the API (payment proofs first, 10 bookings).
+      const alerts = await api("/admin/alerts");
+      const notifs = (alerts.bookings || []).map(b => ({
         id: `b-${b.id}`,
         type: b.gcash_proof_status === "submitted" ? "payment_proof" : b.status === "pending" ? "booking_new" : b.status === "overdue" ? "booking_overdue" : "booking_update",
         title: b.gcash_proof_status === "submitted" ? "Payment Proof to Review" : b.status === "pending" ? "New Booking" : b.status === "overdue" ? "Overdue Rental" : "Booking Updated",
@@ -52,8 +42,7 @@ export function NotificationBell() {
         time: b.gcash_proof_uploaded_at || b.created_at,
         read: false
       }));
-      const lowStockItems = (inventoryData.items || []).filter(x => x.status === "active" && Number(x.total_quantity) < 5);
-      lowStockItems.forEach((item, i) => {
+      (alerts.low_stock || []).forEach(item => {
         notifs.push({
           id: `lowstock-${item.id}`,
           type: "low_stock",
@@ -65,7 +54,7 @@ export function NotificationBell() {
           read: false
         });
       });
-      (escalationsData.escalated||[]).slice(0,5).forEach(e => {
+      (alerts.escalated || []).forEach(e => {
         notifs.push({
           id: `esc-${e.id}`,
           type: "escalation",
@@ -91,9 +80,12 @@ export function NotificationBell() {
   };
 
   useEffect(() => { loadNotifications(); }, []);
+  // Skip polling while the tab is hidden; catch up as soon as it is shown again.
   useEffect(() => {
-    const interval = setInterval(loadNotifications, 60000);
-    return () => clearInterval(interval);
+    const interval = setInterval(() => { if (!document.hidden) loadNotifications(); }, 60000);
+    const onVisible = () => { if (!document.hidden) loadNotifications(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(interval); document.removeEventListener("visibilitychange", onVisible); };
   }, []);
 
   useEffect(() => {

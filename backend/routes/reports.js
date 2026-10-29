@@ -70,7 +70,7 @@ router.get("/api/admin/booking-counts", authenticate, requireRole("admin","manag
   } catch(err) { next(err); }
 });
 
-router.get("/api/admin/escalations", authenticate, requireRole("admin","manager","staff"), async (_req,res) => {
+async function loadEscalations() {
   const [overdue]=await db.query(`
     SELECT b.id,b.booking_no,b.status,b.start_date,b.end_date,b.grand_total,
       b.customer_id,b.deposit_total,
@@ -92,8 +92,49 @@ router.get("/api/admin/escalations", authenticate, requireRole("admin","manager"
     const lateFee=days*lateRate;
     return{...b,level,lateFee,daysText:`${days} day${days===1?"":"s"} overdue`};
   });
+  return escalated;
+}
+
+router.get("/api/admin/escalations", authenticate, requireRole("admin","manager","staff"), async (_req,res) => {
+  const escalated=await loadEscalations();
   const stats={total:escalated.length,gentle:escalated.filter(e=>e.level==="gentle").length,reminder:escalated.filter(e=>e.level==="reminder").length,formal:escalated.filter(e=>e.level==="formal").length,final:escalated.filter(e=>e.level==="final").length};
   res.json({escalated,stats});
+});
+
+// Everything the header bell shows, already trimmed server-side: the 10 most
+// relevant bookings (payment proofs awaiting review first), low-stock items and
+// the top 5 escalations. Replaces pulling the full bookings + inventory lists
+// every minute just to keep ~20 rows.
+router.get("/api/admin/alerts", authenticate, requireRole("admin","manager","staff"), async (_req,res) => {
+  const [[bookings],[low_stock],escalated]=await Promise.all([
+    db.query(`
+      SELECT b.id,b.booking_no,b.customer_name,b.start_date,b.end_date,b.grand_total,b.status,b.created_at,
+             w.proof_status AS gcash_proof_status,w.proof_uploaded_at AS gcash_proof_uploaded_at,
+             (SELECT GROUP_CONCAT(CONCAT(bi.item_name,' × ',bi.quantity) ORDER BY bi.id SEPARATOR ', ')
+                FROM booking_items bi WHERE bi.booking_id=b.id) AS items
+      FROM bookings b
+      LEFT JOIN booking_payment_workflows w ON w.booking_id=b.id
+      ORDER BY COALESCE(w.proof_status='submitted',0) DESC, COALESCE(w.proof_uploaded_at,b.created_at) DESC
+      LIMIT 10
+    `),
+    db.query("SELECT id,name,sku,total_quantity FROM rental_items WHERE status='active' AND total_quantity<5 ORDER BY total_quantity,name"),
+    loadEscalations()
+  ]);
+  res.json({bookings,low_stock,escalated:escalated.slice(0,5)});
+});
+
+// Header search: matched in SQL and capped at 5 per group, instead of the
+// browser downloading every booking, item and customer on each keystroke.
+router.get("/api/admin/search", authenticate, requireRole("admin","manager","staff"), async (req,res) => {
+  const q=String(req.query.q||"").trim().slice(0,100);
+  if(!q) return res.json({bookings:[],inventory:[],customers:[]});
+  const like=`%${q.replace(/[\\%_]/g,ch=>`\\${ch}`)}%`;
+  const [[bookings],[inventory],[customers]]=await Promise.all([
+    db.query("SELECT id,booking_no,customer_name,grand_total FROM bookings WHERE booking_no LIKE ? OR customer_name LIKE ? ORDER BY created_at DESC LIMIT 5",[like,like]),
+    db.query("SELECT id,name,sku,daily_price FROM rental_items WHERE name LIKE ? OR sku LIKE ? ORDER BY created_at DESC LIMIT 5",[like,like]),
+    db.query("SELECT id,full_name,email FROM customers WHERE full_name LIKE ? OR email LIKE ? ORDER BY created_at DESC LIMIT 5",[like,like])
+  ]);
+  res.json({bookings,inventory,customers});
 });
 
 router.get("/api/admin/reports", authenticate, requireRole("admin","manager"), async (_req,res,next) => {

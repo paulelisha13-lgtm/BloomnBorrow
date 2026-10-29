@@ -26,18 +26,9 @@ export function AdminSearch() {
     const requestId=++requestRef.current;
     setLoading(true);
     try {
-      const [bookingsData, inventoryData, customersData] = await Promise.all([
-        api("/admin/bookings").catch(() => ({ bookings: [] })),
-        api("/admin/inventory").catch(() => ({ items: [] })),
-        api("/admin/customers").catch(() => ({ customers: [] }))
-      ]);
-      const lq = q.toLowerCase();
+      const data = await api(`/admin/search?q=${encodeURIComponent(q.trim())}`);
       if(requestId!==requestRef.current)return;
-      setResults({
-        bookings: (bookingsData.bookings || []).filter(b => (b.booking_no || "").toLowerCase().includes(lq) || (b.customer_name || "").toLowerCase().includes(lq)).slice(0, 5),
-        inventory: (inventoryData.items || []).filter(i => (i.name || "").toLowerCase().includes(lq) || (i.sku || "").toLowerCase().includes(lq)).slice(0, 5),
-        customers: (customersData.customers || []).filter(c => (c.full_name || "").toLowerCase().includes(lq) || (c.email || "").toLowerCase().includes(lq)).slice(0, 5)
-      });
+      setResults({ bookings: data.bookings || [], inventory: data.inventory || [], customers: data.customers || [] });
     } catch (e) {}
     finally { if(requestId===requestRef.current)setLoading(false); }
   };
