@@ -3,6 +3,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { Logo } from "../Logo";
 import { useCart } from "../../context/CartContext";
 import { publicApi } from "../../lib/publicApi";
+import { cachedResponse } from "../../lib/responseCache";
 
 function FacebookIcon() {
   return <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M13.5 21v-7.5h2.5l.5-3h-3V8.5c0-.9.25-1.5 1.5-1.5H16.5V4.3C16.2 4.26 15.2 4.17 14 4.17c-2.4 0-4 1.47-4 4.16V10.5H7.5v3H10V21h3.5z"/></svg>;
@@ -49,7 +50,7 @@ function CustomerTabBar({ detailRoute }) {
 // entirely from data this system actually has: no invented nav pages,
 // legal links, or newsletter signup (no such feature exists here).
 function CustomerFooter() {
-  const [business, setBusiness] = useState(null);
+  const [business, setBusiness] = useState(() => cachedResponse("/public/business-info")?.business || null);
   useEffect(() => { publicApi("/public/business-info").then(d => setBusiness(d.business || {})).catch(() => {}); }, []);
   const name = business?.business_name || "Bloom & Borrow";
   const hasSocial = business && (business.business_facebook || business.business_instagram);

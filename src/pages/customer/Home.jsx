@@ -4,6 +4,7 @@ import { CustomerShell } from "../../components/customer/CustomerShell";
 import { RentalItemCard } from "../../components/customer/RentalItemCard";
 import { useCart } from "../../context/CartContext";
 import { publicApi } from "../../lib/publicApi";
+import { cachedResponse } from "../../lib/responseCache";
 
 function SearchIcon() {
   return <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>;
@@ -98,8 +99,8 @@ export function CustomerHome() {
   const location = useLocation();
   const { addItem } = useCart();
   const heroRef = useRef(null);
-  const [items, setItems] = useState([]);
-  const [loadingItems,setLoadingItems]=useState(true);
+  const [items, setItems] = useState(() => cachedResponse("/public/items")?.items || []);
+  const [loadingItems,setLoadingItems]=useState(()=>!cachedResponse("/public/items"));
   const [catalogError,setCatalogError]=useState("");
   const [added, setAdded] = useState(null);
   const [selected, setSelected] = useState(null);
@@ -109,7 +110,7 @@ export function CustomerHome() {
   // Keep the homepage useful if the API is unavailable: the main journey
   // remains visible while the featured section shows a small retry state.
   const loadFeatured=()=>{
-    setLoadingItems(true);
+    if(!cachedResponse("/public/items"))setLoadingItems(true);
     setCatalogError("");
     publicApi("/public/items").then(d => setItems(d.items || [])).catch(e => setCatalogError(e.message||"The catalog is temporarily unavailable.")).finally(()=>setLoadingItems(false));
   };

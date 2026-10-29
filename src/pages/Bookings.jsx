@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, API_BASE } from "../lib/api";
+import { cachedResponse } from "../lib/responseCache";
 import { Kpi } from "../components/Kpi";
 import { AdminShell } from "../components/layout/AdminShell";
 import { SortControls } from "../components/SortControls";
@@ -23,7 +24,7 @@ export function Bookings() {
   const navigate=useNavigate();
   const [searchParams]=useSearchParams();
   const stage=stageByKey(searchParams.get("stage"));
-  const [rows,setRows]=useState([]);
+  const [rows,setRows]=useState(()=>cachedResponse("/admin/bookings")?.bookings||[]);
   const [detail,setDetail]=useState(null);
   const [error,setError]=useState("");
   const [busy,setBusy]=useState(false);

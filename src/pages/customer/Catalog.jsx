@@ -5,6 +5,7 @@ import { RentalItemCard } from "../../components/customer/RentalItemCard";
 import { SortSelect } from "../../components/customer/SortSelect";
 import { useCart } from "../../context/CartContext";
 import { publicApi } from "../../lib/publicApi";
+import { cachedResponse } from "../../lib/responseCache";
 
 const SORT_OPTIONS = [
   { value: "recommended", label: "Recommended" },
@@ -21,9 +22,9 @@ export function CustomerCatalog() {
   const navigate = useNavigate();
   const location = useLocation();
   const { addItem } = useCart();
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState(() => cachedResponse("/public/items")?.items || []);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !cachedResponse("/public/items"));
   const [search, setSearch] = useState(() => readBrowseState().search || "");
   const [category, setCategory] = useState(() => readBrowseState().category || "");
   const [sort, setSort] = useState(() => readBrowseState().sort || "recommended");
@@ -32,8 +33,10 @@ export function CustomerCatalog() {
   // is up, so the customer can see which item they're looking at.
   const [selected, setSelected] = useState(null);
 
+  // With a cached catalog already on screen, refresh quietly instead of
+  // flashing the loading state.
   const loadItems = () => {
-    setLoading(true);
+    if (!cachedResponse("/public/items")) setLoading(true);
     setError("");
     publicApi("/public/items").then(d => setItems(d.items || [])).catch(e => setError(e.message)).finally(() => setLoading(false));
   };

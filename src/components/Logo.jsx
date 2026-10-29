@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import logoImg from "../assets/logo.png";
+import logoImg from "../assets/logo.webp";
 
 export function Logo({ light = false, to = "/admin" }) {
   return (

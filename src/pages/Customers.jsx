@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { api } from "../lib/api";
+import { cachedResponse } from "../lib/responseCache";
 import { Kpi } from "../components/Kpi";
 import { ListPagination } from "../components/ListPagination";
 import { AdminShell } from "../components/layout/AdminShell";
@@ -13,7 +14,7 @@ import { isAdminUser } from "../lib/roles";
 import { useDiscardGuard } from "../components/DiscardGuard";
 
 export function Customers() {
-  const [rows,setRows]=useState([]);
+  const [rows,setRows]=useState(()=>cachedResponse("/admin/customers")?.customers||[]);
   const [error,setError]=useState("");
   const [search,setSearch]=useState("");
   const [detail,setDetail]=useState(null);

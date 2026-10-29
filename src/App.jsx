@@ -1,31 +1,38 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { ProtectedRoute } from "./components/ProtectedRoute";
-import { AccessManagement } from "./pages/AccessManagement";
-import { AccountSettings } from "./pages/AccountSettings";
-import { AddBooking } from "./pages/AddBooking";
-import { AuditLog } from "./pages/AuditLog";
-import { Bookings } from "./pages/Bookings";
-import { Calendar } from "./pages/Calendar";
-import { Customers } from "./pages/Customers";
-import { AdminDashboard } from "./pages/Dashboard";
-import { Expenses } from "./pages/Expenses";
-import { Inventory } from "./pages/Inventory";
-import { AccessLogin } from "./pages/Login";
-import { Maintenance } from "./pages/Maintenance";
-import { Payments } from "./pages/Payments";
-import { ProfitLoss } from "./pages/ProfitLoss";
-import { Reports } from "./pages/Reports";
-import { Settings } from "./pages/Settings";
-import { CustomerHome } from "./pages/customer/Home";
-import { CustomerCatalog } from "./pages/customer/Catalog";
-import { CustomerItemDetail } from "./pages/customer/ItemDetail";
-import { CustomerCart } from "./pages/customer/Cart";
-import { CustomerRentalForm } from "./pages/customer/RentalForm";
-import { CustomerBookingStatus } from "./pages/customer/BookingStatus";
-import { CustomerPrivacyPolicy, CustomerRentalTerms } from "./pages/customer/Policies";
 import { CartProvider } from "./context/CartContext";
 import { InteractionFeedback } from "./components/InteractionFeedback";
+
+// Each page is its own chunk, downloaded the first time it is opened, so a
+// shop visitor never downloads the admin screens (and vice versa).
+const page = (load, name) => lazy(() => load().then(m => ({ default: m[name] })));
+const AccessManagement = page(() => import("./pages/AccessManagement"), "AccessManagement");
+const AccountSettings = page(() => import("./pages/AccountSettings"), "AccountSettings");
+const AddBooking = page(() => import("./pages/AddBooking"), "AddBooking");
+const AuditLog = page(() => import("./pages/AuditLog"), "AuditLog");
+const Bookings = page(() => import("./pages/Bookings"), "Bookings");
+const Calendar = page(() => import("./pages/Calendar"), "Calendar");
+const Customers = page(() => import("./pages/Customers"), "Customers");
+const AdminDashboard = page(() => import("./pages/Dashboard"), "AdminDashboard");
+const Expenses = page(() => import("./pages/Expenses"), "Expenses");
+const Inventory = page(() => import("./pages/Inventory"), "Inventory");
+const AccessLogin = page(() => import("./pages/Login"), "AccessLogin");
+const Maintenance = page(() => import("./pages/Maintenance"), "Maintenance");
+const Payments = page(() => import("./pages/Payments"), "Payments");
+const ProfitLoss = page(() => import("./pages/ProfitLoss"), "ProfitLoss");
+const Reports = page(() => import("./pages/Reports"), "Reports");
+const Settings = page(() => import("./pages/Settings"), "Settings");
+const CustomerHome = page(() => import("./pages/customer/Home"), "CustomerHome");
+const CustomerCatalog = page(() => import("./pages/customer/Catalog"), "CustomerCatalog");
+const CustomerItemDetail = page(() => import("./pages/customer/ItemDetail"), "CustomerItemDetail");
+const CustomerCart = page(() => import("./pages/customer/Cart"), "CustomerCart");
+const CustomerRentalForm = page(() => import("./pages/customer/RentalForm"), "CustomerRentalForm");
+const CustomerBookingStatus = page(() => import("./pages/customer/BookingStatus"), "CustomerBookingStatus");
+const CustomerPrivacyPolicy = page(() => import("./pages/customer/Policies"), "CustomerPrivacyPolicy");
+const CustomerRentalTerms = page(() => import("./pages/customer/Policies"), "CustomerRentalTerms");
+
+const pageFallback = <div className="customer-page-loading" role="status" aria-live="polite" aria-label="Loading page"><div className="customer-page-loading-dots" aria-hidden="true"><span/><span/><span/></div></div>;
 
 function AdminRoutes({ location }) {
   return <Routes location={location}>
@@ -74,9 +81,11 @@ export default function App() {
   const backgroundLocation = location.state?.backgroundLocation;
   return <CartProvider>
     <InteractionFeedback/>
-    <AdminRoutes location={backgroundLocation || location}/>
-    {backgroundLocation && <Routes>
+    <Suspense fallback={pageFallback}>
+      <AdminRoutes location={backgroundLocation || location}/>
+    </Suspense>
+    {backgroundLocation && <Suspense fallback={pageFallback}><Routes>
       <Route path="/shop/:id" element={<CustomerItemDetail/>}/>
-    </Routes>}
+    </Routes></Suspense>}
   </CartProvider>;
 }

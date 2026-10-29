@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import logoImg from "../../assets/logo.png";
+import logoImg from "../../assets/logo.webp";
 import { api, getStoredUser } from "../../lib/api";
 import { BOOKING_STAGES, stageCounts } from "../../lib/bookingStages";
 import { isAdminUser, isFullAdminUser } from "../../lib/roles";

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
+import { cachedResponse } from "../lib/responseCache";
 import { BookingTable } from "../components/BookingTable";
 import { Kpi } from "../components/Kpi";
 import { AdminShell } from "../components/layout/AdminShell";
@@ -70,9 +71,9 @@ function DashboardBookingAreaChart({ rows=[] }) {
 }
 
 export function AdminDashboard() {
-  const [data,setData]=useState(null);
+  const [data,setData]=useState(()=>cachedResponse("/admin/dashboard")||null);
   const [updatedAt,setUpdatedAt]=useState(null);
-  const [escalations,setEscalations]=useState(null);
+  const [escalations,setEscalations]=useState(()=>cachedResponse("/admin/escalations")||null);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
   const load=React.useCallback(()=>{

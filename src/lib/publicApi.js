@@ -3,6 +3,7 @@
 // staff session cookie or CSRF token, since guests never log in.
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000/api";
 import { beginActionRequest, finishActionRequest } from "./actionFeedback";
+import { clearResponseCache, rememberResponse } from "./responseCache";
 
 function describeHttpError(status) {
   if (status === 429) return "Too many requests — wait a moment and try again.";
@@ -34,6 +35,8 @@ export async function publicApi(path, options = {}) {
   }
   try {
     const data=await handle(response);
+    if(method==="GET")rememberResponse(path,data);
+    else clearResponseCache();
     finishActionRequest(feedbackId,{ok:true,message:data.message,method});
     return data;
   } catch(error) {
@@ -57,6 +60,7 @@ export async function publicApiForm(path, formData) {
   }
   try {
     const data=await handle(response);
+    clearResponseCache();
     finishActionRequest(feedbackId,{ok:true,message:data.message,method});
     return data;
   } catch(error) {

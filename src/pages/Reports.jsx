@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { api } from "../lib/api";
+import { cachedResponse } from "../lib/responseCache";
 import { Kpi } from "../components/Kpi";
 import { AdminShell } from "../components/layout/AdminShell";
 import { peso } from "../lib/format";
@@ -65,8 +66,8 @@ function AnimatedRevenueChart({ data=[], currency="PHP" }) {
 }
 
 export function Reports() {
-  const [report,setReport]=useState(null);
-  const [loading,setLoading]=useState(true);
+  const [report,setReport]=useState(()=>cachedResponse("/admin/reports")||null);
+  const [loading,setLoading]=useState(()=>!cachedResponse("/admin/reports"));
   const [error,setError]=useState("");
   const [updatedAt,setUpdatedAt]=useState(null);
 
@@ -80,7 +81,7 @@ export function Reports() {
   };
 
   React.useEffect(()=>{
-    load();
+    load({silent:Boolean(report)});
     const timer=setInterval(()=>load({silent:true}),60000);
     return ()=>clearInterval(timer);
   },[]);

@@ -1,5 +1,6 @@
 export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000/api";
 import { beginActionRequest, finishActionRequest } from "./actionFeedback";
+import { clearResponseCache, rememberResponse } from "./responseCache";
 
 function readCookie(name) {
   const prefix = `${encodeURIComponent(name)}=`;
@@ -21,6 +22,7 @@ export function saveAuth(_token, user) {
 
 export function clearAuth() {
   localStorage.removeItem("bloom_borrow_user");
+  clearResponseCache();
 }
 
 export async function api(path, options = {}) {
@@ -53,6 +55,8 @@ export async function api(path, options = {}) {
     finishActionRequest(feedbackId,{ok:false,message:error.message,method});
     throw error;
   }
+  if (method === "GET") rememberResponse(path, data);
+  else clearResponseCache();
   finishActionRequest(feedbackId,{ok:true,message:data.message,method});
   return data;
 }

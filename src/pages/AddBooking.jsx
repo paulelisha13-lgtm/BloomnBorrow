@@ -1,20 +1,21 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
+import { cachedResponse } from "../lib/responseCache";
 import { AdminShell } from "../components/layout/AdminShell";
 import { peso, pesoExact } from "../lib/format";
 import { DURATION_DISCOUNT_MIN_DAYS, durationRuleOf, priceRentalLine } from "../lib/pricing";
 
 export function AddBooking() {
   const navigate=useNavigate();
-  const [customers,setCustomers]=useState([]),[inventory,setInventory]=useState([]);
+  const [customers,setCustomers]=useState(()=>cachedResponse("/admin/customers")?.customers||[]),[inventory,setInventory]=useState(()=>(cachedResponse("/admin/inventory")?.items||[]).filter(x=>x.status==="active"));
   const [customerId,setCustomerId]=useState(""),[customerSearch,setCustomerSearch]=useState("");
   const [customerMode,setCustomerMode]=useState("new");
   const [customerForm,setCustomerForm]=useState({full_name:"",phone:"",email:"",address:"",city:"",province:"",postal_code:""});
   const [form,setForm]=useState({start_date:"",end_date:"",fulfillment:"delivery",payment_method:"cash",notes:""});
   const [items,setItems]=useState([{item_id:"",quantity:1,delivery_fee_per_piece:0}]);
   const [openSections,setOpenSections]=useState({customer:true,rental:true,items:true,summary:true});
-  const [availability,setAvailability]=useState({}),[error,setError]=useState(""),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false);
+  const [availability,setAvailability]=useState({}),[error,setError]=useState(""),[loading,setLoading]=useState(()=>!(cachedResponse("/admin/customers")&&cachedResponse("/admin/inventory"))),[saving,setSaving]=useState(false);
   useEffect(()=>{Promise.all([api("/admin/customers"),api("/admin/inventory")]).then(([c,i])=>{setCustomers(c.customers||[]);setInventory((i.items||[]).filter(x=>x.status==="active"))}).catch(e=>setError(e.message)).finally(()=>setLoading(false))},[]);
   const customer=customers.find(c=>String(c.id)===String(customerId));
   const bookingCustomer=customerMode==="existing"?customer:customerForm;

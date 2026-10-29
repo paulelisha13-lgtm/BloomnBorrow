@@ -7,6 +7,7 @@ import { DurationTiers } from "../../components/DurationDiscount";
 import { RentalItemCard, isPackageItem, packageContents, packageLabel } from "../../components/customer/RentalItemCard";
 import { useCart } from "../../context/CartContext";
 import { publicApi } from "../../lib/publicApi";
+import { cachedResponse } from "../../lib/responseCache";
 import { discountOf, peso } from "../../lib/format";
 
 // Module scope on purpose: defining this inside the component would make it a
@@ -40,8 +41,17 @@ export function CustomerItemDetail() {
   const closeRef=useRef(null);
 
   useEffect(() => {
-    setLoading(true);
     setQuantity(1);
+    // Opened from Home/Browse, the catalog is already cached with the same
+    // fields /public/items/:id returns: show it at once, then refresh.
+    const catalog = cachedResponse("/public/items")?.items || [];
+    const known = cachedResponse(`/public/items/${id}`)?.item || catalog.find(x => String(x.id) === String(id));
+    if (known) {
+      setItem(known);
+      setRelated(catalog.filter(x => x.category === known.category && x.id !== known.id).slice(0, 4));
+      setLoadError("");
+      setLoading(false);
+    } else setLoading(true);
     Promise.all([
       publicApi(`/public/items/${id}`),
       publicApi("/public/items")

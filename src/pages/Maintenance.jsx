@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { api } from "../lib/api";
+import { cachedResponse } from "../lib/responseCache";
 import { AdminShell } from "../components/layout/AdminShell";
 import { ListPagination } from "../components/ListPagination";
 import { SortControls } from "../components/SortControls";
@@ -7,7 +8,7 @@ import { usePagination } from "../hooks/usePagination";
 import { sortRows, useSort } from "../hooks/useSort";
 
 export function Maintenance() {
-  const [rows,setRows]=useState([]); const [error,setError]=useState("");
+  const [rows,setRows]=useState(()=>cachedResponse("/admin/maintenance")?.records||[]); const [error,setError]=useState("");
   const [search,setSearch]=useState(""); const [statusFilter,setStatusFilter]=useState("All");
   const load=()=>api("/admin/maintenance").then(d=>setRows(d.records||[])).catch(e=>setError(e.message));
   React.useEffect(()=>{load()},[]);

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { api } from "../lib/api";
+import { cachedResponse } from "../lib/responseCache";
 import { Kpi } from "../components/Kpi";
 import { ListPagination } from "../components/ListPagination";
 import { AdminShell } from "../components/layout/AdminShell";
@@ -28,7 +29,7 @@ const toBundleRows = value => {
 };
 
 export function Inventory() {
-  const [rows,setRows]=useState([]);
+  const [rows,setRows]=useState(()=>cachedResponse("/admin/inventory")?.items||[]);
   const [modal,setModal]=useState(false);
   const [editing,setEditing]=useState(null);
   const [error,setError]=useState("");

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { api } from "../lib/api";
+import { cachedResponse } from "../lib/responseCache";
 import { Kpi } from "../components/Kpi";
 import { ListPagination } from "../components/ListPagination";
 import { AdminShell } from "../components/layout/AdminShell";
@@ -14,7 +15,7 @@ import { openInvoice } from "../lib/invoice";
 import { isAdminUser } from "../lib/roles";
 
 export function Payments() {
-  const [rows,setRows]=useState([]);
+  const [rows,setRows]=useState(()=>cachedResponse("/admin/payments")?.payments||[]);
   const [error,setError]=useState("");
   const [search,setSearch]=useState("");
   const [typeFilter,setTypeFilter]=useState("All");
